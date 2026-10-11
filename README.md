@@ -7,7 +7,7 @@ suite of apps on it.
 
 > **Status: planning.** Nothing is built yet. Read the plan in [`docs/plan/`](docs/plan/README.md) and the decisions in
 > [`docs/adr/`](docs/adr/README.md). The first app on Tenantry will be [AgentCanvas](https://github.com/marunsct/AgentCanvas).
-> "Tenantry" is a working name.
+> "Tenantry" is a working name; the repository is [marunsct/Platform](https://github.com/marunsct/Platform).
 
 ## What it gives an app
 

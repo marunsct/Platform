@@ -20,7 +20,7 @@
 | # | Decision | Recommended |
 |---|---|---|
 | 1 | Approve the approach: adopt Keycloak (unforked) + Ory Polis + OpenFGA + OpenBao and the cloud-native stack, build the control plane, consoles, SDKs and operator | yes |
-| 2 | Project name (working name "Tenantry") and repository `marunsct/tenantry` | rename now if you prefer another name |
+| 2 | Project name (working name "Tenantry"; the repository is `marunsct/Platform`) | keep "Tenantry" as the product name, or pick another |
 | 3 | Licence for our code: Apache-2.0 | Apache-2.0 |
 | 4 | Control-plane language: Go | Go (Python SDK stays first-class) |
 | 5 | Order versus AgentCanvas sprints: run Tenantry in parallel threads, with AgentCanvas's database-isolation work (its T5) early | parallel |
