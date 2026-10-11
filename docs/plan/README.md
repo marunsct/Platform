@@ -19,5 +19,6 @@
 | 12 | [Running the open-source project](12-open-source-project.md) | Licence policy, governance, releases, security disclosure, community |
 | 13 | [Roadmap](13-roadmap.md) | Phases and sprints with exit criteria; moving AgentCanvas onto Tenantry |
 | 14 | [Risks and open decisions](14-risks-and-decisions.md) | What could go wrong and what the owner decides |
+| 15 | [Market and positioning](15-market-and-positioning.md) | Is this a real gap? Competitors, where we stand out, and the narrower 1.0 focus |
 
 Decisions: [`../adr/`](../adr/README.md).
