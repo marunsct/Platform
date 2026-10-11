@@ -1,6 +1,6 @@
 # Tenantry
 
-**An open-source, self-hostable platform for running multi-tenant apps:** sign-up and sign-in, tenants and
+**The open-source WorkOS/Frontegg you can self-host, built on Keycloak. A platform for running multi-tenant apps:** sign-up and sign-in, tenants and
 workspaces, roles and fine-grained permissions, enterprise SSO and SCIM, audit, admin consoles, billing hooks and
 app hosting. It is built only from open-source components, under a permissive licence, so anyone can host their own
 suite of apps on it.
@@ -21,7 +21,7 @@ suite of apps on it.
 | Tamper-evident audit log, SIEM export | Tenantry audit service, OpenSearch (Apache-2.0) |
 | Secrets and per-tenant encryption keys (BYOK) | OpenBao (MPL-2.0) |
 | Usage metering, plans, quotas, entitlements | Tenantry entitlements + OpenMeter or Kill Bill (Apache-2.0) |
-| Hosting your apps, per-tenant isolation, autoscaling, backups, multi-region | Kubernetes, CloudNativePG, Argo CD, KEDA, Velero, Cilium (all Apache-2.0) |
+| HA install, autoscaling, backups, multi-region; optional app hosting after 1.0 | Kubernetes, CloudNativePG, Argo CD, KEDA, Velero, Cilium (all Apache-2.0) |
 | SDKs for Python, TypeScript/React and Go; CLI; OpenTofu provider | Tenantry |
 
 ## Licence

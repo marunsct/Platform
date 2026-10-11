@@ -31,12 +31,12 @@ entitlements for any app, built on Keycloak."**
 | Teams already on Keycloak | add tenants, self-service SSO/SCIM and consoles without ELv2 extensions |
 | AI and agent products (like AgentCanvas) | identities for agents and tools, delegated access, MCP/OAuth authorisation, per-tenant audit of agent actions: a fast-growing need in 2026 that most identity products are only starting to address |
 
-## 3. What changes in the plan
+## 3. What changes in the plan (adopted by the owner on 2026-10-11; doc 13 updated)
 
 1. **Version 1.0 focus:** identity on Keycloak, tenants and workspaces, the customer admin portal (tenant console)
    with self-service SSO and SCIM, roles and permissions, audit, entitlements, SDKs, Helm/Compose install,
    backups and HA. This is phases 0–3 plus the operational parts of phase 5 in doc 13.
-2. **App hosting (doc 06 §2–4, TS15) becomes optional after 1.0.** It is a separate module, not on the critical path.
+2. **App hosting (doc 06 §2–4, now module M2) becomes optional after 1.0.** It is a separate module, not on the critical path.
 3. **Add an "agent identity" track after 1.0:** service identities for AI agents, OAuth token exchange for
    on-behalf-of calls, MCP authorisation server support, consent and audit of agent actions per tenant. AgentCanvas
    is the first user.

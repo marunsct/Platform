@@ -37,36 +37,45 @@ possible.
 | **TS12 Enterprise SSO** | per-tenant SAML/OIDC connections (Keycloak broker + Ory Polis), guided setup for major IdPs, domain verification, home-realm discovery, JIT and group mapping, SSO-only with break-glass | sign-in via test SAML (e.g. a Keycloak or SimpleSAMLphp IdP in CI) and OIDC IdPs; SSO-only blocks passwords |
 | **TS13 SCIM** | SCIM 2.0 per tenant, tokens, users and groups, deprovisioning SLA, conflict handling | Okta/Entra-style SCIM test suite passes; deactivate → sessions revoked < 60 s |
 
-## Phase 4 — Platform and hosting
+## Phase 4 — Install, keys and entitlements
 
 | Sprint | Work | Exit |
 |---|---|---|
-| **TS14 Kubernetes install** | Helm charts, `tenantry-operator` (Installation, Tenant CRDs), CNPG, Envoy Gateway + Coraza, cert-manager, ESO, OpenBao HA with auto-unseal, Cilium policies, Kyverno policies | install on kind and one managed cloud from scratch; CIS benchmark passes |
-| **TS15 App hosting** | app manifest v1, `tenantry app apply`, TenantApp templates, Argo CD integration, shared and per-tenant instances, Capsule and vCluster tiers, custom domains, release rings with Argo Rollouts | example app deployed as shared and per-tenant instance; canary auto-rollback on injected errors |
-| **TS16 Keys and data** | OpenBao transit per tenant, SDK field encryption, BYOK (AWS/GCP/Azure KMS, PKCS#11), crypto-shredding, tenant data export, user export/deletion, retention and legal hold | BYOK revoke makes tenant data unreadable; export round-trips |
-| **TS17 Entitlements and metering** | plans, features, limits, SDK checks, OpenMeter integration, usage in consoles, optional Kill Bill module | quota enforcement under concurrency; invoice generated in the billing module test |
+| **TS14 Kubernetes install and Keycloak drop-in** | Helm charts, `tenantry-operator` (Installation, Tenant CRDs), CNPG, Envoy Gateway + Coraza, cert-manager, ESO, OpenBao HA with auto-unseal, Cilium and Kyverno policies; **drop-in mode**: connect Tenantry to an existing Keycloak (realm import, organisation sync, extensions installed as a JAR) instead of installing a new one | install on kind and one managed cloud from scratch; CIS benchmark passes; an existing Keycloak realm with users gains tenants and the admin portal without migration |
+| **TS15 Keys and data** | OpenBao transit per tenant, SDK field encryption, BYOK (AWS/GCP/Azure KMS, PKCS#11), crypto-shredding, tenant data export, user export/deletion, retention and legal hold | BYOK revoke makes tenant data unreadable; export round-trips |
+| **TS16 Entitlements and metering** | plans, features, limits, SDK checks, OpenMeter integration, usage in consoles, optional Kill Bill module | quota enforcement under concurrency; invoice generated in the billing module test |
 
 ## Phase 5 — Scale, resilience, security hardening
 
 | Sprint | Work | Exit |
 |---|---|---|
-| **TS18 Backups and restore** | Barman Cloud plugin, Velero, OpenBao snapshots, object lock, automated weekly restore tests, single-tenant restore workflow, backup monitoring | restore tests pass in CI and staging; single-tenant PITR restore without affecting others |
-| **TS19 Observability** | OpenTelemetry everywhere, VictoriaMetrics, Jaeger, OpenSearch, Perses dashboards, SLOs with burn-rate alerts, status page, support bundle | SLO alerts fire in chaos tests; dashboards per component |
-| **TS20 Scale** | Keycloak tuning with external Infinispan, HPA/KEDA, read replicas, cell architecture and tenant directory, load tests to targets (doc 08) | 2,000 sign-ins/s per region with p99 < 300 ms on the reference cluster; documented capacity model |
-| **TS21 Multi-region DR** | active-passive replicas (CNPG, Infinispan cross-site, NATS, object storage), `tenantry dr failover`, residency routing, DR game day | failover in staging within RTO 1 h and RPO 15 min |
-| **TS22 Security hardening** | threat model review, ASVS L2 checklist, fuzzing, DAST, Falco rules, FIPS profile, compliance mappings and evidence export, third-party penetration test | pen-test criticals and highs fixed; evidence export produces SOC 2 package |
+| **TS17 Backups and restore** | Barman Cloud plugin, Velero, OpenBao snapshots, object lock, automated weekly restore tests, single-tenant restore workflow, backup monitoring | restore tests pass in CI and staging; single-tenant PITR restore without affecting others |
+| **TS18 Observability** | OpenTelemetry everywhere, VictoriaMetrics, Jaeger, OpenSearch, Perses dashboards, SLOs with burn-rate alerts, status page, support bundle | SLO alerts fire in chaos tests; dashboards per component |
+| **TS19 Scale** | Keycloak tuning with external Infinispan, HPA/KEDA, read replicas, cell architecture and tenant directory, load tests to targets (doc 08) | 2,000 sign-ins/s per region with p99 < 300 ms on the reference cluster; documented capacity model |
+| **TS20 Multi-region DR** | active-passive replicas (CNPG, Infinispan cross-site, NATS, object storage), `tenantry dr failover`, residency routing, DR game day | failover in staging within RTO 1 h and RPO 15 min |
+| **TS21 Security hardening** | threat model review, ASVS L2 checklist, fuzzing, DAST, Falco rules, FIPS profile, compliance mappings and evidence export, third-party penetration test | pen-test criticals and highs fixed; evidence export produces SOC 2 package |
 
-## Phase 6 — 1.0 and adoption
+## Phase 6 — Proof points and 1.0
 
 | Sprint | Work | Exit |
 |---|---|---|
-| **TS23 AgentCanvas on Tenantry** | AgentCanvas uses the SDKs (auth, grants, entitlements, audit forwarding), migrates members and keys, adds workspace columns + RLS to its own tables (AgentCanvas side, planned in its doc 18), deployed as a Tenantry app | AgentCanvas runs on Tenantry in staging with existing data migrated; its cross-tenant suite passes with app checks off |
-| **TS24 Docs, air-gap and 1.0** | operator, developer and security docs; air-gapped bundle; upgrade tests; release 1.0 (LTS) | fresh air-gapped install succeeds; 1.0 signed release published |
+| **TS22 AgentCanvas on Tenantry** | AgentCanvas uses the SDKs (auth, grants, entitlements, audit forwarding), migrates members and keys, adds workspace columns + RLS to its own tables (AgentCanvas side, planned in its doc 18); it keeps its own deployment (app hosting is not needed for this) | AgentCanvas runs on Tenantry in staging with existing data migrated; its cross-tenant suite passes with app checks off |
+| **TS23 Adoption kit and 1.0** | public demo installation; migration guides and import tools from Auth0, Clerk and plain Keycloak; feature comparison against WorkOS and Frontegg; operator, developer and security docs; air-gapped bundle; upgrade tests; release 1.0 (LTS) | fresh air-gapped install succeeds; a migration from each source works on sample data; 1.0 signed release published |
 
-After 1.0: marketplace, active-active by tenant, Zitadel adapter (plan B), Backstage plug-in, more IdP guides, mobile
-SDKs (Swift, Kotlin), foundation submission.
+**Version 1.0 = TS1–TS23:** identity on Keycloak, tenants and workspaces, the customer admin portal (tenant console)
+with self-service SSO and SCIM, roles and permissions, audit, entitlements, SDKs, Helm/Compose install, keys,
+backups, HA and DR, security review. Positioning: doc 15.
+
+## After 1.0 — optional modules
+
+| Module | Work | Exit |
+|---|---|---|
+| **M1 Agent identity (A1–A2, first module after 1.0)** | identities for AI agents and tools as first-class principals; OAuth 2 token exchange (RFC 8693) for on-behalf-of calls with scoped, short-lived tokens; MCP authorisation server support (OAuth 2.1, dynamic client registration, resource indicators); user consent screens for agent access; per-tenant audit and kill switch for agent actions; SDK helpers | an AgentCanvas agent calls a tool on a user's behalf with a scoped token, the action shows in the tenant's audit log, and revoking consent stops it within 60 s |
+| **M2 App hosting** | app manifest hosting section, `tenantry app apply`, TenantApp templates, Argo CD, shared and per-tenant instances, Capsule and vCluster tiers, custom domains, release rings with Argo Rollouts (doc 06 §2–4) | example app deployed as shared and per-tenant instance; canary auto-rollback on injected errors |
+| **M3 Marketplace** | app catalogue for tenants, per-app plans, third-party OAuth consent | a tenant enables an app from the catalogue and is billed for it |
+| **M4 Active-active by tenant, Zitadel adapter, Backstage plug-in, mobile SDKs** | doc 08 §4, ADR 0001 plan B, doc 05 §4, Swift/Kotlin | per module |
 
 ## What changes in AgentCanvas
 
 AgentCanvas's own doc 18 tracks T1–T8 shrink to integration work: T5 (database isolation with workspace columns and
-RLS in AgentCanvas tables) stays in AgentCanvas and can start early; the rest becomes TS23 here.
+RLS in AgentCanvas tables) stays in AgentCanvas and can start early; the rest becomes TS22 here.

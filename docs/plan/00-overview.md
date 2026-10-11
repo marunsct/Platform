@@ -59,9 +59,14 @@
   cluster multi-region for large, with the same images and APIs.
 - **Apps stay decoupled.** Apps talk to Tenantry only through OIDC, the SDKs and documented APIs, never its database.
 
-## 5. Scope of version 1.0 (summary; detail in doc 13)
+## 5. Scope of version 1.0 (summary; detail in doc 13, positioning in doc 15)
 
-Identity (sign-up, social, MFA, sessions, onboarding by email), tenants and workspaces, roles and fine-grained
-permissions, tenant and platform consoles, per-tenant SSO and SCIM, audit and SIEM export, per-tenant keys, RLS
-helpers, entitlements and metering hooks, SDKs, operator and Helm, HA single region with backups and tested
-restore, multi-region DR (active-passive), AgentCanvas running on it, docs and a security review.
+**Positioning: the open-source WorkOS/Frontegg you can self-host, built on Keycloak.** Version 1.0 covers identity
+(sign-up, social, MFA, sessions, onboarding by email), tenants and workspaces, the customer admin portal with
+self-service SSO and SCIM, roles and fine-grained permissions, the platform console, audit and SIEM export,
+per-tenant keys, RLS helpers, entitlements and metering hooks, SDKs, Helm/Compose install (also as a drop-in next
+to an existing Keycloak), HA with backups and tested restore, multi-region DR (active-passive), AgentCanvas running
+on it, docs and a security review.
+
+**After 1.0, as optional modules:** agent identity (first), app hosting (doc 06), marketplace, active-active
+multi-region.
