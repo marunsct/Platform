@@ -15,5 +15,5 @@ other source-available licences are not allowed. CI enforces this from `deps/lic
 quarterly.
 
 ## Consequences
-+ Anyone can host, modify and resell Tenantry.
++ Anyone can host, modify and resell Matura.
 − Some popular tools (Vault, MinIO, Grafana as default) are replaced by OpenBao, SeaweedFS, Perses.

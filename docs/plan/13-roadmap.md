@@ -1,6 +1,6 @@
 # 13 — Roadmap
 
-Sprints are numbered `TS1…` (Tenantry sprint) to stay apart from AgentCanvas sprints. Each sprint ends with tests
+Sprints are numbered `TS1…` (Matura sprint) to stay apart from AgentCanvas sprints. Each sprint ends with tests
 green, docs updated, a changelog entry and a tagged pre-release. Exit criteria are checked by automated tests where
 possible.
 
@@ -9,7 +9,7 @@ possible.
 | Sprint | Work | Exit |
 |---|---|---|
 | **TS1 Repository and stack** | repo layout, CI (lint, test, licence check, SBOM, cosign), ADRs 0001–0005 accepted, licence audit of every component (`deps/licences.yaml`), Compose stack (Keycloak 26, Postgres, Valkey, NATS, OpenFGA, OpenBao dev, SeaweedFS, Mailpit, Temporal), realm-as-code, docs site skeleton | `docker compose up` brings every component healthy; CI green with licence gate |
-| **TS2 Control plane skeleton** | `tenantryd` with tenants, workspaces, users, memberships, apps, grants; Postgres schema with RLS on its own tables; OpenAPI spec and generated clients; outbox → NATS; audit table with hash chain; Temporal worker skeleton | API tests for CRUD; cross-tenant tests on the control plane pass; `tenantry audit verify` passes |
+| **TS2 Control plane skeleton** | `maturad` with tenants, workspaces, users, memberships, apps, grants; Postgres schema with RLS on its own tables; OpenAPI spec and generated clients; outbox → NATS; audit table with hash chain; Temporal worker skeleton | API tests for CRUD; cross-tenant tests on the control plane pass; `matura audit verify` passes |
 
 ## Phase 1 — Identity
 
@@ -41,7 +41,7 @@ possible.
 
 | Sprint | Work | Exit |
 |---|---|---|
-| **TS14 Kubernetes install and Keycloak drop-in** | Helm charts, `tenantry-operator` (Installation, Tenant CRDs), CNPG, Envoy Gateway + Coraza, cert-manager, ESO, OpenBao HA with auto-unseal, Cilium and Kyverno policies; **drop-in mode**: connect Tenantry to an existing Keycloak (realm import, organisation sync, extensions installed as a JAR) instead of installing a new one | install on kind and one managed cloud from scratch; CIS benchmark passes; an existing Keycloak realm with users gains tenants and the admin portal without migration |
+| **TS14 Kubernetes install and Keycloak drop-in** | Helm charts, `matura-operator` (Installation, Tenant CRDs), CNPG, Envoy Gateway + Coraza, cert-manager, ESO, OpenBao HA with auto-unseal, Cilium and Kyverno policies; **drop-in mode**: connect Matura to an existing Keycloak (realm import, organisation sync, extensions installed as a JAR) instead of installing a new one | install on kind and one managed cloud from scratch; CIS benchmark passes; an existing Keycloak realm with users gains tenants and the admin portal without migration |
 | **TS15 Keys and data** | OpenBao transit per tenant, SDK field encryption, BYOK (AWS/GCP/Azure KMS, PKCS#11), crypto-shredding, tenant data export, user export/deletion, retention and legal hold | BYOK revoke makes tenant data unreadable; export round-trips |
 | **TS16 Entitlements and metering** | plans, features, limits, SDK checks, OpenMeter integration, usage in consoles, optional Kill Bill module | quota enforcement under concurrency; invoice generated in the billing module test |
 
@@ -49,24 +49,24 @@ possible.
 
 | Sprint | Work | Exit |
 |---|---|---|
-| **TS17 Backup module** | works with or without Kubernetes: pgBackRest agent for Compose/VM installs and CloudNativePG + Barman Cloud plugin on Kubernetes, for Tenantry's own databases **and the app's** (Postgres + object storage/files); Velero, OpenBao snapshots, object lock, automated weekly restore tests, single-tenant restore workflow, backup monitoring | restore tests pass in CI and staging; single-tenant PITR restore without affecting others |
+| **TS17 Backup module** | works with or without Kubernetes: pgBackRest agent for Compose/VM installs and CloudNativePG + Barman Cloud plugin on Kubernetes, for Matura's own databases **and the app's** (Postgres + object storage/files); Velero, OpenBao snapshots, object lock, automated weekly restore tests, single-tenant restore workflow, backup monitoring | restore tests pass in CI and staging; single-tenant PITR restore without affecting others |
 | **TS18 Observability** | OpenTelemetry everywhere, VictoriaMetrics, Jaeger, OpenSearch, Perses dashboards, SLOs with burn-rate alerts, status page, support bundle | SLO alerts fire in chaos tests; dashboards per component |
 | **TS19 Scale** | Keycloak tuning with external Infinispan, HPA/KEDA, read replicas, cell architecture and tenant directory, load tests to targets (doc 08) | 2,000 sign-ins/s per region with p99 < 300 ms on the reference cluster; documented capacity model |
-| **TS20 Multi-region DR** | active-passive replicas (CNPG, Infinispan cross-site, NATS, object storage), `tenantry dr failover`, residency routing, DR game day | failover in staging within RTO 1 h and RPO 15 min |
+| **TS20 Multi-region DR** | active-passive replicas (CNPG, Infinispan cross-site, NATS, object storage), `matura dr failover`, residency routing, DR game day | failover in staging within RTO 1 h and RPO 15 min |
 | **TS21 Security hardening** | threat model review, ASVS L2 checklist, fuzzing, DAST, Falco rules, FIPS profile, third-party penetration test | pen-test criticals and highs fixed |
 
 ## Phase 6 — Readiness, proof points and 1.0
 
 | Sprint | Work | Exit |
 |---|---|---|
-| **TS22 Readiness I: controls and evidence** | control packs (SOC 2, ISO 27001, GDPR, HIPAA, EU AI Act logging/oversight) mapped to module settings; `tenantry check` readiness score with gap → fix links; continuous evidence collection (MFA coverage, SSO/SCIM status, access reviews, audit integrity, backups and restore tests, vulnerability scans, change history); auditor export | on a sample install `tenantry check` lists every gap with its fix; fixing them raises the score; the SOC 2 evidence package exports with timestamps |
+| **TS22 Readiness I: controls and evidence** | control packs (SOC 2, ISO 27001, GDPR, HIPAA, EU AI Act logging/oversight) mapped to module settings; `matura check` readiness score with gap → fix links; continuous evidence collection (MFA coverage, SSO/SCIM status, access reviews, audit integrity, backups and restore tests, vulnerability scans, change history); auditor export | on a sample install `matura check` lists every gap with its fix; fixing them raises the score; the SOC 2 evidence package exports with timestamps |
 | **TS23 Readiness II: documents and trust** | policy templates filled from configuration, public trust page, pre-filled security questionnaire answers (CAIQ / SIG Lite style), readiness view in the platform and tenant consoles | a generated policy set and questionnaire match the install's real settings; trust page renders |
-| **TS24 AgentCanvas on Tenantry** | AgentCanvas adopts Identity, Tenancy (workspace columns + RLS on its tables, its doc 18 T5), Access, Admin portal, Audit forwarding, Backup, Privacy and the AI readiness pack; migrates members and keys; keeps its own deployment | AgentCanvas runs on Tenantry in staging with existing data migrated; its cross-tenant suite passes with app checks off; `tenantry check` on AgentCanvas shows SOC 2 controls met except organisational ones |
+| **TS24 AgentCanvas on Matura** | AgentCanvas adopts Identity, Tenancy (workspace columns + RLS on its tables, its doc 18 T5), Access, Admin portal, Audit forwarding, Backup, Privacy and the AI readiness pack; migrates members and keys; keeps its own deployment | AgentCanvas runs on Matura in staging with existing data migrated; its cross-tenant suite passes with app checks off; `matura check` on AgentCanvas shows SOC 2 controls met except organisational ones |
 | **TS25 Adoption kit and 1.0** | public demo; migration guides and import tools from Auth0, Clerk and plain Keycloak; comparison against WorkOS, Frontegg and Vanta/Drata; integration quick-starts for FastAPI, Django, Express, Next.js, Go; operator, developer and security docs; air-gapped bundle; upgrade tests; release 1.0 (LTS) | fresh air-gapped install succeeds; each migration works on sample data; 1.0 signed release published |
 
 **Version 1.0 = TS1–TS25:** the nine modules of doc 16 (Identity, Tenancy, Access, Admin portal, Audit, Backup,
 Privacy, Readiness, Entitlements), SDKs, Compose and Helm install (also as a drop-in next to an existing Keycloak),
-HA and DR for Tenantry itself, a security review, and AgentCanvas running on it. Product definition: doc 16.
+HA and DR for Matura itself, a security review, and AgentCanvas running on it. Product definition: doc 16.
 
 ## After 1.0 — optional modules
 
@@ -76,7 +76,7 @@ HA and DR for Tenantry itself, a security review, and AgentCanvas running on it.
 | **M2 More control packs** | PCI DSS SAQ helpers, NIST 800-53, NIS 2, DORA, CSA STAR | per pack |
 | **M3 Active-active by tenant, Zitadel adapter, Backstage plug-in, mobile SDKs** | doc 08 §4, ADR 0001 plan B, doc 05 §4, Swift/Kotlin | per module |
 
-App hosting (earlier "M2") is dropped: Tenantry never runs the apps (doc 16 §2).
+App hosting (earlier "M2") is dropped: Matura never runs the apps (doc 16 §2).
 
 ## What changes in AgentCanvas
 

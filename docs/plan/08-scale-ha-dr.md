@@ -18,7 +18,7 @@
 |---|---|
 | Envoy Gateway | horizontal; HPA on CPU and connections; regional anycast or DNS load balancing in front |
 | Keycloak | stateless pods with distributed Infinispan caches; sessions in external Infinispan (persistent sessions) so pods can scale freely; HPA on CPU and request rate; separate node pool; database connection pooling; realm and client caches warmed; benchmarks with the Keycloak benchmark suite (k6/Gatling) every release |
-| `tenantryd` | stateless; HPA/KEDA on RPS and latency; read replicas for list endpoints; grants cached in Valkey with event invalidation |
+| `maturad` | stateless; HPA/KEDA on RPS and latency; read replicas for list endpoints; grants cached in Valkey with event invalidation |
 | Workers (Temporal) | KEDA on task-queue backlog; per-tier task queues for fairness |
 | OpenFGA | stateless servers on Postgres, horizontal; check cache; per-tenant stores keep models small |
 | Postgres (control, Keycloak) | CNPG cluster (1 primary + 2 sync/async replicas across zones), PgBouncer; vertical scaling first, then read replicas; partition large tables (audit, usage) by time; sharding with Citus or tenant-to-cluster mapping when one primary is not enough |
@@ -48,7 +48,7 @@ run per region; the directory and platform admin are global (replicated).
 
 | Mode | How | Trade-off |
 |---|---|---|
-| **Active-passive** (1.0) | primary region serves; standby region receives CNPG replica clusters (WAL shipping via object storage or streaming), Infinispan cross-site for Keycloak, NATS mirrors, object-storage replication; failover runbook + `tenantry dr failover` promotes the standby and flips DNS | simple, RPO minutes, RTO < 1 h |
+| **Active-passive** (1.0) | primary region serves; standby region receives CNPG replica clusters (WAL shipping via object storage or streaming), Infinispan cross-site for Keycloak, NATS mirrors, object-storage replication; failover runbook + `matura dr failover` promotes the standby and flips DNS | simple, RPO minutes, RTO < 1 h |
 | **Active-active by tenant** (1.x) | each tenant has a home region (residency) and is served there; each region is primary for its tenants and standby for another region's; global directory replicated | no cross-region write conflicts; a region loss affects only its tenants until failover |
 | **Keycloak multi-site** | Keycloak's documented multi-site setup: two sites, synchronously replicated database, external Infinispan with cross-site replication, load balancer health-based routing | needs low-latency link between sites; manual resync steps after link failure (documented upstream) |
 

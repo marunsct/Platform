@@ -2,7 +2,7 @@
 
 ## 1. Licence policy (ADR 0002)
 
-- Tenantry's own code: **Apache-2.0** (patent grant, enterprise-friendly, lets anyone host and modify).
+- Matura's own code: **Apache-2.0** (patent grant, enterprise-friendly, lets anyone host and modify).
 - Dependencies and bundled components: OSI-approved only. Allowed without review: Apache-2.0, MIT, BSD, ISC, MPL-2.0,
   PostgreSQL, Zlib. Allowed as separate unmodified services or tools only, with a permissive alternative documented:
   AGPL-3.0, GPL, LGPL (e.g. Grafana, Citus, ClamAV, k6). Not allowed: BSL, SSPL, Elastic License, Commons Clause, any

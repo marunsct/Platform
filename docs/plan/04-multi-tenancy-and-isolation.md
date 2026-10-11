@@ -4,7 +4,7 @@
 
 | Concept | Meaning |
 |---|---|
-| **Installation** | one Tenantry deployment, run by a platform operator (you, or anyone hosting it) |
+| **Installation** | one Matura deployment, run by a platform operator (you, or anyone hosting it) |
 | **Tenant** | a customer account. Kinds: `company` (an organisation), `shared` (one per installation, holds individual users), `personal` (optional, if an operator prefers GitHub-style personal accounts) |
 | **Workspace** | where an app keeps data; the isolation unit for data. A company has one or more; each individual in the shared tenant gets a private personal workspace |
 | **App instance** | an app's deployment serving one or many tenants |
@@ -30,11 +30,11 @@ keep the old copy read-only for 7 days.
 - Every tenant-owned table: `tenant_id` and `workspace_id` `NOT NULL`, composite foreign keys
   `(workspace_id, parent_id) → parent(workspace_id, id)` so a child can never point into another workspace.
 - `ALTER TABLE … ENABLE ROW LEVEL SECURITY; ALTER TABLE … FORCE ROW LEVEL SECURITY;` with policy
-  `USING (workspace_id = current_setting('tenantry.workspace_id', true)::text)` (and a tenant-level variant for
+  `USING (workspace_id = current_setting('matura.workspace_id', true)::text)` (and a tenant-level variant for
   tenant-wide tables). No context set → no rows.
 - Apps connect as a role that owns nothing and has no `BYPASSRLS`; migrations run as the owner role; a separate
   audited `maintenance` role is the only bypass.
-- The SDK sets `SET LOCAL tenantry.tenant_id / workspace_id / user_id` at the start of each transaction; works with
+- The SDK sets `SET LOCAL matura.tenant_id / workspace_id / user_id` at the start of each transaction; works with
   PgBouncer transaction pooling. Background jobs set it from the job's row. Public credentials (share links, webhooks,
   API keys) resolve the workspace first.
 - SDK helpers: Alembic/Goose/Prisma migration helpers that add the columns, backfill, FKs and policies; a linter in
@@ -51,7 +51,7 @@ keep the old copy read-only for 7 days.
 | Object storage | bucket per tenant (silo) or prefix per tenant with per-prefix IAM policies; server-side encryption with the tenant's key; presigned URLs scoped and short-lived |
 | Cache (Valkey) | key prefix `t:<tenant>:`; ACL users per app; no shared mutable keys across tenants |
 | Search (OpenSearch) | index per tenant for large tenants, or document-level security filtered by tenant |
-| Events (NATS) | subjects `tenantry.<tenant>.>`; accounts per app; JetStream streams with subject filters; tenants can only subscribe to their own subjects |
+| Events (NATS) | subjects `matura.<tenant>.>`; accounts per app; JetStream streams with subject filters; tenants can only subscribe to their own subjects |
 | Vectors / AI data | always filtered by workspace in the query; per-tenant collections for silo |
 | Logs and traces | `tenant_id` attribute; tenant-facing views filtered; PII scrubbing in the OpenTelemetry Collector |
 | Backups | encrypted per tenant key in silo tier, so a tenant's backup can be shredded independently |

@@ -7,7 +7,7 @@ The control plane drives Kubernetes (operator, Cluster API), Keycloak, OpenFGA, 
 others to run.
 
 ## Decision
-Write `tenantryd`, workers, operator and CLI in Go. Keycloak extensions in Java. Consoles in React/TypeScript.
+Write `maturad`, workers, operator and CLI in Go. Keycloak extensions in Java. Consoles in React/TypeScript.
 SDKs in Python, TypeScript, Go (and React UI kit).
 
 ## Alternatives

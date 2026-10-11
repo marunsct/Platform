@@ -43,7 +43,7 @@
   `request_id`, `trace_id`, `before/after` diffs (redacted for secrets).
 - **Integrity:** append-only table (no UPDATE/DELETE grants), each record carries `prev_hash` and `hash` (SHA-256 per
   tenant chain); a signed checkpoint every hour anchored to object storage with object lock (WORM) and optionally
-  to a public transparency log (Sigstore Rekor); `tenantry audit verify` checks the chain.
+  to a public transparency log (Sigstore Rekor); `matura audit verify` checks the chain.
 - **Retention:** platform default 1 year online + 7 years archive (configurable per plan), legal hold per tenant.
 - **Access:** tenant auditors see their tenant; platform auditors see staff actions; nobody can delete.
 - **Export:** live streams to customer SIEMs (syslog RFC 5424 over TLS, HTTPS webhook, S3-compatible, Kafka,
@@ -51,10 +51,10 @@
 
 ## 4. Compliance readiness
 
-Tenantry cannot make an operator compliant by itself, but it ships the controls, evidence and documents so an
+Matura cannot make an operator compliant by itself, but it ships the controls, evidence and documents so an
 operator can pass audits quickly.
 
-| Framework | What Tenantry provides |
+| Framework | What Matura provides |
 |---|---|
 | **SOC 2 Type II** | control mapping (CC6 logical access, CC7 operations, CC8 change, A1 availability, C1 confidentiality), evidence export (access reviews, MFA coverage, change history, backup and restore tests, vulnerability SLAs), policies templates |
 | **ISO/IEC 27001:2022** | Annex A mapping, statement-of-applicability template, risk register template |

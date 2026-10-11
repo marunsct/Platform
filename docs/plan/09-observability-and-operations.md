@@ -25,13 +25,13 @@ Every signal carries `tenant_id`, `app`, `region`, `cell`, `version` so incident
 
 | Task | How |
 |---|---|
-| Install | `tenantry install` (wraps Helm/operator) with a guided config: domain, regions, identity providers, SMTP, object storage, KMS; Compose for evaluation |
+| Install | `matura install` (wraps Helm/operator) with a guided config: domain, regions, identity providers, SMTP, object storage, KMS; Compose for evaluation |
 | Upgrades | semantic versions; the operator upgrades components in order (databases → Keycloak → control plane → consoles) with pre-flight checks, automatic backups before upgrade, canary pods, rollback; Keycloak upgrades follow upstream migration notes and are tested in CI with production-like data |
 | Configuration | GitOps via Argo CD; drift detection; all settings also available through the API |
 | Certificates | cert-manager with expiry alerts at 30/7/1 days |
 | Secrets rotation | scheduled rotation for DB credentials (dynamic), signing keys (Keycloak key rotation with overlap), SMTP and IdP secrets reminders |
 | Status page | Gatus probes + public status page; incident notes written from the platform console; per-tenant notifications for incidents affecting their cell |
-| Support bundle | `tenantry support bundle` collects versions, configs (redacted), recent logs and health for debugging |
+| Support bundle | `matura support bundle` collects versions, configs (redacted), recent logs and health for debugging |
 | Runbooks | one per alert, in `docs/admin/runbooks/`, linked from alerts |
 | Maintenance windows | per region; tenants notified; zero-downtime is the default so windows are rare |
 | Cost management | per-tenant resource usage (OpenCost, Apache-2.0) feeds the platform console and billing |

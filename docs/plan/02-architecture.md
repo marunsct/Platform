@@ -8,11 +8,11 @@
                          Envoy Gateway (TLS, Coraza WAF, rate limits, ext-authz)
           +-------------------+-------------------+--------------------+-------------------+
           |                   |                   |                    |                   |
-   Keycloak cluster     tenantryd API        Consoles (static)    Ory Polis           Hosted apps
+   Keycloak cluster     maturad API        Consoles (static)    Ory Polis           Hosted apps
    (login, tokens,      (control plane)      tenant / platform /  (SAML bridge,       (AgentCanvas,
     MFA, brokering)          |               account / developer   SCIM endpoints)     your next app)
           |                  |                                         |                    |
-   Infinispan        +-------+-------+--------+---------+---------+    |          tenantry SDK in each app
+   Infinispan        +-------+-------+--------+---------+---------+    |          matura SDK in each app
           |          |       |       |        |         |         |    |          (verify token, roles,
      Postgres     Postgres OpenFGA  OpenBao  NATS    Temporal  OpenMeter|           RLS context)
      (keycloak)   (control) (authz) (keys)  (events) (workflows)(usage) |
@@ -27,21 +27,21 @@ Planes:
 |---|---|---|
 | **Edge** | Envoy Gateway, WAF, certificates, DDoS rate limits | replicas per region |
 | **Identity plane** | Keycloak + Infinispan + its Postgres; Ory Polis | Keycloak cluster per region (multi-site) |
-| **Control plane** | `tenantryd` API, workers, Temporal, OpenFGA, OpenBao, NATS, OpenMeter, consoles | stateless replicas + HA stores |
+| **Control plane** | `maturad` API, workers, Temporal, OpenFGA, OpenBao, NATS, OpenMeter, consoles | stateless replicas + HA stores |
 | **App plane** | the apps tenants use; shared pools or per-tenant instances | namespace, vCluster or dedicated cluster per tenant (doc 04) |
-| **Management plane** | `tenantry-operator`, Argo CD, Cluster API, backups, observability | one per installation (plus per region) |
+| **Management plane** | `matura-operator`, Argo CD, Cluster API, backups, observability | one per installation (plus per region) |
 
 ## 2. Components we build
 
 | Component | Language | Responsibility |
 |---|---|---|
-| `tenantryd` | Go | REST + gRPC API (OpenAPI 3.1), tenants, workspaces, members, invitations, apps, roles, entitlements, audit, webhooks, SCIM fan-out, domain verification, data export/delete; transactional outbox to NATS |
-| `tenantry-worker` | Go (Temporal workers) | long-running flows: tenant provisioning (DB, namespace, keys, Keycloak org, OpenFGA store), onboarding emails, offboarding, crypto-shredding, export, region moves |
-| `tenantry-operator` | Go (controller-runtime) | CRDs `Tenant`, `TenantApp`, `TenantDatabase`, `Installation`; reconciles dedicated resources, backups, upgrades |
+| `maturad` | Go | REST + gRPC API (OpenAPI 3.1), tenants, workspaces, members, invitations, apps, roles, entitlements, audit, webhooks, SCIM fan-out, domain verification, data export/delete; transactional outbox to NATS |
+| `matura-worker` | Go (Temporal workers) | long-running flows: tenant provisioning (DB, namespace, keys, Keycloak org, OpenFGA store), onboarding emails, offboarding, crypto-shredding, export, region moves |
+| `matura-operator` | Go (controller-runtime) | CRDs `Tenant`, `TenantApp`, `TenantDatabase`, `Installation`; reconciles dedicated resources, backups, upgrades |
 | Keycloak extensions | Java | token mapper (tenant, workspace, app roles), required actions (temporary password with expiry, verify alternate address, accept terms), event listener → NATS, tenant-scoped admin REST, risk-based login hooks, themes |
 | Consoles | React + TypeScript | tenant admin, platform admin, account portal, developer portal (doc 05) |
 | SDKs | Python, TypeScript, Go; React UI kit | doc 11 |
-| CLI `tenantry` | Go | install, tenants, apps, backups, support bundle |
+| CLI `matura` | Go | install, tenants, apps, backups, support bundle |
 | OpenTofu provider | Go | manage tenants, apps, roles as code |
 
 Why Go for the control plane: the Kubernetes ecosystem (operator, Cluster API, client libraries) is Go; single static
@@ -80,8 +80,8 @@ Every tenant-owned row carries `tenant_id`; RLS is on for the control plane itse
 
 - Access token (JWT, RS256/ES256, 5 minutes) issued by Keycloak with claims: `sub`, `email`, `email_verified`,
   `tid` (tenant), `wid` (current workspace, when the client asks for one), `roles` for the calling app's client
-  scoped to that workspace (from the Tenantry mapper, cached), `amr`/`acr` (MFA level), `sid`.
-- Large role sets are not put in tokens; the SDK fetches grants from `tenantryd` with a 60 s cache invalidated by
+  scoped to that workspace (from the Matura mapper, cached), `amr`/`acr` (MFA level), `sid`.
+- Large role sets are not put in tokens; the SDK fetches grants from `maturad` with a 60 s cache invalidated by
   events.
 - Refresh tokens rotate; reuse detection revokes the family. Token exchange (RFC 8693) for service-to-service calls
   between apps on behalf of a user. DPoP (RFC 9449) optional for public clients.
@@ -93,10 +93,10 @@ Every tenant-owned row carries `tenant_id`; RLS is on for the control plane itse
   grants, service accounts, API keys, domains, identity providers, policies, sessions, audit events, entitlements,
   usage, webhooks, exports.
 - **Admin API** `/admin/v1/...` platform-only (tenants lifecycle, impersonation, plans, feature flags).
-- **SCIM 2.0** `/scim/v2/{tenant}/Users|Groups` (served by Ory Polis or `tenantryd`, writes through `tenantryd`).
+- **SCIM 2.0** `/scim/v2/{tenant}/Users|Groups` (served by Ory Polis or `maturad`, writes through `maturad`).
 - **Check API** `/v1/check` (is subject S allowed relation R on object O, via OpenFGA), batch check, list objects.
 - **gRPC** mirror of the hot paths (grants, check) for low latency.
-- **Events** CloudEvents 1.0 on NATS subjects `tenantry.<tenant>.<type>` and signed webhooks (HMAC-SHA256,
+- **Events** CloudEvents 1.0 on NATS subjects `matura.<tenant>.<type>` and signed webhooks (HMAC-SHA256,
   timestamps, retries with backoff, dead-letter, replay from the console).
 - Versioning: URL major version; additive changes only within a major; deprecations announced two minor releases
   ahead with `Sunset` headers.
@@ -105,7 +105,7 @@ Every tenant-owned row carries `tenant_id`; RLS is on for the control plane itse
 
 | Shape | For | How |
 |---|---|---|
-| **Evaluate** | laptop, demo | `docker compose up`: Keycloak, tenantryd, consoles, Postgres, Valkey, NATS, Mailpit, SeaweedFS, OpenFGA, OpenBao (dev) |
+| **Evaluate** | laptop, demo | `docker compose up`: Keycloak, maturad, consoles, Postgres, Valkey, NATS, Mailpit, SeaweedFS, OpenFGA, OpenBao (dev) |
 | **Small** | up to ~10k users | one Kubernetes cluster, Helm chart, CNPG with 3 instances, single region, daily+PITR backups |
 | **Standard** | up to ~1M users | one region across 3 zones, autoscaling, separate node pools for identity, control and apps, Capsule/vCluster tenancy |
 | **Hyperscale** | millions of users, many regions | multi-cluster, per-region identity and control planes, global tenant directory, NATS super-cluster, Karmada or Argo CD ApplicationSets across clusters, silo clusters for large tenants (doc 08) |
@@ -114,8 +114,8 @@ Every tenant-owned row carries `tenant_id`; RLS is on for the control plane itse
 ## 7. Repository layout
 
 ```
-tenantry/
-  cmd/ tenantryd, tenantry-worker, tenantry-operator, tenantry (CLI)
+matura/
+  cmd/ maturad, matura-worker, matura-operator, matura (CLI)
   internal/ ...                         # Go packages
   api/ openapi.yaml, proto/
   keycloak/ extensions/ (Java, Maven), themes/ (Keycloakify), realm/ (realm-as-code)

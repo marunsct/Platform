@@ -4,26 +4,26 @@
 
 ## 1. The vision in one sentence
 
-**Tenantry makes any open-source app enterprise-ready.** You add one SDK and a set of self-hosted services, and your
+**Matura makes any open-source app enterprise-ready.** You add one SDK and a set of self-hosted services, and your
 app gets the multi-tenancy, security, audit, backup, privacy and compliance controls that business buyers demand,
 plus the evidence to prove it in a security review or audit.
 
 Building a prototype is now easy. Selling it to a business is not, because the buyer asks: *Can we use our own SSO?
 Is our data separated from other customers? Who did what, and can we export the log? Are there backups, and have you
 tested a restore? Can you delete our data? Do you meet SOC 2 / ISO 27001 / GDPR?* Each answer is weeks of work that
-has nothing to do with the app's idea. Tenantry answers all of them once, for every app.
+has nothing to do with the app's idea. Matura answers all of them once, for every app.
 
 ## 2. What it is not
 
-- **Not a PaaS.** Tenantry never runs your app. Your app stays wherever you run it: a laptop, a VM, Docker Compose,
-  Kubernetes, any cloud. Tenantry runs next to it as a few services plus an SDK inside the app. (Earlier drafts had an
+- **Not a PaaS.** Matura never runs your app. Your app stays wherever you run it: a laptop, a VM, Docker Compose,
+  Kubernetes, any cloud. Matura runs next to it as a few services plus an SDK inside the app. (Earlier drafts had an
   app-hosting module; it is dropped. Doc 06 now covers integrating apps, not hosting them.)
 - **Not just a login server.** Sign-in is one of nine modules.
 - **Not a hosted service.** Everything is open source (Apache-2.0) and self-hosted. Users keep full control: their
   data stays in their own databases, nothing phones home, every piece speaks open standards (OIDC, SAML, SCIM,
   Postgres, S3, CloudEvents), so they can leave at any time.
 
-The analogy: what Stripe did for payments, Tenantry does for enterprise readiness, but open source and on your own
+The analogy: what Stripe did for payments, Matura does for enterprise readiness, but open source and on your own
 infrastructure.
 
 ## 3. The enterprise checklist, and the module that answers each item
@@ -46,7 +46,7 @@ An app can adopt modules one at a time; Identity + Tenancy + Audit is the usual 
 
 1. **Control packs**: SOC 2, ISO 27001, GDPR, HIPAA, and for AI apps the EU AI Act logging and human-oversight
    duties. Each control is mapped to the module setting that satisfies it.
-2. **`tenantry check`**: inspects the installation (and optionally the app's repository and deployment) and shows a
+2. **`matura check`**: inspects the installation (and optionally the app's repository and deployment) and shows a
    readiness score: which controls are met, which are not, and the exact module or setting that closes each gap.
 3. **Continuous evidence**: MFA coverage, SSO and SCIM status, access-review sign-offs, audit-log integrity checks,
    backup and restore-test results, vulnerability scan results, change history. Collected automatically, kept with
@@ -60,7 +60,7 @@ Readiness does not replace an auditor; it makes the app ready for one and remove
 
 ## 5. Who else is in this space
 
-| Product | What it covers | Gap Tenantry fills |
+| Product | What it covers | Gap Matura fills |
 |---|---|---|
 | WorkOS, Frontegg, Clerk, Descope, PropelAuth | identity and some admin-portal features | hosted only, priced per feature or connection; no backups, privacy or compliance evidence |
 | Keycloak, Zitadel, Logto, Authentik | open-source identity | no customer admin portal, tenancy helpers, backup, audit evidence or readiness |
@@ -78,7 +78,7 @@ AgentCanvas is the first app and the proof. To sell AgentCanvas to businesses it
 1. Identity with SSO, SCIM and MFA (replaces its own OIDC code).
 2. Tenancy: workspace columns and row-level security on its tables (AgentCanvas's own T5 work) and per-tenant keys
    (replaces its org data keys).
-3. Access: its existing roles (admin, builder, reviewer, viewer) registered with Tenantry.
+3. Access: its existing roles (admin, builder, reviewer, viewer) registered with Matura.
 4. Admin portal instead of its own members page.
 5. Audit: its run and publish events forwarded to the tenant's audit log.
 6. Backup: its Postgres and workspace files backed up with restore tests.
@@ -92,7 +92,7 @@ revocable access.
 ## 7. What this changes in the plan
 
 - Doc 13: Readiness becomes two sprints inside 1.0; the Backup module must work without Kubernetes; app hosting is
-  dropped (not just postponed). Kubernetes Helm charts remain only as one way to install Tenantry itself.
+  dropped (not just postponed). Kubernetes Helm charts remain only as one way to install Matura itself.
 - Docs 00, 06, README: wording aligned with this definition.
-- The working name "Tenantry" undersells the scope (it sounds like tenancy only). Name is still the owner's choice
-  (doc 14, decision 2).
+- Renamed from "Tenantry" (which sounded like tenancy only) to **Matura**, Latin for "ripe": the app matures from
+  prototype to market-ready (doc 14, decision 2).

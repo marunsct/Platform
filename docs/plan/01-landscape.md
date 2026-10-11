@@ -11,7 +11,7 @@ Licences as reported in October 2026. Several projects changed licence in 2021â€
 | Keycloak | Apache-2.0 | OIDC/OAuth 2.1, SAML 2.0, LDAP/AD, identity brokering (Google, GitHub, Microsoft, Apple, any OIDC/SAML), TOTP, WebAuthn/passkeys, required actions, brute-force detection, Organizations (25+, usable in 26.x), multi-site HA with external Infinispan; SCIM is experimental/preview and realm-scoped | **Adopt** (core) |
 | Infinispan | Apache-2.0 | Keycloak's distributed cache; cross-site replication | **Adopt** (with Keycloak) |
 | Keycloakify | MIT | build Keycloak themes in React | **Adopt** (themes) |
-| Phase Two Keycloak extensions (keycloak-orgs etc.) | Elastic License v2 (since 2023) | organisations, per-org SCIM; ELv2 forbids offering as a managed service | **Avoid**; Tenantry writes Apache-2.0 equivalents |
+| Phase Two Keycloak extensions (keycloak-orgs etc.) | Elastic License v2 (since 2023) | organisations, per-org SCIM; ELv2 forbids offering as a managed service | **Avoid**; Matura writes Apache-2.0 equivalents |
 | Zitadel | AGPL-3.0 (v3+) | first-class multi-tenancy, event-sourced | **Option** (plan B behind SDK) |
 | Authentik | MIT + source-available enterprise directory | | Avoid for required features |
 | Logto | MPL-2.0 | Organizations, good DX | Avoid (fit), reference for UX |
@@ -78,7 +78,7 @@ Licences as reported in October 2026. Several projects changed licence in 2021â€
 | Cluster API | Apache-2.0 | creates dedicated clusters | **Adopt** (silo tier) |
 | Karmada | Apache-2.0, CNCF | multi-cluster scheduling | Option (multi-region) |
 | Knative Serving | Apache-2.0, CNCF graduated | scale-to-zero app services | Option (app hosting) |
-| KubeVela | Apache-2.0, CNCF | app delivery model (OAM) | Option; Tenantry's app manifest is simpler |
+| KubeVela | Apache-2.0, CNCF | app delivery model (OAM) | Option; Matura's app manifest is simpler |
 | Coolify | Apache-2.0 | single-server PaaS | Not a fit (no multi-tenant control plane), reference for UX |
 | Dokploy | licence unclear | | Avoid |
 | Backstage | Apache-2.0, CNCF | developer portal | Option (developer portal plug-in) |

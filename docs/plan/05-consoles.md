@@ -1,6 +1,6 @@
 # 05 — Consoles
 
-All consoles are one React application with four areas, built from the shared UI kit (`@tenantry/react`), themable
+All consoles are one React application with four areas, built from the shared UI kit (`@matura/react`), themable
 per installation and per tenant (logo, colours, custom domain), light and dark, keyboard accessible (WCAG 2.2 AA),
 translated (i18n from day one). Every action calls the public or admin API, so anything in a console is also
 scriptable.

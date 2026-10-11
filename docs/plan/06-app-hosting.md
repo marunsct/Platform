@@ -1,20 +1,20 @@
-# 06 — Hosting apps on Tenantry
+# 06 — Hosting apps on Matura
 
-> **Scope (2026-10-11, doc 16):** Tenantry does not host apps. Read this document as *integrating* an app: the
+> **Scope (2026-10-11, doc 16):** Matura does not host apps. Read this document as *integrating* an app: the
 > manifest's auth, roles, tenancy, events and entitlements sections, the "what every app gets" list and the AgentCanvas
 > table apply. The `hosting` section of the manifest and §2–4 (deploying, marketplace) are dropped from the plan.
 
-Two ways to use Tenantry, and an operator can mix them:
+Two ways to use Matura, and an operator can mix them:
 
-1. **Identity and tenancy only:** an app runs anywhere (its own cloud, Vercel, a VM) and uses Tenantry for sign-in,
+1. **Identity and tenancy only:** an app runs anywhere (its own cloud, Vercel, a VM) and uses Matura for sign-in,
    tenants, roles, audit and billing through the SDKs.
-2. **Full platform:** the app also runs on Tenantry's Kubernetes app plane, which deploys it, scales it, isolates
+2. **Full platform:** the app also runs on Matura's Kubernetes app plane, which deploys it, scales it, isolates
    tenants, backs it up and offers it in the tenant console.
 
 ## 1. App manifest
 
 ```yaml
-apiVersion: tenantry.dev/v1
+apiVersion: matura.dev/v1
 kind: App
 metadata: { name: agentcanvas, displayName: AgentCanvas }
 spec:
@@ -41,7 +41,7 @@ spec:
       - name: api
         image: ghcr.io/marunsct/agentcanvas-api:0.22.0
         port: 8000
-        env: { AGENTCANVAS_AUTH_MODE: tenantry }
+        env: { AGENTCANVAS_AUTH_MODE: matura }
         resources: { cpu: "500m", memory: 1Gi }
         autoscale: { min: 2, max: 50, keda: { type: prometheus, query: "rate(http_requests_total[1m])", threshold: "100" } }
         health: { readiness: /healthz/ready, liveness: /healthz/live }
@@ -55,7 +55,7 @@ spec:
     backups: { schedule: "0 * * * *", retain: 30d, pitr: true }
 ```
 
-`tenantry app apply agentcanvas.yaml` validates it, creates the Keycloak client, registers roles and permissions,
+`matura app apply agentcanvas.yaml` validates it, creates the Keycloak client, registers roles and permissions,
 loads the OpenFGA model, sets up meters and (for hosted apps) creates the deployment templates.
 
 ## 2. Deploying hosted apps
@@ -88,12 +88,12 @@ app; third-party apps get scoped OAuth consent screens ("App X wants to read you
 
 ## 5. AgentCanvas as the first app
 
-| AgentCanvas today | On Tenantry |
+| AgentCanvas today | On Matura |
 |---|---|
-| `security/auth.py` OIDC verifier | `tenantry` Python SDK verifier |
-| `organization`, `app_user`, `membership`, invitations | tenants, workspaces, members, invitations in Tenantry; AgentCanvas keeps `organization` as its workspace row and a profile cache |
-| members/audit pages | links to the tenant console; app audit stays in AgentCanvas and is forwarded to Tenantry's audit stream |
+| `security/auth.py` OIDC verifier | `matura` Python SDK verifier |
+| `organization`, `app_user`, `membership`, invitations | tenants, workspaces, members, invitations in Matura; AgentCanvas keeps `organization` as its workspace row and a profile cache |
+| members/audit pages | links to the tenant console; app audit stays in AgentCanvas and is forwarded to Matura's audit stream |
 | app-level `org_scope` checks | kept as a second layer behind RLS |
 | `org_data_key` envelope encryption | OpenBao transit key per tenant (migration rewraps keys) |
 | own rate limits | gateway limits per tenant + its own per-deployment limits |
-| Docker/Helm deploy kit | Tenantry app manifest; the existing exports keep working standalone |
+| Docker/Helm deploy kit | Matura app manifest; the existing exports keep working standalone |

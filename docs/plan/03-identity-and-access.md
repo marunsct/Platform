@@ -13,14 +13,14 @@
 | Service accounts and API keys | per workspace | doc §10 |
 
 One person = one Keycloak user across all apps and tenants. Profile (name, locale, avatar) lives in Keycloak and is
-cached by `tenantryd`.
+cached by `maturad`.
 
 ## 2. Self-service sign-up
 
 1. `/signup` (themed Keycloak page): email + password, or a social button. CAPTCHA (self-hosted, e.g. ALTCHA, MIT)
    appears only when the risk engine sees abuse (rate, IP reputation, disposable domains).
 2. Verify email (link valid 24 h, single use).
-3. First-sign-in screen (Tenantry required action): **Just me** → joins the platform's **shared tenant** (kind
+3. First-sign-in screen (Matura required action): **Just me** → joins the platform's **shared tenant** (kind
    `shared`) and gets a private personal workspace; **My organisation** → name, optional domain → new tenant (kind
    `company`), the user becomes `owner`, first workspace created, trial plan applied.
 4. If the email's domain is verified by a tenant with routing `sso` or `invite`, the user is sent to that tenant's
@@ -40,7 +40,7 @@ cached by `tenantryd`.
 | Manage | resend, revoke, change roles before acceptance, expiry reminders, audit of every send (never the password itself) |
 | New tenant | the platform admin onboards an owner the same way; the owner gets full rights over the tenant |
 
-Emails go through `tenantryd`'s outbox → SMTP relay (any provider, or Postal), templates per tenant brand and locale,
+Emails go through `maturad`'s outbox → SMTP relay (any provider, or Postal), templates per tenant brand and locale,
 SPF/DKIM/DMARC checks in the platform console, bounce and complaint handling.
 
 ## 4. Sessions
@@ -68,7 +68,7 @@ SPF/DKIM/DMARC checks in the platform console, bounce and complaint handling.
 
 ## 6. Roles
 
-Three levels, all managed by `tenantryd` (Keycloak keeps credentials, not per-tenant roles):
+Three levels, all managed by `maturad` (Keycloak keeps credentials, not per-tenant roles):
 
 | Level | Roles (defaults) | Notes |
 |---|---|---|
@@ -82,12 +82,12 @@ bundles). Group-based grants: groups from SCIM or the IdP map to roles.
 ## 7. Enterprise SSO (per tenant, self-service)
 
 1. Tenant admin opens *Single sign-on*, picks SAML or OIDC, follows a guided setup per IdP (Okta, Microsoft Entra ID,
-   Google Workspace, Ping, ADFS, JumpCloud, OneLogin, generic): Tenantry shows SP metadata/ACS/entity id, the admin
+   Google Workspace, Ping, ADFS, JumpCloud, OneLogin, generic): Matura shows SP metadata/ACS/entity id, the admin
    uploads IdP metadata or enters discovery URL.
 2. Created as a Keycloak identity provider bound to the tenant's Organization (OIDC and SAML), or through Ory Polis
    when the tenant needs SAML features Keycloak's broker lacks; signed assertions required, encrypted assertions
    optional, clock skew 2 min, certificate expiry warnings 30/7/1 days ahead.
-3. **Domain verification** (DNS TXT `_tenantry-challenge.<domain>`), then **home-realm discovery**: users typing an
+3. **Domain verification** (DNS TXT `_matura-challenge.<domain>`), then **home-realm discovery**: users typing an
    email at that domain go straight to their IdP.
 4. **Just-in-time provisioning** with attribute mapping (email, name, groups, department); group-to-role mapping.
 5. Enforcement: "SSO only" disables passwords for the domain's users (break-glass owner account kept, MFA-required).
@@ -97,7 +97,7 @@ bundles). Group-based grants: groups from SCIM or the IdP map to roles.
 ## 8. SCIM 2.0 directory sync
 
 - Endpoint per tenant `/scim/v2/{tenant}` with a bearer token per connection (rotatable), served by Ory Polis or
-  `tenantryd`, written through `tenantryd` so audit, roles and Keycloak stay consistent.
+  `maturad`, written through `maturad` so audit, roles and Keycloak stay consistent.
 - Users: create, update, deactivate (revokes sessions), delete (after retention). Groups: create, rename, membership.
 - Tested against Okta and Entra ID SCIM validators; rate limits per tenant; conflict handling with JIT users
   (match by `externalId`, then verified email).
@@ -107,7 +107,7 @@ bundles). Group-based grants: groups from SCIM or the IdP map to roles.
 
 - One OpenFGA store per tenant (or one store with tenant-prefixed objects for small installs); authorisation model
   per app supplied in the app manifest, e.g. `document: viewer, editor, owner from parent folder`.
-- `tenantryd` writes relationship tuples for workspace membership and grants; apps write their own object tuples
+- `maturad` writes relationship tuples for workspace membership and grants; apps write their own object tuples
   through the SDK (`authz.grant(user, "editor", doc)`), and check with `authz.check(...)` (cached, consistency token
   for read-after-write).
 - Admin console shows "who has access to X" and "what can user Y do" using `list_objects` / `list_users`.
