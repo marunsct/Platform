@@ -23,5 +23,8 @@
 | 14 | [Risks and open decisions](14-risks-and-decisions.md) | What could go wrong and what the owner decides |
 | 15 | [Market and positioning](15-market-and-positioning.md) | Is this a real gap? Competitors, where we stand out, and the narrower 1.0 focus |
 | 16 | [Product definition](16-product-definition.md) | **Start here.** The vision, the nine modules, the Readiness module, competitors, what AgentCanvas needs |
+| 17 | [Performance and concurrency](17-performance-and-concurrency.md) | The app never waits on Matura; caching, fairness, Postgres, audit at 50k events/s, SLO table |
+| 18 | [UI and design system](18-ui-and-design-system.md) | Stack, white-label theming, motion, embeddable widgets, passkey-first sign-in, budgets and gates |
+| 19 | [Research findings and plan changes](19-research-findings.md) | What deep research found (market, buyers, AI rules, agent auth) and the 14 changes adopted |
 
-Decisions: [`../adr/`](../adr/README.md).
+Decisions: [`../adr/`](../adr/README.md). Research with sources: [`../research/`](../research/README.md).

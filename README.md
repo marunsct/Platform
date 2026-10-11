@@ -22,7 +22,8 @@ on your infrastructure.
 | Secrets and per-tenant encryption keys (BYOK) | OpenBao (MPL-2.0) |
 | Usage metering, plans, quotas, entitlements | Matura entitlements + OpenMeter or Kill Bill (Apache-2.0) |
 | Backups of your app's data with automatic restore tests | pgBackRest, CloudNativePG, Velero (MIT / Apache-2.0) |
-| Readiness: SOC 2 / ISO 27001 / GDPR / HIPAA / EU AI Act control packs, readiness score, continuous evidence, policies, trust page | Matura |
+| Agent identity: MCP authorisation, on-behalf-of tokens, agents as revocable tenant members, human-approval logs | Matura on Keycloak + OpenFGA |
+| Readiness: SOC 2 / ISO 27001 / ISO 42001 / GDPR / EU AI Act control packs, readiness score in CI, continuous evidence exported to your GRC tool, policies, trust page | Matura |
 | HA install of Matura itself on Compose or Kubernetes | Kubernetes, CloudNativePG, KEDA, Cilium (Apache-2.0) |
 | SDKs for Python, TypeScript/React and Go; CLI; OpenTofu provider | Matura |
 

@@ -10,7 +10,7 @@
 | Upstream licence changes (as happened to Vault, Terraform, Redis, MinIO, Phase Two) | medium | high | licence gate in CI, quarterly audit, pluggable interfaces for metering, cache, object storage, secrets; prefer foundation-governed projects (CNCF, Linux Foundation) |
 | Security bug in our own code (identity is a high-value target) | medium | very high | no custom crypto or password code; two-person review on identity paths; fuzzing; pen tests; bug bounty; fast security releases |
 | Operating complexity for small adopters | high | medium | Compose and single-cluster shapes, sane defaults, `matura install` wizard, managed-hosting option later |
-| RLS performance on large tables | low | medium | indexes leading with workspace id, partitioning, benchmarks in TS19 |
+| RLS performance on large tables | low | medium | indexes leading with workspace id, partitioning, benchmarks in TS21 |
 | Email deliverability for onboarding | medium | medium | SMTP relay of choice, domain authentication checks, bounce handling |
 | OpenMeter direction after Kong acquisition | medium | low | metering is pluggable; built-in aggregator fallback |
 | Community adoption | medium | medium | great docs, quick-starts, honest comparisons, AgentCanvas as a showcase |

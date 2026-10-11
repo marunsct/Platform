@@ -44,8 +44,8 @@ An app can adopt modules one at a time; Identity + Tenancy + Audit is the usual 
 
 ## 4. The Readiness module (the part nobody else ships)
 
-1. **Control packs**: SOC 2, ISO 27001, GDPR, HIPAA, and for AI apps the EU AI Act logging and human-oversight
-   duties. Each control is mapped to the module setting that satisfies it.
+1. **Control packs**: SOC 2, ISO 27001, ISO 42001 (AI management), GDPR, and for AI apps the EU AI Act logging and
+   human-oversight duties; HIPAA and others after 1.0. Each control is mapped to the module setting that satisfies it.
 2. **`matura check`**: inspects the installation (and optionally the app's repository and deployment) and shows a
    readiness score: which controls are met, which are not, and the exact module or setting that closes each gap.
 3. **Continuous evidence**: MFA coverage, SSO and SCIM status, access-review sign-offs, audit-log integrity checks,
@@ -56,7 +56,9 @@ An app can adopt modules one at a time; Identity + Tenancy + Audit is the usual 
 5. **Trust page and questionnaires**: a public trust page the app can host, and pre-filled answers for common
    security questionnaires (CAIQ, SIG Lite style).
 
-Readiness does not replace an auditor; it makes the app ready for one and removes most of the manual evidence work.
+Readiness does not replace an auditor and never claims to make anyone compliant; it adds the controls, proves them,
+and exports the evidence (OSCAL and JSON) into the compliance tools teams already use: Vanta, Drata, Comp AI, Probo,
+CISO Assistant. `matura check` also runs in CI and suggests fixes as pull requests.
 
 ## 5. Who else is in this space
 
@@ -90,6 +92,8 @@ Later, the agent-identity module (doc 13, M1) lets AgentCanvas agents act on a u
 revocable access.
 
 ## 7. What this changes in the plan
+
+*Later research (doc 19) added agent identity to 1.0, a performance plan (doc 17) and a UI plan (doc 18).*
 
 - Doc 13: Readiness becomes two sprints inside 1.0; the Backup module must work without Kubernetes; app hosting is
   dropped (not just postponed). Kubernetes Helm charts remain only as one way to install Matura itself.
