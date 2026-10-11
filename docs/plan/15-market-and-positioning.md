@@ -1,5 +1,9 @@
 # 15 — Market and positioning
 
+> Refined by [doc 16](16-product-definition.md): the product is the enterprise-readiness layer for any open-source app,
+> of which the self-hosted WorkOS/Frontegg part is the identity and admin-portal half; doc 16 adds Backup, Privacy and
+> Readiness (compliance evidence).
+
 *2026-10-11 · web research; most comparison sources are vendor-written, so treat claims as indicative.*
 
 ## 1. Verdict
@@ -36,7 +40,7 @@ entitlements for any app, built on Keycloak."**
 1. **Version 1.0 focus:** identity on Keycloak, tenants and workspaces, the customer admin portal (tenant console)
    with self-service SSO and SCIM, roles and permissions, audit, entitlements, SDKs, Helm/Compose install,
    backups and HA. This is phases 0–3 plus the operational parts of phase 5 in doc 13.
-2. **App hosting (doc 06 §2–4, now module M2) becomes optional after 1.0.** It is a separate module, not on the critical path.
+2. **App hosting (doc 06 §2–4) is dropped** (refined further in doc 16: Tenantry never runs the apps).
 3. **Add an "agent identity" track after 1.0:** service identities for AI agents, OAuth token exchange for
    on-behalf-of calls, MCP authorisation server support, consent and audit of agent actions per tenant. AgentCanvas
    is the first user.

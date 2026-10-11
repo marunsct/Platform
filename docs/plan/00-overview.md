@@ -1,5 +1,8 @@
 # 00 — Overview and decision
 
+> Read [doc 16, the product definition](16-product-definition.md), first. This document explains the build-versus-adopt
+> decision behind it.
+
 ## 1. Short answer
 
 - **No single open-source product does all of this today.** There are excellent open-source *parts*: identity
@@ -59,14 +62,8 @@
   cluster multi-region for large, with the same images and APIs.
 - **Apps stay decoupled.** Apps talk to Tenantry only through OIDC, the SDKs and documented APIs, never its database.
 
-## 5. Scope of version 1.0 (summary; detail in doc 13, positioning in doc 15)
+## 5. Scope of version 1.0
 
-**Positioning: the open-source WorkOS/Frontegg you can self-host, built on Keycloak.** Version 1.0 covers identity
-(sign-up, social, MFA, sessions, onboarding by email), tenants and workspaces, the customer admin portal with
-self-service SSO and SCIM, roles and fine-grained permissions, the platform console, audit and SIEM export,
-per-tenant keys, RLS helpers, entitlements and metering hooks, SDKs, Helm/Compose install (also as a drop-in next
-to an existing Keycloak), HA with backups and tested restore, multi-region DR (active-passive), AgentCanvas running
-on it, docs and a security review.
-
-**After 1.0, as optional modules:** agent identity (first), app hosting (doc 06), marketplace, active-active
-multi-region.
+See **doc 16 (product definition)**, which supersedes the earlier wording here: Tenantry makes any open-source app
+enterprise-ready through nine self-hosted modules (Identity, Tenancy, Access, Admin portal, Audit, Backup, Privacy,
+Readiness, Entitlements) and an SDK. It is not a PaaS and does not run the apps. Roadmap: doc 13.

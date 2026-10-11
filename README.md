@@ -1,11 +1,11 @@
 # Tenantry
 
-**The open-source WorkOS/Frontegg you can self-host, built on Keycloak. A platform for running multi-tenant apps:** sign-up and sign-in, tenants and
-workspaces, roles and fine-grained permissions, enterprise SSO and SCIM, audit, admin consoles, billing hooks and
-app hosting. It is built only from open-source components, under a permissive licence, so anyone can host their own
-suite of apps on it.
+**Make any open-source app enterprise-ready.** Add one SDK and a set of self-hosted services, and your app gets the
+multi-tenancy, SSO, access control, audit, backups, privacy and compliance controls business buyers demand, plus
+the evidence to prove them. Tenantry never runs your app and never phones home: everything is open source and stays
+on your infrastructure.
 
-> **Status: planning.** Nothing is built yet. Read the plan in [`docs/plan/`](docs/plan/README.md) and the decisions in
+> **Status: planning.** Nothing is built yet. Start with the [product definition](docs/plan/16-product-definition.md), then the plan in [`docs/plan/`](docs/plan/README.md) and the decisions in
 > [`docs/adr/`](docs/adr/README.md). The first app on Tenantry will be [AgentCanvas](https://github.com/marunsct/AgentCanvas).
 > "Tenantry" is a working name; the repository is [marunsct/Platform](https://github.com/marunsct/Platform).
 
@@ -21,7 +21,9 @@ suite of apps on it.
 | Tamper-evident audit log, SIEM export | Tenantry audit service, OpenSearch (Apache-2.0) |
 | Secrets and per-tenant encryption keys (BYOK) | OpenBao (MPL-2.0) |
 | Usage metering, plans, quotas, entitlements | Tenantry entitlements + OpenMeter or Kill Bill (Apache-2.0) |
-| HA install, autoscaling, backups, multi-region; optional app hosting after 1.0 | Kubernetes, CloudNativePG, Argo CD, KEDA, Velero, Cilium (all Apache-2.0) |
+| Backups of your app's data with automatic restore tests | pgBackRest, CloudNativePG, Velero (MIT / Apache-2.0) |
+| Readiness: SOC 2 / ISO 27001 / GDPR / HIPAA / EU AI Act control packs, readiness score, continuous evidence, policies, trust page | Tenantry |
+| HA install of Tenantry itself on Compose or Kubernetes | Kubernetes, CloudNativePG, KEDA, Cilium (Apache-2.0) |
 | SDKs for Python, TypeScript/React and Go; CLI; OpenTofu provider | Tenantry |
 
 ## Licence

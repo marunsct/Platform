@@ -1,8 +1,8 @@
 # 06 — Hosting apps on Tenantry
 
-> **Scope (2026-10-11):** the full-platform hosting in §2–4 is an optional module after 1.0 (doc 13, module M2).
-> Version 1.0 delivers way 1 below (identity and tenancy for apps that run anywhere) and the app manifest's auth,
-> roles, tenancy, events and entitlements sections.
+> **Scope (2026-10-11, doc 16):** Tenantry does not host apps. Read this document as *integrating* an app: the
+> manifest's auth, roles, tenancy, events and entitlements sections, the "what every app gets" list and the AgentCanvas
+> table apply. The `hosting` section of the manifest and §2–4 (deploying, marketplace) are dropped from the plan.
 
 Two ways to use Tenantry, and an operator can mix them:
 
