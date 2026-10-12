@@ -7,7 +7,7 @@ on your infrastructure.
 
 > **Status: planning.** Nothing is built yet. Start with the [product definition](docs/plan/16-product-definition.md), then the plan in [`docs/plan/`](docs/plan/README.md) and the decisions in
 > [`docs/adr/`](docs/adr/README.md). The first app on Matura will be [AgentCanvas](https://github.com/marunsct/AgentCanvas).
-> "Matura" is a working name; the repository is [marunsct/Platform](https://github.com/marunsct/Platform).
+> Contributors and agents: read [HANDOVER.md](HANDOVER.md) first.
 
 ## What it gives an app
 
