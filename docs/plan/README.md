@@ -26,5 +26,6 @@
 | 17 | [Performance and concurrency](17-performance-and-concurrency.md) | The app never waits on Matura; caching, fairness, Postgres, audit at 50k events/s, SLO table |
 | 18 | [UI and design system](18-ui-and-design-system.md) | Stack, white-label theming, motion, embeddable widgets, passkey-first sign-in, budgets and gates |
 | 19 | [Research findings and plan changes](19-research-findings.md) | What deep research found (market, buyers, AI rules, agent auth) and the 14 changes adopted |
+| 20 | [End-to-end delivery plan](20-end-to-end-delivery-plan.md) | Milestones M0–M6; identity and tenancy pulled forward so DevFlow and AgentCanvas sign in early; data placement and the app contract |
 
-Decisions: [`../adr/`](../adr/README.md). Research with sources: [`../research/`](../research/README.md).
+Specifications: [`../spec/`](../spec/README.md). Decisions: [`../adr/`](../adr/README.md). Research with sources: [`../research/`](../research/README.md).

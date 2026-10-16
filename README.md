@@ -5,8 +5,20 @@ multi-tenancy, SSO, access control, audit, backups, privacy and compliance contr
 the evidence to prove them. Matura never runs your app and never phones home: everything is open source and stays
 on your infrastructure.
 
-> **Status: planning.** Nothing is built yet. Start with the [product definition](docs/plan/16-product-definition.md), then the plan in [`docs/plan/`](docs/plan/README.md) and the decisions in
-> [`docs/adr/`](docs/adr/README.md). The first app on Matura will be [AgentCanvas](https://github.com/marunsct/AgentCanvas).
+> **Status: early development.** The control plane (`maturad`) has tenants, workspaces, members, apps, roles and
+> data placements with row-level security; sign-in, invitations, the SDK and provisioning come next. Start with the
+> [product definition](docs/plan/16-product-definition.md), the [delivery plan](docs/plan/20-end-to-end-delivery-plan.md),
+> the [specifications](docs/spec/README.md) and the decisions in [`docs/adr/`](docs/adr/README.md). The first apps on
+> Matura will be [DevFlow](https://github.com/marunsct/DevFlow) and [AgentCanvas](https://github.com/marunsct/AgentCanvas).
+
+## Run it
+
+```bash
+make test        # starts a throwaway local Postgres and runs every test
+make up          # Docker Compose: Postgres, Keycloak (realm "matura"), Mailpit and maturad on :8080
+curl -X POST localhost:8080/v1/tenants -H 'X-Matura-Dev-User: 0192b7a4-5c1e-7d2a-9f00-4b1e2a9c0d11' \
+     -H 'X-Matura-Dev-Email: ana@acme.test' -d '{"slug":"acme","name":"Acme"}'
+```
 > Contributors and agents: read [HANDOVER.md](HANDOVER.md) first.
 
 ## What it gives an app
