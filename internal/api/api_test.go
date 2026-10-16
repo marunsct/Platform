@@ -2,6 +2,7 @@ package api_test
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/marunsct/Platform/internal/api"
 	"github.com/marunsct/Platform/internal/ids"
+	"github.com/marunsct/Platform/internal/secrets"
 	"github.com/marunsct/Platform/internal/store"
 	"github.com/marunsct/Platform/internal/testdb"
 )
@@ -61,7 +63,11 @@ func (c client) must(want int, method, path string, body any) map[string]any {
 
 func setup(t *testing.T) *httptest.Server {
 	pool := testdb.New(t)
-	srv := httptest.NewServer(api.New(store.New(pool), api.DevAuthenticator{},
+	keys, err := secrets.NewLocal(base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{7}, 32)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(api.New(store.New(pool), api.DevAuthenticator{}, keys,
 		slog.New(slog.NewTextHandler(io.Discard, nil))).Handler())
 	t.Cleanup(srv.Close)
 	return srv

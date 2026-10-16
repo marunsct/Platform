@@ -3,6 +3,8 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -18,6 +20,7 @@ import (
 
 	"github.com/marunsct/Platform/internal/api"
 	"github.com/marunsct/Platform/internal/config"
+	"github.com/marunsct/Platform/internal/secrets"
 	"github.com/marunsct/Platform/internal/store"
 )
 
@@ -56,6 +59,20 @@ func run(log *slog.Logger) error {
 	}
 	defer pool.Close()
 
+	kek := cfg.KEK
+	if kek == "" { // only reachable in development (config.Validate)
+		b := make([]byte, 32)
+		if _, err := rand.Read(b); err != nil {
+			return err
+		}
+		kek = base64.StdEncoding.EncodeToString(b)
+		log.Warn("MATURA_KEK is not set: using a random key for this run; stored secrets will not open after a restart")
+	}
+	keys, err := secrets.NewLocal(kek)
+	if err != nil {
+		return err
+	}
+
 	var auth api.Authenticator
 	switch cfg.Auth {
 	case "dev":
@@ -76,7 +93,7 @@ func run(log *slog.Logger) error {
 
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           api.New(store.New(pool), auth, log).Handler(),
+		Handler:           api.New(store.New(pool), auth, keys, log).Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      30 * time.Second,

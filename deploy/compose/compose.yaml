@@ -46,6 +46,7 @@ services:
       MATURA_JWKS_URL: http://keycloak:8180/realms/matura/protocol/openid-connect/certs
       MATURA_DATABASE_URL: postgres://matura_app:matura-app-dev@postgres:5432/matura?sslmode=disable
       MATURA_MIGRATE_DATABASE_URL: postgres://matura_owner:matura-owner-dev@postgres:5432/matura?sslmode=disable
+      MATURA_KEK: bWF0dXJhLWRldmVsb3BtZW50LW9ubHkta2V5LTAwMDE=  # development only; production: openssl rand -base64 32
     ports: ["8080:8080"]
     depends_on:
       postgres: { condition: service_healthy }

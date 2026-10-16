@@ -33,8 +33,11 @@ self-hosted, open standards, nothing phones home).
   any language. ADR 0008 (permission catalogue in the manifest, roles created/edited/deleted in Matura, `perms`
   claim, `matura_app_role` contract table) and ADR 0009 (levels 0–3 over OIDC, JWT, SQL, HTTPS, CloudEvents; SDKs
   optional; conformance kit; sprint TS7e) are written, and role management is built (migration 0002, role API).
-- **Left in TS2:** idempotency keys, OpenAPI document, outbox relay (TS7c), operator endpoints for users, plans and
-  database servers.
+- 2026-10-16: PRs #1 and #2 merged into `main`; development continues in a new PR from `claude/project-thread-nhbr1g`.
+  It adds operator endpoints for plans and database servers (`/admin/v1/plans`, `/admin/v1/db-servers`, with a
+  connection test), envelope-encrypted secrets (`internal/secrets`, AES-256-GCM under `MATURA_KEK`; the admin
+  password is never returned, only a fingerprint), and `Idempotency-Key` on every POST (migration 0003).
+- **Left in TS2:** OpenAPI document (`api/openapi.yaml`), operator endpoints for users; outbox relay moves to TS7c.
 - **Next:** TS4-lite sign-in on Keycloak, TS5 token mapper, TS6 invitations, TS7 Python SDK, TS7b provisioning,
   TS7c contract sync, TS7d DevFlow (doc 20 §3).
 - `main` holds LICENSE, SECURITY.md, CONTRIBUTING.md.

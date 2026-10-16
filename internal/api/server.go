@@ -14,12 +14,14 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/marunsct/Platform/internal/secrets"
 	"github.com/marunsct/Platform/internal/store"
 )
 
 type Server struct {
 	store *store.Store
 	auth  Authenticator
+	keys  secrets.KeyManager
 	log   *slog.Logger
 	seen  sync.Map // user id -> seenProfile, so unchanged profiles skip the database
 }
@@ -31,8 +33,8 @@ type seenProfile struct {
 	at      time.Time
 }
 
-func New(st *store.Store, auth Authenticator, log *slog.Logger) *Server {
-	return &Server{store: st, auth: auth, log: log}
+func New(st *store.Store, auth Authenticator, keys secrets.KeyManager, log *slog.Logger) *Server {
+	return &Server{store: st, auth: auth, keys: keys, log: log}
 }
 
 func (s *Server) Handler() http.Handler {
@@ -66,8 +68,15 @@ func (s *Server) Handler() http.Handler {
 	api.HandleFunc("POST /admin/v1/apps/{slug}/roles", s.createRole)
 	api.HandleFunc("PATCH /admin/v1/apps/{slug}/roles/{name}", s.patchRole)
 	api.HandleFunc("DELETE /admin/v1/apps/{slug}/roles/{name}", s.deleteRole)
+	api.HandleFunc("GET /admin/v1/plans", s.listPlans)
+	api.HandleFunc("PUT /admin/v1/plans/{id}", s.putPlan)
+	api.HandleFunc("GET /admin/v1/db-servers", s.listDBServers)
+	api.HandleFunc("POST /admin/v1/db-servers", s.createDBServer)
+	api.HandleFunc("PATCH /admin/v1/db-servers/{id}", s.patchDBServer)
+	api.HandleFunc("DELETE /admin/v1/db-servers/{id}", s.deleteDBServer)
+	api.HandleFunc("POST /admin/v1/db-servers/{id}/test", s.testDBServer)
 
-	authed := s.authenticate(api)
+	authed := s.authenticate(s.idempotent(api))
 	mux.Handle("/v1/", authed)
 	mux.Handle("/admin/v1/", authed)
 	return mux

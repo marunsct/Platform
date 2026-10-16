@@ -3,7 +3,7 @@ package config
 import "testing"
 
 func TestValidateFailsClosed(t *testing.T) {
-	base := Config{DatabaseURL: "postgres://x", Issuer: "https://id", Auth: "oidc", Env: "production"}
+	base := Config{DatabaseURL: "postgres://x", Issuer: "https://id", Auth: "oidc", Env: "production", KEK: "k"}
 	if err := base.Validate(); err != nil {
 		t.Fatalf("valid config: %v", err)
 	}
@@ -12,6 +12,7 @@ func TestValidateFailsClosed(t *testing.T) {
 		"dev auth in prod":    func(c *Config) { c.Auth = "dev" },
 		"oidc without issuer": func(c *Config) { c.Issuer = "" },
 		"unknown auth":        func(c *Config) { c.Auth = "none" },
+		"no KEK in prod":      func(c *Config) { c.KEK = "" },
 	}
 	for name, mod := range cases {
 		c := base

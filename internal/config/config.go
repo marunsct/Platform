@@ -17,6 +17,7 @@ type Config struct {
 	Audience           string
 	OperatorRole       string // realm role that grants operator scope
 	Auth               string // oidc or dev
+	KEK                string // base64 key-encryption key for stored secrets
 }
 
 func getenv(key, def string) string {
@@ -37,6 +38,7 @@ func FromEnv() (Config, error) {
 		Audience:           getenv("MATURA_AUDIENCE", "matura-api"),
 		OperatorRole:       getenv("MATURA_OPERATOR_ROLE", "matura-operator"),
 		Auth:               getenv("MATURA_AUTH", "oidc"),
+		KEK:                os.Getenv("MATURA_KEK"),
 	}
 	return c, c.Validate()
 }
@@ -45,6 +47,9 @@ func FromEnv() (Config, error) {
 func (c Config) Validate() error {
 	if c.DatabaseURL == "" {
 		return errors.New("MATURA_DATABASE_URL is required")
+	}
+	if c.KEK == "" && c.Env != "development" {
+		return errors.New("MATURA_KEK is required outside development: 32 random bytes, base64 (openssl rand -base64 32)")
 	}
 	switch c.Auth {
 	case "dev":
