@@ -1,0 +1,4 @@
+/maturad
+/bin/
+*.test
+coverage.out

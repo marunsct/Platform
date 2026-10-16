@@ -1,0 +1,57 @@
+{
+  "realm": "matura",
+  "enabled": true,
+  "registrationAllowed": true,
+  "registrationEmailAsUsername": true,
+  "verifyEmail": true,
+  "resetPasswordAllowed": true,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "bruteForceProtected": true,
+  "accessTokenLifespan": 300,
+  "ssoSessionIdleTimeout": 1800,
+  "revokeRefreshToken": true,
+  "refreshTokenMaxReuse": 0,
+  "passwordPolicy": "length(12) and notUsername and notEmail",
+  "smtpServer": { "host": "mailpit", "port": "1025", "from": "no-reply@matura.local" },
+  "roles": {
+    "realm": [
+      { "name": "matura-operator", "description": "Runs this Matura installation (operator console and /admin API)" }
+    ]
+  },
+  "clientScopes": [
+    {
+      "name": "matura-api-audience",
+      "protocol": "openid-connect",
+      "attributes": { "include.in.token.scope": "false" },
+      "protocolMappers": [
+        {
+          "name": "audience matura-api",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": { "included.client.audience": "matura-api", "access.token.claim": "true" }
+        }
+      ]
+    }
+  ],
+  "clients": [
+    {
+      "clientId": "matura-api",
+      "name": "Matura API",
+      "enabled": true,
+      "bearerOnly": true
+    },
+    {
+      "clientId": "matura-console",
+      "name": "Matura consoles",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "redirectUris": ["http://localhost:5173/*"],
+      "webOrigins": ["http://localhost:5173"],
+      "attributes": { "pkce.code.challenge.method": "S256", "post.logout.redirect.uris": "http://localhost:5173/*" },
+      "defaultClientScopes": ["profile", "email", "roles", "matura-api-audience"]
+    }
+  ]
+}

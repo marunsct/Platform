@@ -1,0 +1,100 @@
+// Command maturad is Matura's control plane.
+package main
+
+import (
+	"context"
+	"errors"
+	"log/slog"
+	"net/http"
+	"os"
+	"os/signal"
+	"strings"
+	"syscall"
+	"time"
+
+	"github.com/MicahParks/keyfunc/v3"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/marunsct/Platform/internal/api"
+	"github.com/marunsct/Platform/internal/config"
+	"github.com/marunsct/Platform/internal/store"
+)
+
+func main() {
+	log := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	if err := run(log); err != nil {
+		log.Error("maturad stopped", "err", err)
+		os.Exit(1)
+	}
+}
+
+func run(log *slog.Logger) error {
+	cfg, err := config.FromEnv()
+	if err != nil {
+		return err
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	if cfg.MigrateDatabaseURL != "" {
+		conn, err := pgx.Connect(ctx, cfg.MigrateDatabaseURL)
+		if err != nil {
+			return err
+		}
+		err = store.Migrate(ctx, conn, cfg.RuntimeRole)
+		conn.Close(ctx)
+		if err != nil {
+			return err
+		}
+		log.Info("migrations applied")
+	}
+
+	pool, err := pgxpool.New(ctx, cfg.DatabaseURL)
+	if err != nil {
+		return err
+	}
+	defer pool.Close()
+
+	var auth api.Authenticator
+	switch cfg.Auth {
+	case "dev":
+		log.Warn("MATURA_AUTH=dev: requests are trusted from X-Matura-Dev-* headers; never use this outside development")
+		auth = api.DevAuthenticator{}
+	default:
+		jwks := strings.TrimRight(cfg.Issuer, "/") + "/protocol/openid-connect/certs"
+		if v := os.Getenv("MATURA_JWKS_URL"); v != "" {
+			jwks = v
+		}
+		kf, err := keyfunc.NewDefaultCtx(ctx, []string{jwks})
+		if err != nil {
+			return err
+		}
+		auth = api.JWTAuthenticator{Keyfunc: kf.Keyfunc, Issuer: cfg.Issuer, Audience: cfg.Audience,
+			OperatorRole: cfg.OperatorRole}
+	}
+
+	srv := &http.Server{
+		Addr:              cfg.HTTPAddr,
+		Handler:           api.New(store.New(pool), auth, log).Handler(),
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       120 * time.Second,
+	}
+	errc := make(chan error, 1)
+	go func() {
+		log.Info("maturad listening", "addr", cfg.HTTPAddr)
+		errc <- srv.ListenAndServe()
+	}()
+	select {
+	case err := <-errc:
+		if !errors.Is(err, http.ErrServerClosed) {
+			return err
+		}
+	case <-ctx.Done():
+	}
+	shutdown, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	return srv.Shutdown(shutdown)
+}

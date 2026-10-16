@@ -1,0 +1,54 @@
+# Local evaluation stack: docker compose -f deploy/compose/compose.yaml up
+#   maturad   http://localhost:8080   (MATURA_AUTH=dev: send X-Matura-Dev-User: <uuid>)
+#   Keycloak  http://localhost:8180   (admin / admin; realm "matura")
+name: matura
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_PASSWORD: postgres-dev
+    volumes:
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 2s
+      retries: 30
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.4
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: keycloak-dev
+      KC_HTTP_PORT: "8180"
+      KC_HOSTNAME: http://localhost:8180
+    volumes:
+      - ../../keycloak/realm:/opt/keycloak/data/import:ro
+    ports: ["8180:8180"]
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  mailpit:                        # catches sign-up and invitation emails: http://localhost:8025
+    image: axllent/mailpit:v1.27
+    ports: ["8025:8025"]
+
+  maturad:
+    build: { context: ../.., dockerfile: Dockerfile }
+    environment:
+      MATURA_ENV: development
+      MATURA_AUTH: dev            # switch to oidc once the realm's users exist; see docs/spec/02 §4
+      MATURA_ISSUER: http://localhost:8180/realms/matura
+      MATURA_JWKS_URL: http://keycloak:8180/realms/matura/protocol/openid-connect/certs
+      MATURA_DATABASE_URL: postgres://matura_app:matura-app-dev@postgres:5432/matura?sslmode=disable
+      MATURA_MIGRATE_DATABASE_URL: postgres://matura_owner:matura-owner-dev@postgres:5432/matura?sslmode=disable
+    ports: ["8080:8080"]
+    depends_on:
+      postgres: { condition: service_healthy }
+
+volumes:
+  pgdata:
