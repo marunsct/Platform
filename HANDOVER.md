@@ -1,6 +1,6 @@
 # Handover
 
-*Last updated 2026-10-12. Read this first when starting work on Matura in a new project or session. Update it at the
+*Last updated 2026-10-16. Read this first when starting work on Matura in a new project or session. Update it at the
 end of every sprint.*
 
 ## 1. What Matura is
@@ -18,9 +18,25 @@ self-hosted, open standards, nothing phones home).
 
 ## 2. Status
 
-- **Planning only. Nothing is built.** The plan is draft PR [#1](https://github.com/marunsct/Platform/pull/1)
-  (branch `claude/project-thread-wirnvh`): `docs/plan/` 00–19, `docs/adr/` 0001–0005, `docs/research/`.
-- **Do not implement or merge until the owner explicitly approves the plan.** Start with sprint TS1 when approved.
+- The plan is draft PR [#1](https://github.com/marunsct/Platform/pull/1) (branch `claude/project-thread-wirnvh`):
+  `docs/plan/` 00–19, `docs/adr/` 0001–0005, `docs/research/`.
+- 2026-10-16: the owner asked for the end-to-end plan, functional and technical specifications, and to start
+  development. Branch `claude/project-thread-nhbr1g` (stacked on PR #1) adds `docs/plan/20` (delivery plan, which
+  re-orders doc 13 so DevFlow and AgentCanvas sign in early), `docs/spec/01–03`, ADRs 0006 (data placement: shared,
+  schema or database, managed by the app or by Matura) and 0007 (shared `matura_*` contract tables), and the first
+  code: TS1 and most of TS2.
+- **Built (TS1/TS2):** Go module; `maturad` with tenants, workspaces, members (last-owner rule), apps from manifests,
+  roles, grants, tenant apps with placement selection (plan-required mode wins); Postgres schema with forced RLS on
+  tenant-owned tables (fails closed), version sequence and outbox; dev and OIDC authentication; problem+json;
+  If-Match; Compose (Postgres, Keycloak realm, Mailpit, maturad); CI workflow; tests incl. the cross-tenant suite.
+- 2026-10-16 (later): the owner asked for role definitions to be managed in Matura and for integration to work from
+  any language. ADR 0008 (permission catalogue in the manifest, roles created/edited/deleted in Matura, `perms`
+  claim, `matura_app_role` contract table) and ADR 0009 (levels 0–3 over OIDC, JWT, SQL, HTTPS, CloudEvents; SDKs
+  optional; conformance kit; sprint TS7e) are written, and role management is built (migration 0002, role API).
+- **Left in TS2:** idempotency keys, OpenAPI document, outbox relay (TS7c), operator endpoints for users, plans and
+  database servers.
+- **Next:** TS4-lite sign-in on Keycloak, TS5 token mapper, TS6 invitations, TS7 Python SDK, TS7b provisioning,
+  TS7c contract sync, TS7d DevFlow (doc 20 §3).
 - `main` holds LICENSE, SECURITY.md, CONTRIBUTING.md.
 
 ## 3. Where to read
@@ -30,7 +46,7 @@ self-hosted, open standards, nothing phones home).
 | What and why | 16 product definition, 19 research findings |
 | How it performs | 17 performance and concurrency (rule: the app never waits on Matura) |
 | How it looks | 18 UI and design system |
-| What to build, in order | 13 roadmap (TS1–TS27 to 1.0; TS3 design system first; TS15 agent identity; TS21 performance; TS26 AgentCanvas on Matura) |
+| What to build, in order | 20 delivery plan (order), 13 roadmap (sprint contents) (TS1–TS27 to 1.0; TS3 design system first; TS15 agent identity; TS21 performance; TS26 AgentCanvas on Matura) |
 | Component choices and licences | 01 landscape, ADRs 0001–0005 |
 | Open decisions | 14 risks and decisions |
 
