@@ -49,14 +49,17 @@ Issued by Keycloak with the Matura mapper (TS5). JWT, ES256 or RS256, 5-minute l
 | `wid` | uuid | current workspace, when the app is workspace-scoped |
 | `troles` | string[] | tenant role, e.g. `["admin"]` |
 | `roles` | string[] | this app's roles in this tenant and workspace, e.g. `["operator"]` |
+| `perms` | string[] | the permissions those roles give in this app, expanded by Matura, e.g. `["run.read","run.start"]`; `["*"]` for full access |
+| `perms_ref` | string | instead of `perms` when they would exceed 40 entries: read them from `matura_app_role` for `roles` |
 | `ver` | object | `{"u": 12, "m": 40, "t": 7}`: versions of the user, membership and tenant rows that produced the token |
 | `pmode` | string | placement mode for this app and tenant: `shared`, `schema` or `database` (routing hint; the SDK still checks its placement cache) |
 | `acr`, `amr` | | MFA level and methods |
 | `sid` | string | session id, for back-channel logout |
 | `azp`, `client_id` | | for machine tokens; `sub` is then the service account |
 
-Permissions are not in the token. The SDK expands `roles` to permissions from the app's own manifest, which it
-already has.
+Roles are defined and edited in Matura (ADR 0008), so the app does not know which permissions a role gives:
+Matura expands them into `perms`. An app checks `perms` and never needs role names, which is what makes a check
+possible in any language with only a JWT library (ADR 0009).
 
 Example:
 
@@ -65,7 +68,7 @@ Example:
   "iss": "https://id.example.com/realms/matura", "aud": "devflow",
   "sub": "0192b7a4-5c1e-7d2a-9f00-4b1e2a9c0d11", "email": "ana@acme.com", "email_verified": true,
   "name": "Ana Silva", "tid": "0192b7a4-6000-7000-8000-00000000acme", "tenant": "acme",
-  "wid": "0192b7a4-6001-7000-8000-0000000000w1", "troles": ["member"], "roles": ["operator"],
+  "wid": "0192b7a4-6001-7000-8000-0000000000w1", "troles": ["member"], "roles": ["operator"], "perms": ["run.read", "run.start"],
   "ver": {"u": 12, "m": 40, "t": 7}, "pmode": "shared", "acr": "1", "sid": "f3a…", "exp": 1792140300
 }
 ```
@@ -141,13 +144,23 @@ CREATE TABLE matura_role_grant (
     workspace_id uuid,                             -- NULL = whole tenant
     subject_type text NOT NULL CHECK (subject_type IN ('user','group','service_account')),
     subject_id   uuid NOT NULL,
-    role         text NOT NULL,                    -- one of this app's manifest roles
+    role         text NOT NULL,                    -- one of this app's roles (matura_app_role.name)
     status       text NOT NULL CHECK (status IN ('active','revoked')),
     version      bigint NOT NULL,
     updated_at   timestamptz NOT NULL,
     FOREIGN KEY (tenant_id, workspace_id) REFERENCES matura_workspace(tenant_id, id)
 );
 CREATE INDEX matura_role_grant_subject ON matura_role_grant (tenant_id, subject_id) WHERE status = 'active';
+
+CREATE TABLE matura_app_role (                     -- this app's roles as defined in Matura (not tenant-owned)
+    name         text PRIMARY KEY,
+    description  text,
+    permissions  text[] NOT NULL,                  -- from the app's permission catalogue, or '{*}'
+    is_default   boolean NOT NULL DEFAULT false,
+    status       text NOT NULL CHECK (status IN ('active','deleted')),
+    version      bigint NOT NULL,
+    updated_at   timestamptz NOT NULL
+);
 
 -- bookkeeping
 CREATE TABLE matura_sync_cursor (
@@ -239,7 +252,8 @@ Delivered as signed webhooks (TS7c) and, from M5, NATS subjects `matura.<tenant>
 | `matura.tenant_app.enabled`, `.disabled` | the tenant turned this app on or off |
 | `matura.grant.added`, `.revoked` | app role grants (only this app's) |
 | `matura.placement.requested`, `.provisioned`, `.ready`, `.moving`, `.retiring`, `.deleted` | data placements (doc 02 §7) |
-| `matura.app.manifest.updated` | roles or permissions changed |
+| `matura.app.manifest.updated` | the app's manifest (permission catalogue, settings) changed |
+| `matura.app.role.created`, `.updated`, `.deleted` | a role was created or edited in Matura; the app updates `matura_app_role`, and new tokens carry the new `perms` |
 
 Webhook headers: `Matura-Signature: t=<unix>,v1=<hex HMAC-SHA256 of "t.body">`, `Matura-Event-Id`. The receiver
 rejects signatures older than 5 minutes, records `id` in `matura_inbox`, applies, answers 2xx. Matura retries with
@@ -255,7 +269,9 @@ order across all tenants that use the app, and `next_cursor`. `GET /v1/apps/{app
 current state for bootstrap. In `schema` and `database` modes the SDK reads the feed once and writes each change to
 the right tenant's storage; cursors are kept per tenant.
 
-## 8. What the SDK gives the app
+## 8. What the SDK gives the app (optional)
+
+The SDKs are shortcuts over §2–§7; §10 shows the same steps without one.
 
 ```python
 from matura import Matura, Principal, require_permission
@@ -282,3 +298,74 @@ matura.on("placement.provisioned", run_migrations_for_tenant)
 |---|---|---|
 | DevFlow | `users` table, own HS256 tokens, roles `admin`/`operator`, no tenants | `matura_*` tables; DevFlow's tables gain `tenant_id`; roles `admin`, `operator`, `viewer` in its manifest; old login kept behind a flag for one release |
 | AgentCanvas | `organization`, `app_user`, `membership`, own OIDC verifier | `organization` becomes a view over `matura_tenant` (or its id maps 1:1); `app_user` → `matura_user`; membership roles move to grants; its `org_id` columns become `tenant_id`; its own verifier replaced by the SDK |
+
+## 10. Any language or framework
+
+Everything above is plain OIDC, JWT, SQL, HTTPS and CloudEvents (ADR 0009). An app picks the level it needs; each
+level works without a Matura SDK.
+
+| Level | What the app does | What it needs |
+|---|---|---|
+| **0 Gateway** | nothing in code: `matura-gateway` (an identity-aware reverse proxy) signs users in and forwards `X-Matura-User`, `X-Matura-Tenant`, `X-Matura-Roles`, `X-Matura-Perms` and the token | the gateway in front of the app; the app trusts only the gateway |
+| **1 Sign-in** | sign users in with OIDC; verify the access token; read `sub`, `tid`, `wid`, `perms`; refuse requests without the needed permission | any OIDC client and JWT library |
+| **2 Directory** | run the contract SQL file; receive signed events at one URL; read the change feed at start-up and hourly; upsert by `version` | its migration tool, an HTTP endpoint, an HTTP client |
+| **3 Data placement** | ask for its placement and credentials per tenant; route connections; run migrations on `placement.provisioned`; confirm ready and deleted | the placement API; in shared mode, one `set_config` per transaction |
+
+### 10.1 The same check in four stacks (level 1)
+
+```js
+// Node / Express with jose
+const { payload } = await jwtVerify(token, jwks, { issuer: ISSUER, audience: "devflow" });
+if (!payload.perms.includes("run.start") && !payload.perms.includes("*")) return res.sendStatus(403);
+req.tenantId = payload.tid;
+```
+
+```java
+// Java / Spring Security resource server: issuer-uri set in application.yml
+@PreAuthorize("@perms.has(authentication, 'run.start')")
+@PostMapping("/runs") Run start(@AuthenticationPrincipal Jwt jwt) { return runs.start(jwt.getClaimAsString("tid")); }
+```
+
+```csharp
+// ASP.NET Core: AddJwtBearer(o => { o.Authority = Issuer; o.Audience = "devflow"; })
+options.AddPolicy("run.start", p => p.RequireAssertion(c =>
+    c.User.FindAll("perms").Any(x => x.Value is "run.start" or "*")));
+```
+
+```go
+// Go net/http with github.com/MicahParks/keyfunc and golang-jwt
+tok, err := jwt.ParseWithClaims(raw, &c, jwks.Keyfunc, jwt.WithIssuer(issuer), jwt.WithAudience("devflow"))
+if err != nil || !(slices.Contains(c.Perms, "run.start") || slices.Contains(c.Perms, "*")) { w.WriteHeader(403); return }
+```
+
+### 10.2 Verifying an event (level 2), any language
+
+1. Read `Matura-Signature: t=<unix>,v1=<hex>` and the raw request body.
+2. Refuse if `t` is more than 300 seconds from now.
+3. Compute `hex(HMAC-SHA256(secret, t + "." + body))` and compare with `v1` in constant time.
+4. Skip if `Matura-Event-Id` is already in `matura_inbox`; otherwise apply the change with the version rule (§5) and
+   record the id, in one transaction.
+
+`docs/contract/test-vectors.json` (TS7e) holds signed sample events and sample tokens, so each implementation can be
+tested without a running Matura.
+
+### 10.3 What ships for each language
+
+| Stack | Provided |
+|---|---|
+| Python (FastAPI, Django, Flask), TypeScript (Express, Fastify, Next.js), Go | official SDKs (TS7, TS7e) |
+| Java (Spring), .NET (ASP.NET Core) | SDKs after M2; until then the recipes above plus generated API clients |
+| Anything else (PHP, Ruby, Rust, Elixir, low-code) | recipes, OpenAPI-generated clients, contract SQL, test vectors, or the gateway |
+| Databases other than Postgres | contract tables for MySQL/MariaDB, SQL Server and SQLite (TS7e); no RLS there, so the app filters by `tenant_id` or uses schema or database mode |
+
+### 10.4 Proving it: the conformance kit
+
+`matura conformance --app http://localhost:8000 --manifest matura.yaml` runs against any running app. It issues
+tokens from a built-in test issuer for two tenants, sends signed events, and checks that the app:
+
+- refuses requests without a token, with an expired token, or with a token for another audience;
+- refuses an action whose permission is missing from `perms`;
+- never returns tenant A's records to tenant B (it creates records as A through the app's own API, listed in the
+  manifest's `conformance` section, then reads them as B);
+- applies events idempotently and in version order, and catches up from the change feed;
+- answers `tenant-not-ready` before its placement is ready (level 3).

@@ -55,7 +55,9 @@ app_user(id = keycloak id, email UNIQUE (citext), email_verified, display_name, 
          kind, status, version, …)
 membership(tenant_id, user_id, tenant_role, status, joined_at, version, …)        PK(tenant_id, user_id)
 app(id, slug UNIQUE, name, client_id, manifest jsonb, status, version, …)
-app_role(app_id, name, description, permissions text[], is_default, version)      PK(app_id, name)
+app_permission(app_id, name, description)                                          PK(app_id, name)
+app_role(app_id, name, description, permissions text[], is_default, origin manifest|platform, edited bool,
+         status active|deleted, version)                                           PK(app_id, name)
 tenant_app(tenant_id, app_id, status, version, …)                                PK(tenant_id, app_id)
 role_grant(id, tenant_id, app_id, workspace_id NULL, subject_type, subject_id, role, status, version, …)
 invitation(id, tenant_id, email, tenant_role, app_roles jsonb, delivery, deliver_to, token_hash,
@@ -110,6 +112,7 @@ that mode unless `MATURA_ENV=development`.
 | Members | `GET /v1/tenants/{tid}/members`, `PATCH/DELETE …/{uid}` |
 | Invitations | `POST/GET /v1/tenants/{tid}/invitations`, `POST …/{id}:resend`, `DELETE …/{id}`, `POST /v1/invitations:accept` |
 | Apps | `PUT /admin/v1/apps/{slug}` (apply manifest), `GET /v1/apps`, `POST/DELETE /v1/tenants/{tid}/apps/{app}` |
+| App roles | `GET /v1/apps/{slug}/roles`; operators: `POST /admin/v1/apps/{slug}/roles`, `PATCH/DELETE /admin/v1/apps/{slug}/roles/{name}` (RL-8 to RL-11) |
 | Grants | `GET/POST /v1/tenants/{tid}/grants`, `DELETE …/{id}` |
 | Users | `GET/PATCH /v1/me`, `GET /v1/me/tenants`, `GET/PATCH/DELETE /admin/v1/users/{uid}` |
 | Database servers | `POST/GET /admin/v1/db-servers`, `PATCH/DELETE …/{id}`, `POST …/{id}:test` |
@@ -123,11 +126,34 @@ The OpenAPI 3.1 document lives in `api/openapi.yaml` and is the source for gener
 
 ## 6. Token mapper (TS5)
 
+Besides `roles`, the mapper adds `perms`: the union of the permissions of the user's active roles for the calling
+app in the token's tenant and workspace, sorted, `["*"]` if any role has `*`. Above 40 entries it adds
+`perms_ref: "matura_app_role"` instead (contract §2).
+
 The Java mapper calls `/internal/v1/token-context` once per token issue (cached in Infinispan for 30 s, invalidated
 by `maturad` through the internal event endpoint) and adds the claims in contract §2. Tenant choice comes from the
 authorisation request parameter `matura_tenant=<slug|id>`, else the user's last-used tenant. A user without a
 membership in the requested tenant gets `access_denied`. A tenant that has not enabled the app gets
 `access_denied` with `error_description=app_not_enabled`.
+
+### 6.1 Roles in the manifest and in Matura (ADR 0008)
+
+```yaml
+spec:
+  permissions:                        # the catalogue: what the app's code checks
+    - { name: run.read,  description: See runs }
+    - { name: run.start, description: Start a run }
+  roles:                              # starter roles; editable in Matura afterwards
+    - { name: operator, permissions: [run.read, run.start] }
+    - { name: viewer,   permissions: [run.read] }
+  defaultRole: viewer
+```
+
+A manifest without `permissions` gets a catalogue made of every permission its roles name. Role rows keep `origin`
+(`manifest` or `platform`) and `edited`. Re-applying a manifest upserts manifest roles that are not `edited`,
+leaves every other role alone, adds new catalogue entries, and fails with the list of roles concerned if it would
+remove a permission a role still uses or a role someone holds. A starter role deleted in Matura comes back on the
+next apply unless the manifest drops it too.
 
 ## 7. Data placement
 

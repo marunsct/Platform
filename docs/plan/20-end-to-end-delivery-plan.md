@@ -27,7 +27,7 @@ tenants, members and roles first, so this plan pulls the identity and tenancy co
 | Milestone | Sprints | What the owner can do at the end |
 |---|---|---|
 | **M0 Foundation** | TS1, TS2 | `docker compose up` runs Postgres, Keycloak and `maturad`; tenants, workspaces, users, memberships, apps, roles and placements exist in the API with row-level security and an outbox |
-| **M1 First app signs in** | TS4-lite, TS5, TS6, TS7, TS7b, TS7c, TS7d | a user signs up, creates a company tenant, invites a colleague, assigns DevFlow roles; DevFlow reads tenant, user and roles from the token and its contract tables, and each tenant's data sits in the mode its plan requires |
+| **M1 First app signs in** | TS4-lite, TS5, TS6, TS7, TS7b, TS7c, TS7e, TS7d | a user signs up, creates a company tenant, invites a colleague, assigns DevFlow roles; DevFlow reads tenant, user and roles from the token and its contract tables, and each tenant's data sits in the mode its plan requires |
 | **M2 Second app and the portal** | TS9a, TS3, TS8 | AgentCanvas signs in through Matura with its four roles; tenant admins manage members, roles and workspaces in the customer portal instead of each app's own pages |
 | **M3 Operator and security basics** | TS9, TS10, TS12 | operator console (tenants, plans, suspend, delete), security policies, MFA, session revocation |
 | **M4 Enterprise identity** | TS11, TS13, TS14, TS15 | per-tenant SSO, SCIM, fine-grained permissions, agent identity |
@@ -39,13 +39,14 @@ tenants, members and roles first, so this plan pulls the identity and tenancy co
 | Sprint | Work | Exit |
 |---|---|---|
 | **TS1 Repository and stack** | Go module, repository layout (doc 02 §7), Makefile, CI (lint, test, licence gate), Compose with Postgres 16, Keycloak 26 and `maturad`, realm-as-code with the `matura` realm, docs updated | `docker compose up` healthy; `make test` green |
-| **TS2 Control-plane skeleton** | `maturad` REST API for tenants, workspaces, users, memberships, apps (manifest), roles, role grants, invitations (data only), database servers and placements; Postgres schema with RLS on tenant-owned tables; outbox; idempotency keys; problem+json errors; OpenAPI | API tests and a cross-tenant test pass; outbox rows written in the same transaction as each change |
+| **TS2 Control-plane skeleton** | `maturad` REST API for tenants, workspaces, users, memberships, apps (manifest with permission catalogue), roles managed in Matura (ADR 0008), role grants, invitations (data only), database servers and placements; Postgres schema with RLS on tenant-owned tables; outbox; idempotency keys; problem+json errors; OpenAPI | API tests and a cross-tenant test pass; outbox rows written in the same transaction as each change |
 | **TS4-lite Sign-in** | Keycloak realm: sign-up with email verification, password reset, Google and GitHub brokering, first-sign-in tenant choice (personal workspace or new company) | Playwright: sign up, verify, sign in, reset password |
 | **TS5 Keycloak token mapper** | Java mapper adds `tid`, `wid`, `tenant`, `roles`, `ver` (doc 02 §4, contract §2); tenant selection via `tenant` request parameter or last used; event listener → `maturad` | a user in two tenants gets the right claims per tenant |
 | **TS6 Onboarding and invitations** | invite by email (link default, temporary password option), accept, resend, revoke, expire; Mailpit in Compose | an invited user joins with the right roles |
 | **TS7 Python SDK v0** | FastAPI middleware: token check with JWKS cache, `Principal`, `require_role`, `require_permission`, tenant context for RLS, fake issuer for tests | example app works with two tenants; app keeps serving with `maturad` stopped |
 | **TS7b Data placement** | database-server registry, placement API, provisioning jobs for `shared`, `schema` and `database` with `manager: platform`; registration for `manager: app`; SDK connection router; migration hand-off; delete with confirmation | the example app serves three tenants in three modes, two platform-managed and one app-managed, and the cross-tenant suite passes in each mode |
 | **TS7c App contract and sync** | contract tables migration (Alembic op and plain SQL), just-in-time upsert from tokens, signed webhooks from the outbox, change feed with cursors, versioned idempotent apply | killing the webhook receiver for an hour loses no change after the feed catches up |
+| **TS7e Any-language kit** | ADR 0009: contract SQL for Postgres, MySQL, SQL Server and SQLite; token and event test vectors; OpenAPI-generated clients; TypeScript and Go SDKs; recipes for Express, Next.js, Spring, ASP.NET Core, Go, Django, Rails, Laravel; `matura conformance` kit; Node and Java sample apps | the sample apps and DevFlow pass the conformance kit; a deliberately leaky app fails it |
 | **TS7d DevFlow on Matura** | DevFlow replaces its `users` table and HS256 tokens with the SDK; adds `tenant_id` and RLS to its run and audit tables; roles `admin`, `operator`, `viewer` registered from its manifest | DevFlow runs for two tenants with no data crossing; its old local sign-in still works behind a flag during migration |
 
 ## 4. Ways of working
@@ -54,7 +55,7 @@ tenants, members and roles first, so this plan pulls the identity and tenancy co
   entry and HANDOVER.md updated (HANDOVER §5).
 - Each app integration (DevFlow, AgentCanvas) is a pull request in that app's repository, linked from the Matura
   sprint.
-- ADRs 0001–0007 move to `accepted` when the owner approves this plan.
+- ADRs 0001–0009 move to `accepted` when the owner approves this plan.
 
 ## 5. Decisions taken by default (change any of them by saying so)
 
@@ -63,7 +64,8 @@ tenants, members and roles first, so this plan pulls the identity and tenancy co
 | Build or wrap the identity server | wrap Keycloak (ADR 0001) |
 | Control-plane language | Go (ADR 0003) |
 | What a tenant is | a customer company, or a shared tenant for individuals; a user can belong to many tenants (doc 04) |
-| Who owns roles | Matura stores each app's role catalogue from its manifest and the grants; the app enforces them |
+| Who owns roles | Matura: roles are defined, edited and assigned there; the app's manifest only lists the permissions its code checks, and the app reads `perms` from the token (ADR 0008) |
+| Languages | any: the contract is OIDC, JWT, SQL, HTTPS and CloudEvents; SDKs are shortcuts (ADR 0009) |
 | First sign-in methods | email and password, Google, GitHub; MFA and passkeys in M3; SAML and OIDC SSO in M4 |
 | Billing | plans and limits only (TS18); payments later through adapters |
 | Hosting | self-hosted, Docker Compose first, Helm in M5 |

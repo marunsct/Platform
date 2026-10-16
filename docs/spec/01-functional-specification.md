@@ -78,13 +78,17 @@ Requirement ids are stable; acceptance criteria are tested by the sprint named.
 
 | Id | Requirement | Acceptance | Sprint |
 |---|---|---|---|
-| RL-1 | Operators register an app from its manifest (`matura app apply`), which creates its OIDC client, its roles and permissions, its default role and its data-mode settings | applying the same manifest twice changes nothing | TS2 / TS5 |
+| RL-1 | Operators register an app from its manifest (`matura app apply`), which creates its OIDC client, its permission catalogue, its starter roles, its default role and its data-mode settings | applying the same manifest twice changes nothing | TS2 / TS5 |
 | RL-2 | Tenants enable or disable apps; a disabled app refuses the tenant's users | token request for a disabled app fails | TS2 |
 | RL-3 | Admins grant app roles to members for the whole tenant or one workspace; a member can hold several roles | grants appear in the next token and in the app's contract tables | TS2 / TS7c |
 | RL-4 | New members of a tenant get each enabled app's default role unless the invitation says otherwise | tested | TS6 |
 | RL-5 | Tenant `owner` and `admin` imply the app's highest role only if the manifest says so (`ownerRole`) | AgentCanvas owners are `admin`; DevFlow owners are `admin` | TS2 |
-| RL-6 | Apps check permissions, not role names, through the SDK (`require_permission("workflow.write")`); role names are for people | example app uses permissions only | TS7 |
+| RL-6 | Apps check permissions, not role names: the token's `perms` claim, or the SDK's `require_permission("workflow.write")`; role names are for people | example app uses permissions only | TS5 / TS7 |
 | RL-7 | Custom roles per tenant (a new name with a subset of the app's permissions) | M2 | TS8 |
+| RL-8 | Operators create, rename, edit and delete an app's roles in Matura, picking permissions from the app's catalogue; no app release is needed | a new role is grantable at once; a permission outside the catalogue is refused | TS2 |
+| RL-9 | Role changes reach apps without a release: `app.role.*` events update `matura_app_role`, and the next token carries the new `perms` | DevFlow honours an edited role within one token lifetime (5 min) | TS5 / TS7c |
+| RL-10 | Re-applying a manifest never overwrites a role created or edited in Matura, and refuses to drop a permission a role still uses | tested | TS2 |
+| RL-11 | A role that someone holds, or that is the app's default role, cannot be deleted | refused with the reason | TS2 |
 
 ### 4.5 Data placement (DP)
 
@@ -110,12 +114,22 @@ Requirement ids are stable; acceptance criteria are tested by the sprint named.
 | SY-4 | Apps can read a change feed from a cursor to catch up after downtime, and a full snapshot to bootstrap | an app offline for a day catches up in one run | TS7c |
 | SY-5 | Applying the same change twice, or an older change after a newer one, does nothing | property test with shuffled events | TS7c |
 
-### 4.7 Consoles (CO), M2
+### 4.7 Any language or framework (IN)
+
+| Id | Requirement | Acceptance | Sprint |
+|---|---|---|---|
+| IN-1 | An app integrates without any Matura SDK using standard OIDC, JWT, SQL, HTTPS and CloudEvents (contract §10) | a Node and a Java sample app reach level 2 with libraries only | TS7e |
+| IN-2 | Matura publishes the contract as versioned artifacts: OpenAPI file, contract SQL for Postgres, MySQL, SQL Server and SQLite, token and event test vectors | the files exist per contract version and CI checks them against the server | TS7e |
+| IN-3 | A conformance kit checks any running app from outside for token checks, permission checks, tenant isolation and event handling | the kit passes for DevFlow and the sample apps and fails for a deliberately leaky app | TS7e |
+| IN-4 | Apps that cannot change their code use `matura-gateway`, which signs users in and forwards identity headers | a sample app with no auth code gets sign-in and tenants through the gateway | M3 |
+| IN-5 | Official SDKs for Python, TypeScript and Go in M1; Java and .NET after M2 | each SDK passes the conformance kit | TS7, TS7e |
+
+### 4.8 Consoles (CO), M2
 
 | Id | Requirement | Sprint |
 |---|---|---|
 | CO-1 | Customer admin portal: members, invitations, roles per app, workspaces, enabled apps, data placements (read-only), audit of membership changes | TS8 |
-| CO-2 | Operator console: tenants, users, apps, database servers, plans and modes, placements and their state | TS10 |
+| CO-2 | Operator console: tenants, users, apps and their roles (create, edit, delete; RL-8), database servers, plans and modes, placements and their state | TS10 |
 | CO-3 | Account page for every user: profile, tenants, sessions, sign-out everywhere | TS8 |
 | CO-4 | Embeddable React components for apps that prefer their own pages: tenant switcher, members table, invite dialog | TS7 / TS8 |
 
@@ -147,7 +161,7 @@ Requirement ids are stable; acceptance criteria are tested by the sprint named.
 | Latency | SDK token check p99 under 1 ms; `maturad` reads p99 under 50 ms at the reference load |
 | Isolation | database-enforced in every mode: RLS in `shared`, separate schemas and roles in `schema`, separate databases and roles in `database` |
 | Security | no custom crypto or password storage (Keycloak); OWASP ASVS level 2 for `maturad`; secrets encrypted at rest |
-| Portability | everything speaks OIDC, Postgres and CloudEvents; an app can leave Matura by pointing at another OIDC provider and keeping its tables |
+| Portability | everything speaks OIDC, JWT, SQL, HTTPS and CloudEvents, so apps in any language integrate (ADR 0009); an app can leave Matura by pointing at another OIDC provider and keeping its tables |
 | Licence | OSI-approved components only (ADR 0002) |
 | Accessibility | consoles meet WCAG 2.2 AA (doc 18) |
 

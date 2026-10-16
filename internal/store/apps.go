@@ -23,7 +23,7 @@ func scanApp(row pgx.Row) (App, error) {
 }
 
 // ApplyApp registers an app or updates it from its manifest (RL-1). Applying the same manifest twice changes
-// nothing. A role that disappears from the manifest is removed only if nobody holds it.
+// nothing; roles created or edited in Matura are never overwritten (RL-10, see syncManifestRoles).
 func (s *Store) ApplyApp(ctx context.Context, sc Scope, m Manifest) (App, bool, error) {
 	if err := m.Normalize(); err != nil {
 		return App{}, false, err
@@ -61,38 +61,7 @@ func (s *Store) ApplyApp(ctx context.Context, sc Scope, m Manifest) (App, bool, 
 		if err != nil {
 			return err
 		}
-		keep := make([]string, 0, len(m.Roles))
-		for _, r := range m.Roles {
-			keep = append(keep, r.Name)
-			perms := r.Permissions
-			if perms == nil {
-				perms = []string{}
-			}
-			if _, err := tx.Exec(ctx, `INSERT INTO app_role (app_id, name, description, permissions, is_default, version)
-				VALUES ($1, $2, $3, $4, $5, $6)
-				ON CONFLICT (app_id, name) DO UPDATE SET description = EXCLUDED.description,
-					permissions = EXCLUDED.permissions, is_default = EXCLUDED.is_default, version = EXCLUDED.version`,
-				out.ID, r.Name, nullable(r.Description), perms, r.Name == m.DefaultRole, v); err != nil {
-				return mapErr(err)
-			}
-		}
-		// role_grant has RLS; operator scope sees every tenant's grants, which this check needs
-		var held []string
-		rows, err := tx.Query(ctx, `SELECT DISTINCT role FROM role_grant WHERE app_id = $1 AND status = 'active'
-			AND NOT (role = ANY($2))`, out.ID, keep)
-		if err != nil {
-			return err
-		}
-		if held, err = pgx.CollectRows(rows, pgx.RowTo[string]); err != nil {
-			return err
-		}
-		if len(held) > 0 {
-			return invalid("roles %v are still granted to someone; revoke those grants before removing the roles", held)
-		}
-		if _, err := tx.Exec(ctx, `DELETE FROM role_grant WHERE app_id = $1 AND NOT (role = ANY($2))`, out.ID, keep); err != nil {
-			return err
-		}
-		if _, err := tx.Exec(ctx, `DELETE FROM app_role WHERE app_id = $1 AND NOT (name = ANY($2))`, out.ID, keep); err != nil {
+		if err := syncManifestRoles(ctx, tx, out, m, v); err != nil {
 			return err
 		}
 		return emit(ctx, tx, v, uuid.Nil, "app.manifest.updated", "apps/"+m.Slug, out)

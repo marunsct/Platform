@@ -62,6 +62,10 @@ func (s *Server) Handler() http.Handler {
 	api.HandleFunc("DELETE /v1/tenants/{tid}/grants/{id}", s.revokeGrant)
 	api.HandleFunc("GET /v1/apps", s.listApps)
 	api.HandleFunc("PUT /admin/v1/apps/{slug}", s.applyApp)
+	api.HandleFunc("GET /v1/apps/{slug}/roles", s.listRoles)
+	api.HandleFunc("POST /admin/v1/apps/{slug}/roles", s.createRole)
+	api.HandleFunc("PATCH /admin/v1/apps/{slug}/roles/{name}", s.patchRole)
+	api.HandleFunc("DELETE /admin/v1/apps/{slug}/roles/{name}", s.deleteRole)
 
 	authed := s.authenticate(api)
 	mux.Handle("/v1/", authed)

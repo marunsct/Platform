@@ -9,20 +9,26 @@ import (
 
 // Manifest is the part of an app manifest maturad stores and enforces (doc 06 §1, technical specification §7.2).
 type Manifest struct {
-	Slug        string       `json:"slug"`
-	Name        string       `json:"name"`
-	ClientID    string       `json:"client_id,omitempty"`
-	Auth        ManifestAuth `json:"auth"`
-	Roles       []RoleDef    `json:"roles"`
-	DefaultRole string       `json:"default_role"`
-	OwnerRole   string       `json:"owner_role,omitempty"` // role tenant owners and admins get implicitly
-	Tenancy     Tenancy      `json:"tenancy"`
+	Slug        string          `json:"slug"`
+	Name        string          `json:"name"`
+	ClientID    string          `json:"client_id,omitempty"`
+	Auth        ManifestAuth    `json:"auth"`
+	Permissions []PermissionDef `json:"permissions,omitempty"` // the catalogue; derived from roles when empty
+	Roles       []RoleDef       `json:"roles,omitempty"`       // starter roles, editable in Matura (ADR 0008)
+	DefaultRole string          `json:"default_role"`
+	OwnerRole   string          `json:"owner_role,omitempty"` // role tenant owners and admins get implicitly
+	Tenancy     Tenancy         `json:"tenancy"`
 }
 
 type ManifestAuth struct {
 	RedirectURIs           []string `json:"redirect_uris"`
 	PostLogoutRedirectURIs []string `json:"post_logout_redirect_uris,omitempty"`
 	PublicClient           bool     `json:"public_client"`
+}
+
+type PermissionDef struct {
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
 }
 
 type RoleDef struct {
@@ -50,6 +56,22 @@ var (
 	allManagers  = []string{"app", "platform"}
 )
 
+// validateRole checks a role name and that its permissions are well formed and, when catalogue is given, in it.
+func validateRole(name string, perms []string, catalogue map[string]bool) error {
+	if !roleNameRE.MatchString(name) {
+		return invalid("role name %q must be lower-case letters, digits, '_' or '-'", name)
+	}
+	for _, p := range perms {
+		if !permissionRE.MatchString(p) {
+			return invalid("permission %q of role %q must look like resource.action", p, name)
+		}
+		if catalogue != nil && p != "*" && !catalogue[p] {
+			return invalid("permission %q is not in the app's permissions", p)
+		}
+	}
+	return nil
+}
+
 // Normalize fills defaults and validates. Errors are InvalidError with a message for the app developer.
 func (m *Manifest) Normalize() error {
 	if !ids.ValidSlug(m.Slug) {
@@ -61,28 +83,45 @@ func (m *Manifest) Normalize() error {
 	if m.ClientID == "" {
 		m.ClientID = m.Slug
 	}
-	if len(m.Roles) == 0 {
-		return invalid("an app needs at least one role")
+	catalogue := map[string]bool{}
+	for _, p := range m.Permissions {
+		if p.Name == "*" || !permissionRE.MatchString(p.Name) {
+			return invalid("permission %q must look like resource.action", p.Name)
+		}
+		if catalogue[p.Name] {
+			return invalid("permission %q is listed twice", p.Name)
+		}
+		catalogue[p.Name] = true
 	}
+	derive := len(m.Permissions) == 0
 	seen := map[string]bool{}
 	for _, r := range m.Roles {
-		if !roleNameRE.MatchString(r.Name) {
-			return invalid("role name %q must be lower-case letters, digits, '_' or '-'", r.Name)
+		if err := validateRole(r.Name, r.Permissions, nil); err != nil {
+			return err
 		}
 		if seen[r.Name] {
 			return invalid("role %q is listed twice", r.Name)
 		}
 		seen[r.Name] = true
 		for _, p := range r.Permissions {
-			if !permissionRE.MatchString(p) {
-				return invalid("permission %q of role %q must look like resource.action", p, r.Name)
+			switch {
+			case p == "*":
+			case derive && !catalogue[p]:
+				catalogue[p] = true
+				m.Permissions = append(m.Permissions, PermissionDef{Name: p})
+			case !catalogue[p]:
+				return invalid("role %q uses permission %q, which is not in the app's permissions", r.Name, p)
 			}
 		}
 	}
-	if !seen[m.DefaultRole] {
+	if len(m.Permissions) == 0 {
+		return invalid("an app needs at least one permission its code checks")
+	}
+	// default and owner roles may also be roles created in Matura; ApplyApp checks those against the database
+	if len(m.Roles) > 0 && m.DefaultRole != "" && !seen[m.DefaultRole] {
 		return invalid("default_role %q is not one of the app's roles", m.DefaultRole)
 	}
-	if m.OwnerRole != "" && !seen[m.OwnerRole] {
+	if len(m.Roles) > 0 && m.OwnerRole != "" && !seen[m.OwnerRole] {
 		return invalid("owner_role %q is not one of the app's roles", m.OwnerRole)
 	}
 	t := &m.Tenancy

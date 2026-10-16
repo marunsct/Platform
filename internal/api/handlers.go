@@ -516,6 +516,66 @@ func (s *Server) revokeGrant(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// --- app roles (ADR 0008) ----------------------------------------------------------------------------------------
+
+func (s *Server) listRoles(w http.ResponseWriter, r *http.Request) {
+	out, err := s.store.ListRoles(r.Context(), r.PathValue("slug"))
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": nonNil(out)})
+}
+
+func operatorScope(r *http.Request) store.Scope {
+	return store.Scope{UserID: principalFrom(r.Context()).UserID, Operator: true}
+}
+
+func (s *Server) createRole(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Name        string   `json:"name"`
+		Description string   `json:"description"`
+		Permissions []string `json:"permissions"`
+	}
+	if !decode(w, r, &in) {
+		return
+	}
+	out, err := s.store.CreateRole(r.Context(), operatorScope(r), r.PathValue("slug"),
+		store.NewRole{Name: in.Name, Description: in.Description, Permissions: in.Permissions})
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, out)
+}
+
+func (s *Server) patchRole(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Name        *string   `json:"name"`
+		Description *string   `json:"description"`
+		Permissions *[]string `json:"permissions"`
+		IsDefault   *bool     `json:"is_default"`
+	}
+	if !decode(w, r, &in) {
+		return
+	}
+	out, err := s.store.UpdateRole(r.Context(), operatorScope(r), r.PathValue("slug"), r.PathValue("name"),
+		store.RolePatch{Name: in.Name, Description: in.Description, Permissions: in.Permissions, IsDefault: in.IsDefault})
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+func (s *Server) deleteRole(w http.ResponseWriter, r *http.Request) {
+	if err := s.store.DeleteRole(r.Context(), operatorScope(r), r.PathValue("slug"), r.PathValue("name")); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func nonNil[T any](s []T) []T {
 	if s == nil {
 		return []T{}

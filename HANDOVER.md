@@ -29,6 +29,10 @@ self-hosted, open standards, nothing phones home).
   roles, grants, tenant apps with placement selection (plan-required mode wins); Postgres schema with forced RLS on
   tenant-owned tables (fails closed), version sequence and outbox; dev and OIDC authentication; problem+json;
   If-Match; Compose (Postgres, Keycloak realm, Mailpit, maturad); CI workflow; tests incl. the cross-tenant suite.
+- 2026-10-16 (later): the owner asked for role definitions to be managed in Matura and for integration to work from
+  any language. ADR 0008 (permission catalogue in the manifest, roles created/edited/deleted in Matura, `perms`
+  claim, `matura_app_role` contract table) and ADR 0009 (levels 0–3 over OIDC, JWT, SQL, HTTPS, CloudEvents; SDKs
+  optional; conformance kit; sprint TS7e) are written, and role management is built (migration 0002, role API).
 - **Left in TS2:** idempotency keys, OpenAPI document, outbox relay (TS7c), operator endpoints for users, plans and
   database servers.
 - **Next:** TS4-lite sign-in on Keycloak, TS5 token mapper, TS6 invitations, TS7 Python SDK, TS7b provisioning,

@@ -192,3 +192,69 @@ func TestRolesInsideATenant(t *testing.T) {
 		t.Fatalf("stale If-Match (current version %v): %d", cur["version"], res.StatusCode)
 	}
 }
+
+// TestRolesManagedInPlatform covers RL-8 to RL-11: roles are created, renamed, edited and deleted in Matura, and a
+// re-applied manifest leaves those changes alone.
+func TestRolesManagedInPlatform(t *testing.T) {
+	srv := setup(t)
+	op := client{t: t, srv: srv, user: ids.New(), op: true}
+	m := map[string]any{
+		"slug": "devflow", "name": "DevFlow",
+		"auth":        map[string]any{"redirect_uris": []string{"http://localhost:8000/cb"}},
+		"permissions": []map[string]any{{"name": "run.read"}, {"name": "run.start"}, {"name": "run.cancel"}},
+		"roles": []map[string]any{
+			{"name": "operator", "permissions": []string{"run.read", "run.start"}},
+			{"name": "viewer", "permissions": []string{"run.read"}},
+		},
+		"default_role": "viewer",
+	}
+	op.must(http.StatusOK, "PUT", "/admin/v1/apps/devflow", m)
+
+	// a role defined in Matura, from the catalogue only
+	op.must(http.StatusUnprocessableEntity, "POST", "/admin/v1/apps/devflow/roles",
+		map[string]any{"name": "auditor", "permissions": []string{"billing.read"}})
+	op.must(http.StatusCreated, "POST", "/admin/v1/apps/devflow/roles",
+		map[string]any{"name": "auditor", "permissions": []string{"run.read"}})
+	// non-operators cannot
+	owner := client{t: t, srv: srv, user: ids.New()}
+	owner.must(http.StatusForbidden, "POST", "/admin/v1/apps/devflow/roles",
+		map[string]any{"name": "x", "permissions": []string{"run.read"}})
+
+	// grant it, then rename it: the grant follows
+	acme := owner.must(http.StatusCreated, "POST", "/v1/tenants", map[string]any{"slug": "acme", "name": "Acme"})
+	tid := acme["id"].(string)
+	owner.must(http.StatusOK, "PUT", "/v1/tenants/"+tid+"/apps/devflow", nil)
+	owner.must(http.StatusCreated, "POST", "/v1/tenants/"+tid+"/grants",
+		map[string]any{"app": "devflow", "user_id": owner.user, "role": "auditor"})
+	op.must(http.StatusOK, "PATCH", "/admin/v1/apps/devflow/roles/auditor", map[string]any{"name": "reviewer"})
+	grants := owner.must(http.StatusOK, "GET", "/v1/tenants/"+tid+"/grants", nil)["items"].([]any)
+	if len(grants) != 1 || grants[0].(map[string]any)["role"] != "reviewer" {
+		t.Fatalf("grant after rename: %v", grants)
+	}
+
+	// edit a starter role; re-applying the manifest must not undo it
+	op.must(http.StatusOK, "PATCH", "/admin/v1/apps/devflow/roles/operator",
+		map[string]any{"permissions": []string{"run.read", "run.start", "run.cancel"}})
+	op.must(http.StatusOK, "PUT", "/admin/v1/apps/devflow", m)
+	roles := op.must(http.StatusOK, "GET", "/v1/apps/devflow/roles", nil)["items"].([]any)
+	got := map[string]map[string]any{}
+	for _, r := range roles {
+		got[r.(map[string]any)["name"].(string)] = r.(map[string]any)
+	}
+	if p := got["operator"]["permissions"].([]any); len(p) != 3 || got["operator"]["edited"] != true {
+		t.Fatalf("edited role after re-apply: %v", got["operator"])
+	}
+	if got["reviewer"]["origin"] != "platform" || got["viewer"]["is_default"] != true {
+		t.Fatalf("roles after re-apply: %v", got)
+	}
+
+	// a manifest may not drop a permission a role still uses
+	m["permissions"] = []map[string]any{{"name": "run.read"}, {"name": "run.start"}}
+	op.must(http.StatusUnprocessableEntity, "PUT", "/admin/v1/apps/devflow", m)
+
+	// a held role and the default role cannot be deleted; a free one can
+	op.must(http.StatusUnprocessableEntity, "DELETE", "/admin/v1/apps/devflow/roles/reviewer", nil)
+	op.must(http.StatusUnprocessableEntity, "DELETE", "/admin/v1/apps/devflow/roles/viewer", nil)
+	op.must(http.StatusOK, "PATCH", "/admin/v1/apps/devflow/roles/operator", map[string]any{"is_default": true})
+	op.must(http.StatusNoContent, "DELETE", "/admin/v1/apps/devflow/roles/viewer", nil)
+}
