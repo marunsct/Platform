@@ -27,6 +27,8 @@ public class MaturaTokenMapper extends AbstractOIDCProtocolMapper implements OID
     public static final String ID = "matura-token-mapper";
     static final String TENANT_NOTE = "client_request_param_matura_tenant";
     static final String WORKSPACE_NOTE = "client_request_param_matura_workspace";
+    /** User-session note: when the mapper last issued a token in the session (Unix ms), for idle timeouts. */
+    static final String LAST_USE_NOTE = "matura.last_token";
 
     private static volatile MaturaClient client;
 
@@ -57,9 +59,10 @@ public class MaturaTokenMapper extends AbstractOIDCProtocolMapper implements OID
         AuthenticatedClientSessionModel cs = clientSessionCtx.getClientSession();
         UserModel user = userSession.getUser();
         String name = String.join(" ", nz(user.getFirstName()), nz(user.getLastName())).trim();
+        long lastUse = parseLong(userSession.getNote(LAST_USE_NOTE));
         MaturaClient.Request req = new MaturaClient.Request(user.getId(), user.getEmail(), user.isEmailVerified(), name,
                 user.getFirstAttribute("locale"), cs.getClient().getClientId(), cs.getNote(TENANT_NOTE),
-                cs.getNote(WORKSPACE_NOTE));
+                cs.getNote(WORKSPACE_NOTE), userSession.getStarted() * 1000L, lastUse);
         MaturaClient.Answer answer;
         try {
             answer = client().tokenContext(req);
@@ -69,10 +72,23 @@ public class MaturaTokenMapper extends AbstractOIDCProtocolMapper implements OID
                     "matura_unavailable", Response.Status.SERVICE_UNAVAILABLE);
         }
         if (answer.refused()) {
+            if ("session_expired".equals(answer.refusal())) {
+                // the tenant's session limits are over: end the SSO session so the next sign-in asks again
+                session.sessions().removeUserSession(session.getContext().getRealm(), userSession);
+            }
             throw new ErrorResponseException(OAuthErrorException.ACCESS_DENIED, answer.refusal(), Response.Status.FORBIDDEN);
         }
+        userSession.setNote(LAST_USE_NOTE, Long.toString(System.currentTimeMillis()));
         MaturaClaims.apply(token, answer.claims());
         return token;
+    }
+
+    private static long parseLong(String s) {
+        try {
+            return s == null ? 0 : Long.parseLong(s);
+        } catch (NumberFormatException e) {
+            return 0;
+        }
     }
 
     private static String nz(String s) { return s == null ? "" : s; }

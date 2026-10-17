@@ -1,0 +1,2 @@
+dev.matura.keycloak.MaturaMfaPolicyAuthenticatorFactory
+dev.matura.keycloak.MaturaSsoAuthenticatorFactory

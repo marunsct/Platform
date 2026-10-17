@@ -48,6 +48,10 @@ tags:
     description: The tamper-evident audit log and its streaming destinations.
   - name: security
     description: Tenant security policies.
+  - name: sessions
+    description: Keycloak sessions and second factors (TS12).
+  - name: sso
+    description: Verified domains, per-tenant identity providers and home-realm discovery (TS13).
   - name: readiness
     description: Readiness controls, evidence and the public trust page. Readiness is not an audit or a certification.
   - name: privacy
@@ -3138,6 +3142,452 @@ paths:
           $ref: '#/components/responses/Unprocessable'
 
   # --- internal (Keycloak) ----------------------------------------------------------------------------------------
+  # --- sessions and second factors (TS12) -------------------------------------------------------------------------
+  /v1/me/sessions:
+    get:
+      operationId: listMySessions
+      summary: List my sessions
+      description: |
+        The caller's Keycloak sessions (browsers and devices), most recently used first. `current` marks the
+        session the request's token comes from (its `sid`).
+      tags: [sessions]
+      responses:
+        '200':
+          description: The sessions.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Session'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/IdentityUnavailable'
+    delete:
+      operationId: signOutEverywhere
+      summary: Sign out everywhere
+      description: |
+        Ends every session of the caller (refresh tokens stop working; access tokens run out within their
+        lifetime). With `keep_current=true` the session of the request's token stays.
+      tags: [sessions]
+      parameters:
+        - name: keep_current
+          in: query
+          schema:
+            type: boolean
+      responses:
+        '204':
+          description: Signed out.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '503':
+          $ref: '#/components/responses/IdentityUnavailable'
+  /v1/me/sessions/{id}:
+    parameters:
+      - $ref: '#/components/parameters/sessionId'
+    delete:
+      operationId: deleteMySession
+      summary: End one of my sessions
+      tags: [sessions]
+      responses:
+        '204':
+          description: Ended.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          $ref: '#/components/responses/IdentityUnavailable'
+  /v1/me/mfa:
+    get:
+      operationId: getMyMFA
+      summary: My second factors
+      description: |
+        The caller's second factors (TOTP, security keys, passkeys, recovery codes; never their secrets) and
+        whether a tenant they belong to requires one.
+      tags: [sessions]
+      responses:
+        '200':
+          description: Factors and requirement.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [factors, configured, required, required_by]
+                properties:
+                  factors:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, type, label, created_at]
+                      properties:
+                        id:
+                          type: string
+                        type:
+                          type: string
+                          enum: [otp, webauthn, webauthn-passwordless, recovery-authn-codes]
+                        label:
+                          type: string
+                        created_at:
+                          type: string
+                          format: date-time
+                  configured:
+                    type: boolean
+                  required:
+                    type: boolean
+                  required_by:
+                    type: array
+                    description: Slugs of the tenants whose security policy requires MFA.
+                    items:
+                      type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/IdentityUnavailable'
+  /v1/tenants/{tid}/members/{uid}/sessions:
+    parameters:
+      - $ref: '#/components/parameters/tid'
+      - $ref: '#/components/parameters/uid'
+    get:
+      operationId: listMemberSessions
+      summary: List a member's sessions
+      description: |
+        Owners and admins (admins not for owners), for members the tenant governs: the member's email domain is
+        verified by this tenant, or they belong to no other organisation. Otherwise 403 `not-governed`, since
+        Keycloak sessions span every tenant the person belongs to. Operators need approved support access and then skip this rule.
+      tags: [sessions]
+      responses:
+        '200':
+          description: The member's sessions.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Session'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          $ref: '#/components/responses/IdentityUnavailable'
+  /v1/tenants/{tid}/members/{uid}:sign-out:
+    parameters:
+      - $ref: '#/components/parameters/tid'
+      - $ref: '#/components/parameters/uid'
+    post:
+      operationId: signOutMember
+      summary: Sign a member out everywhere
+      description: Same rule as listing a member's sessions. Audited as `member.signed_out`.
+      tags: [sessions]
+      responses:
+        '204':
+          description: Signed out.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          $ref: '#/components/responses/IdentityUnavailable'
+  /v1/tenants/{tid}/members/{uid}:reset-mfa:
+    parameters:
+      - $ref: '#/components/parameters/tid'
+      - $ref: '#/components/parameters/uid'
+    post:
+      operationId: resetMemberMFA
+      summary: Reset a member's second factors
+      description: |
+        Removes the member's TOTP, WebAuthn, passkey and recovery-code credentials and signs them out; if a tenant of
+        theirs requires MFA they enrol again at their next sign-in. Same rule as listing a member's sessions; not for
+        yourself (422). Audited as `member.mfa_reset`.
+      tags: [sessions]
+      responses:
+        '200':
+          description: How many credentials were removed.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [removed]
+                properties:
+                  removed:
+                    type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '503':
+          $ref: '#/components/responses/IdentityUnavailable'
+
+  # --- enterprise SSO (TS13) --------------------------------------------------------------------------------------
+  /v1/tenants/{tid}/domains:
+    parameters:
+      - $ref: '#/components/parameters/tid'
+    get:
+      operationId: listDomains
+      summary: List the tenant's email domains
+      tags: [sso]
+      responses:
+        '200':
+          description: Claimed and verified domains.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Domain'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      operationId: addDomain
+      summary: Claim an email domain
+      description: Owners and admins. Returns the DNS TXT record to publish (`record_name`, `record_value`).
+      tags: [sso]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [domain]
+              properties:
+                domain:
+                  type: string
+                  examples: [acme.com]
+      responses:
+        '201':
+          description: The claimed domain.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Domain'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+  /v1/tenants/{tid}/domains/{domain}:verify:
+    parameters:
+      - $ref: '#/components/parameters/tid'
+      - $ref: '#/components/parameters/domain'
+    post:
+      operationId: verifyDomain
+      summary: Verify a domain over DNS
+      description: |
+        Looks up TXT records at `_matura-challenge.<domain>`; one must equal the domain's `record_value`.
+        422 `domain-not-verified` when it is missing (the reason is kept in `last_error`); 409 when another tenant
+        verified the domain first.
+      tags: [sso]
+      responses:
+        '200':
+          description: The verified domain.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Domain'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+  /v1/tenants/{tid}/domains/{domain}:
+    parameters:
+      - $ref: '#/components/parameters/tid'
+      - $ref: '#/components/parameters/domain'
+    delete:
+      operationId: deleteDomain
+      summary: Remove a domain
+      tags: [sso]
+      responses:
+        '204':
+          description: Removed.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /v1/tenants/{tid}/sso:
+    parameters:
+      - $ref: '#/components/parameters/tid'
+    get:
+      operationId: getSSO
+      summary: The tenant's SSO connection
+      tags: [sso]
+      responses:
+        '200':
+          description: The connection and the service-provider details for the IdP's administrator.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SSOConnection'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      operationId: createSSO
+      summary: Connect an identity provider
+      description: |
+        Owners and admins of a company tenant with at least one verified domain. Keycloak reads the OIDC discovery
+        document or SAML metadata (https only) and gets identity provider `t-<slug>` with email and name mappers.
+        Sign-ins through it are accepted only for addresses in the tenant's verified domains; such users are linked
+        to an existing account with the same email or created, and join the tenant with `default_tenant_role` and
+        each enabled app's default role. The OIDC client secret is stored encrypted and never returned.
+      tags: [sso]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [protocol]
+              properties:
+                protocol:
+                  type: string
+                  enum: [oidc, saml]
+                display_name:
+                  type: string
+                discovery_url:
+                  type: string
+                  format: uri
+                  description: OIDC issuer or its discovery document.
+                client_id:
+                  type: string
+                client_secret:
+                  type: string
+                  writeOnly: true
+                metadata_url:
+                  type: string
+                  format: uri
+                  description: SAML IdP metadata.
+                email_attribute:
+                  type: string
+                  description: SAML attribute holding the email (default `email`).
+                first_name_attribute:
+                  type: string
+                last_name_attribute:
+                  type: string
+                default_tenant_role:
+                  type: string
+                  enum: [admin, billing, member]
+      responses:
+        '201':
+          description: The connection.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SSOConnection'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '503':
+          $ref: '#/components/responses/IdentityUnavailable'
+    delete:
+      operationId: deleteSSO
+      summary: Disconnect the identity provider
+      description: Removes the Keycloak identity provider (and its account links) and the connection.
+      tags: [sso]
+      responses:
+        '204':
+          description: Removed.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          $ref: '#/components/responses/IdentityUnavailable'
+  /v1/sso/discover:
+    get:
+      operationId: discoverSSO
+      summary: Home-realm discovery
+      description: |
+        Public. For an address in a domain verified by an active tenant with an SSO connection, the
+        identity-provider alias a sign-in page passes to Keycloak as `kc_idp_hint`; otherwise `{"sso": false}`.
+      tags: [sso]
+      security: []
+      parameters:
+        - name: email
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Where to send the address.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [sso]
+                properties:
+                  sso:
+                    type: boolean
+                  idp_hint:
+                    type: string
+                  tenant:
+                    type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
   /internal/v1/token-context:
     post:
       operationId: getTokenContext
@@ -3176,6 +3626,14 @@ paths:
                 workspace:
                   type: string
                   description: Workspace id; empty means the tenant's default workspace.
+                session_started:
+                  type: integer
+                  description: Start of the Keycloak session, Unix ms; checked against the tenant's session_max_age.
+                session_last_use:
+                  type: integer
+                  description: |
+                    When the mapper last issued a token in this session, Unix ms; checked against the
+                    tenant's idle_timeout. A refusal for either is `session_expired`.
       responses:
         '200':
           description: The claims.
@@ -3189,6 +3647,102 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           description: No token may be issued.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenRefusal'
+
+  /internal/v1/mfa-policy:
+    post:
+      operationId: getMFAPolicy
+      summary: Whether a user must use a second factor
+      description: |
+        Asked by the extension's `matura-mfa-policy` authenticator at sign-in. Required when an active tenant
+        the user actively belongs to has `require_mfa` in its security policy.
+      tags: [internal]
+      security:
+        - internalToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [user_id]
+              properties:
+                user_id:
+                  type: string
+                  format: uuid
+      responses:
+        '200':
+          description: The answer.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [required, tenants]
+                properties:
+                  required:
+                    type: boolean
+                  tenants:
+                    type: array
+                    items:
+                      type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /internal/v1/sso-login:
+    post:
+      operationId: checkSSOLogin
+      summary: Check a sign-in through a tenant's identity provider
+      description: |
+        Asked by the extension's `matura-sso` authenticator. Refused (403 `domain_not_verified`) unless the
+        email is in a domain the provider's tenant verified. With `user_id`, the user joins the tenant just in time.
+      tags: [internal]
+      security:
+        - internalToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [alias, email]
+              properties:
+                alias:
+                  type: string
+                email:
+                  type: string
+                user_id:
+                  type: string
+                  format: uuid
+                name:
+                  type: string
+      responses:
+        '200':
+          description: Accepted.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [tid, tenant, joined]
+                properties:
+                  tid:
+                    type: string
+                    format: uuid
+                  tenant:
+                    type: string
+                  joined:
+                    type: boolean
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Refused.
           content:
             application/json:
               schema:
@@ -3237,6 +3791,20 @@ components:
       schema:
         type: string
         format: uuid
+    sessionId:
+      name: id
+      in: path
+      required: true
+      description: Keycloak session id.
+      schema:
+        type: string
+    domain:
+      name: domain
+      in: path
+      required: true
+      description: Domain name, lower case.
+      schema:
+        type: string
     id:
       name: id
       in: path
@@ -3409,6 +3977,12 @@ components:
         application/problem+json:
           schema:
             $ref: '#/components/schemas/Problem'
+    IdentityUnavailable:
+      description: Keycloak's admin API is not configured or not answering.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
     PlanLimit:
       description: |
         The tenant's plan does not allow it (`plan-limit`): `limit` names it (`max_members`, `max_workspaces` or
@@ -3436,6 +4010,104 @@ components:
             $ref: '#/components/schemas/Problem'
 
   schemas:
+    Session:
+      type: object
+      required: [id, ip_address, started_at, last_access_at, remember_me, clients, current]
+      properties:
+        id:
+          type: string
+        ip_address:
+          type: string
+        started_at:
+          type: string
+          format: date-time
+        last_access_at:
+          type: string
+          format: date-time
+        remember_me:
+          type: boolean
+        clients:
+          type: array
+          description: Client ids of the apps used in the session.
+          items:
+            type: string
+        current:
+          type: boolean
+    Domain:
+      type: object
+      required: [tenant_id, domain, verified, record_name, record_value, version, created_at]
+      properties:
+        tenant_id:
+          type: string
+          format: uuid
+        domain:
+          type: string
+        verified:
+          type: boolean
+        verified_at:
+          type: [string, 'null']
+          format: date-time
+        last_checked_at:
+          type: [string, 'null']
+          format: date-time
+        last_error:
+          type: [string, 'null']
+        record_name:
+          type: string
+          description: Where to publish the TXT record, `_matura-challenge.<domain>`.
+        record_value:
+          type: string
+          description: The TXT record's value, `matura-verification=<challenge>`.
+        version:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+    SSOConnection:
+      type: object
+      required: [tenant_id, alias, protocol, display_name, config, default_tenant_role, idp_hint, redirect_uri,
+                 has_client_secret, version]
+      properties:
+        tenant_id:
+          type: string
+          format: uuid
+        alias:
+          type: string
+          description: Keycloak identity provider alias, `t-<tenant slug>`.
+        protocol:
+          type: string
+          enum: [oidc, saml]
+        display_name:
+          type: string
+        config:
+          type: object
+          description: Non-secret settings (discovery or metadata URL, client id, IdP entity id, attribute names).
+          additionalProperties:
+            type: string
+        default_tenant_role:
+          type: string
+        idp_hint:
+          type: string
+          description: Pass as `kc_idp_hint` in the authorisation request to go straight to this IdP.
+        redirect_uri:
+          type: string
+          description: OIDC redirect URI, or SAML assertion consumer service URL, to register at the IdP.
+        entity_id:
+          type: string
+          description: SAML service provider entity id.
+        metadata_url:
+          type: string
+          description: SAML service provider metadata.
+        has_client_secret:
+          type: boolean
+        version:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
     Problem:
       type: object
       description: RFC 9457 problem details.
