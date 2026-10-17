@@ -50,7 +50,7 @@
           "key_ops": [
             "verify"
           ],
-          "n": "uorEeFEaTi-Hl7PYWHzc-p_BNVq5tszgJ-wdixsBUE30MFbgn_UxIRthp6g07_N-02v3aGsDAk1ZW6dvWDx2IHAQKI5oTjFZmyuRDvINyvMJ8e9HM-lUZ5SN1NT09d44zyx1Xr0k-bnEdozzF5QANVjcWu1FDtKzu68OfPVLO6nHjJqzb-IY1dsoDHQrsLp9nLQ2280mKRFbLaL3twHugFfEKWOhY-AML_ZBbjnxDhrsvUxzMXbdy9KjZLfq5le8XPghRJecD5N9I-usPJnAX-SXHuGTPpDnWctOgrVR6ulyZPYRZ1FVCcbg2QVAceIzA5yeG3kbOdwb8Cck7i5-kw",
+          "n": "qLmGUBdYRps96XYjooBPq0SsMK9BscvTeV2lzoUW8ydsDBLqjY_fh4pwV4bWqE6nRQYto3L-f99rSNw7zP1O5FYU5IvgNkcoPEaJWkXjOLD_jjyI-JuEK6Uqg-tYV0OOK9UEmd6StPviW-u_ns1QNtKgS2Z6Sj_Jd7ohP-dkktLkKOoH4GJBsF4e-DMBrkQVT-7tquiKVHom6DmVwT12BTnXAsQrObh8CceHAnQdTLIYTW8FOuYP_eKNE5kEQMta8ITyuvAxRqCjJpgsrEhHYm5uGlV77ZG9BsebsTGytUg_vnUM8YJ-dY9JqLvNPAeGSDcwB9zaeRVBiYEBk_jtww",
           "e": "AQAB",
           "kid": "test-key-1",
           "use": "sig",
@@ -61,7 +61,7 @@
     "cases": [
       {
         "name": "valid",
-        "token": "eyJhbGciOiJSUzI1NiIsImtpZCI6InRlc3Qta2V5LTEiLCJ0eXAiOiJKV1QifQ.eyJpc3MiOiJodHRwczovL21hdHVyYS50ZXN0L3JlYWxtcy9tYXR1cmEiLCJhdWQiOiJub3RlcyIsInN1YiI6IjAxOTJiN2E0LTVjMWUtN2QyYS05ZjAwLTRiMWUyYTljMGQxMSIsImlhdCI6MTc5MjE0MDMwMCwiZXhwIjoxNzkyMTQwNjAwLCJhenAiOiJub3RlcyIsImVtYWlsIjoiYWRhQGV4YW1wbGUudGVzdCIsImVtYWlsX3ZlcmlmaWVkIjp0cnVlLCJuYW1lIjoiQWRhIExvdmVsYWNlIiwidGlkIjoiMDE5MmI3YTQtNjAwMC03MDAwLTgwMDAtMDAwMDAwMDAwMDAxIiwidGVuYW50IjoiYWNtZSIsIndpZCI6IjAxOTJiN2E0LTcwMDAtNzAwMC04MDAwLTAwMDAwMDAwMDBhMSIsInRyb2xlcyI6WyJhZG1pbiJdLCJyb2xlcyI6WyJlZGl0b3IiXSwicGVybXMiOlsibm90ZS5yZWFkIiwibm90ZS53cml0ZSJdLCJ2ZXIiOnsidSI6MTIsIm0iOjE1LCJ0IjoxMH0sInBtb2RlIjoic2hhcmVkIiwic2lkIjoic2Vzcy0xIn0.XHZRo-lBKB-x324XY6oocozFvzmIo7FuSqos1eBcg_P5qC0QDqPNEM--3D5BG_BIiam0uT45zEQpEPMb_DyVLld1AKICWzI9ogb1xSGMneISnLZUzn3YRjJZufnta76kTl8cfEuqik8ZIX-ixB1vR_r0TY9arUk-oz9p1jbNig4pW191II727xWurJHA_TymkWD1Oga5TZDOPrn6nV9Uzzo_skE3Rg5Od_-Insm_WKR9WLECemcR_CDqUPMnLqicJniVFD930vivZXZXDRMtaFtIYOMJPSIGHiPUN6CJ6jexOyWCBFDOwNFjxXFuBkq4u9lNj_SHXsgWdZwguVLHEA",
+        "token": "eyJhbGciOiJSUzI1NiIsImtpZCI6InRlc3Qta2V5LTEiLCJ0eXAiOiJKV1QifQ.eyJpc3MiOiJodHRwczovL21hdHVyYS50ZXN0L3JlYWxtcy9tYXR1cmEiLCJhdWQiOiJub3RlcyIsInN1YiI6IjAxOTJiN2E0LTVjMWUtN2QyYS05ZjAwLTRiMWUyYTljMGQxMSIsImlhdCI6MTc5MjE0MDMwMCwiZXhwIjoxNzkyMTQwNjAwLCJhenAiOiJub3RlcyIsImVtYWlsIjoiYWRhQGV4YW1wbGUudGVzdCIsImVtYWlsX3ZlcmlmaWVkIjp0cnVlLCJuYW1lIjoiQWRhIExvdmVsYWNlIiwidGlkIjoiMDE5MmI3YTQtNjAwMC03MDAwLTgwMDAtMDAwMDAwMDAwMDAxIiwidGVuYW50IjoiYWNtZSIsIndpZCI6IjAxOTJiN2E0LTcwMDAtNzAwMC04MDAwLTAwMDAwMDAwMDBhMSIsInRyb2xlcyI6WyJhZG1pbiJdLCJyb2xlcyI6WyJlZGl0b3IiXSwicGVybXMiOlsibm90ZS5yZWFkIiwibm90ZS53cml0ZSJdLCJ2ZXIiOnsidSI6MTIsIm0iOjE1LCJ0IjoxMH0sInBtb2RlIjoic2hhcmVkIiwic2lkIjoic2Vzcy0xIn0.ctSqMak5yRVcOgkEf1upYQ7oaKRap8xnru46k4RacmtC_S3dX_asljXi5TYHy2chOPbtkX_KGC0H6_2HQ9xhxql9_a-SCGmeSkTCD9rbuYN8D9kuKRRm4arDeLHfR2Qo6qwt81rZRvOckBMv6EMUYM3q6vPoHI69KThuawY82Xh0g6drNuvCdBBMCVD_abZjZEUy1PD9KhpVvDt8BaPnoFm6Xo8C3jvzCy-oLRDxKyZNhil5wcFOuYrNTM7CJO8J9pIZuWwa8pjtimfUe_O_2KniK3Ju0ujO6XvJ4Ml1kbaVUZ9VrJzS7Kkp6F7OKTieCdr2MX2uWS4uz_vwbnRicQ",
         "valid": true,
         "principal": {
           "user_id": "0192b7a4-5c1e-7d2a-9f00-4b1e2a9c0d11",
@@ -89,7 +89,7 @@
       },
       {
         "name": "wildcard permission",
-        "token": "eyJhbGciOiJSUzI1NiIsImtpZCI6InRlc3Qta2V5LTEiLCJ0eXAiOiJKV1QifQ.eyJpc3MiOiJodHRwczovL21hdHVyYS50ZXN0L3JlYWxtcy9tYXR1cmEiLCJhdWQiOiJub3RlcyIsInN1YiI6IjAxOTJiN2E0LTVjMWUtN2QyYS05ZjAwLTRiMWUyYTljMGQxMSIsImlhdCI6MTc5MjE0MDMwMCwiZXhwIjoxNzkyMTQwNjAwLCJhenAiOiJub3RlcyIsImVtYWlsIjoiYWRhQGV4YW1wbGUudGVzdCIsImVtYWlsX3ZlcmlmaWVkIjp0cnVlLCJuYW1lIjoiQWRhIExvdmVsYWNlIiwidGlkIjoiMDE5MmI3YTQtNjAwMC03MDAwLTgwMDAtMDAwMDAwMDAwMDAxIiwidGVuYW50IjoiYWNtZSIsIndpZCI6IjAxOTJiN2E0LTcwMDAtNzAwMC04MDAwLTAwMDAwMDAwMDBhMSIsInRyb2xlcyI6WyJhZG1pbiJdLCJyb2xlcyI6WyJhZG1pbiJdLCJwZXJtcyI6WyIqIl0sInZlciI6eyJ1IjoxMiwibSI6MTUsInQiOjEwfSwicG1vZGUiOiJzaGFyZWQiLCJzaWQiOiJzZXNzLTEifQ.a-CKOj9xh8lRWfMNEJEXMq8PkqENO-VG-SN6tdirKKYmAN6YU9mRtdtYZZLBVlZwlY_m5r7etwfPld0TYSRvOpwoDYqaq-ir-dHJwuK1dY17kQR_w1tm3gPh229EvDD_FyFDoStoFW6JSNlzA_quB__EzNbtSCgFJxAULPhlXE9sEqIPnt7ewjWzczx-euVjL_a6Nvwn-CwHs0Pq09poBIjyMiKnAIUdhAIoCcV8dWH3gzUVRpvnu7xetzcRpjCdz0UvpINt3XQDe3HAd38QtaZVRrZa2T2ugBcijbd80A1ArPYmY3cq6664YKDZuXoHPm6xU4R5iLr1eHzUEG0FBQ",
+        "token": "eyJhbGciOiJSUzI1NiIsImtpZCI6InRlc3Qta2V5LTEiLCJ0eXAiOiJKV1QifQ.eyJpc3MiOiJodHRwczovL21hdHVyYS50ZXN0L3JlYWxtcy9tYXR1cmEiLCJhdWQiOiJub3RlcyIsInN1YiI6IjAxOTJiN2E0LTVjMWUtN2QyYS05ZjAwLTRiMWUyYTljMGQxMSIsImlhdCI6MTc5MjE0MDMwMCwiZXhwIjoxNzkyMTQwNjAwLCJhenAiOiJub3RlcyIsImVtYWlsIjoiYWRhQGV4YW1wbGUudGVzdCIsImVtYWlsX3ZlcmlmaWVkIjp0cnVlLCJuYW1lIjoiQWRhIExvdmVsYWNlIiwidGlkIjoiMDE5MmI3YTQtNjAwMC03MDAwLTgwMDAtMDAwMDAwMDAwMDAxIiwidGVuYW50IjoiYWNtZSIsIndpZCI6IjAxOTJiN2E0LTcwMDAtNzAwMC04MDAwLTAwMDAwMDAwMDBhMSIsInRyb2xlcyI6WyJhZG1pbiJdLCJyb2xlcyI6WyJhZG1pbiJdLCJwZXJtcyI6WyIqIl0sInZlciI6eyJ1IjoxMiwibSI6MTUsInQiOjEwfSwicG1vZGUiOiJzaGFyZWQiLCJzaWQiOiJzZXNzLTEifQ.hkhmxQ1hnp3_33C3TvYKt68YsRk2x8nEXJw0Lq1Wtn6P9qXEmyeLSf7-eKr8hwDv2Ch4Ft29RF4evk0fYLCeqKtNYDXck0bW_uKIZPvOxQ1C6UR61hC1q2UX-rAXwTsI5sRtTtw94cI48NYIzvVeodrxFtMwm2dneXVRsCupRtF61mlGP0zAo2T4WfRfnsMb_TYUjpjtvc9izKbPryRQu56BfeRg8xGfJo6pT4T8n0Kts9lCmwvmZD_-2Qc708vi6f1dDv9X3--SnQQgyi05uPwJHOAZp9KUmpUVnUZFHnW-aoEWg_VTm4mwz8vmW33bM7Cb72udMxHDJx7TXiYuvA",
         "valid": true,
         "principal": {
           "user_id": "0192b7a4-5c1e-7d2a-9f00-4b1e2a9c0d11",
@@ -117,7 +117,7 @@
       {
         "name": "no tenant (signed in, no tenant chosen)",
         "valid": true,
-        "token": "eyJhbGciOiJSUzI1NiIsImtpZCI6InRlc3Qta2V5LTEiLCJ0eXAiOiJKV1QifQ.eyJpc3MiOiJodHRwczovL21hdHVyYS50ZXN0L3JlYWxtcy9tYXR1cmEiLCJhdWQiOiJub3RlcyIsInN1YiI6IjAxOTJiN2E0LTVjMWUtN2QyYS05ZjAwLTRiMWUyYTljMGQxMSIsImlhdCI6MTc5MjE0MDMwMCwiZXhwIjoxNzkyMTQwNjAwLCJhenAiOiJub3RlcyIsImVtYWlsIjoiYWRhQGV4YW1wbGUudGVzdCIsImVtYWlsX3ZlcmlmaWVkIjp0cnVlLCJuYW1lIjoiQWRhIExvdmVsYWNlIiwidHJvbGVzIjpbImFkbWluIl0sInJvbGVzIjpbImVkaXRvciJdLCJwZXJtcyI6W10sInZlciI6eyJ1IjoxMiwibSI6MTUsInQiOjEwfSwic2lkIjoic2Vzcy0xIn0.HugEc4Ux1z6cLXjJhGbR_i4jKpaY_sKeV6ml1Wqcd4CNmu-JDjlv1gX1fxooG_kTHhNmcaV320EBsYTk18rlMampyMT6EeDQc3mZgzarsHQFMRI-YveuZTCU_eFCgue1uGfxkfEOSlRuY6Q3S3Zo709sR-tJOOD4LrI4UvQqULGMuzTlyrDLjlVjZogHIzRaqRZK5E1Gup1km9JEYMxt6UlpnQokOfcqN6bdLl6Sg4k4knwDH82kKIvlDhUJn24GFPHIBqgpRoHTe7GdnDSWQUFbsmJfryoQcFpNTxeCMn8YkxH8NnNnuBaSp0FXNo3Y6sltm_0f81G6vOycfjyj4w",
+        "token": "eyJhbGciOiJSUzI1NiIsImtpZCI6InRlc3Qta2V5LTEiLCJ0eXAiOiJKV1QifQ.eyJpc3MiOiJodHRwczovL21hdHVyYS50ZXN0L3JlYWxtcy9tYXR1cmEiLCJhdWQiOiJub3RlcyIsInN1YiI6IjAxOTJiN2E0LTVjMWUtN2QyYS05ZjAwLTRiMWUyYTljMGQxMSIsImlhdCI6MTc5MjE0MDMwMCwiZXhwIjoxNzkyMTQwNjAwLCJhenAiOiJub3RlcyIsImVtYWlsIjoiYWRhQGV4YW1wbGUudGVzdCIsImVtYWlsX3ZlcmlmaWVkIjp0cnVlLCJuYW1lIjoiQWRhIExvdmVsYWNlIiwidHJvbGVzIjpbImFkbWluIl0sInJvbGVzIjpbImVkaXRvciJdLCJwZXJtcyI6W10sInZlciI6eyJ1IjoxMiwibSI6MTUsInQiOjEwfSwic2lkIjoic2Vzcy0xIn0.bqLDPilQXeZMSDXw--L0S0GJxp8hbalx7YHtlIYZld1Lj_7VwLwO_jVvwory7IMr3QPpJpdU94vwy9D82V2kZTQF45ZkdIZttNZI8c6bNmzOFPgAouUCRUPyJJ4AK0fZXDaBISpsIzQIsJPpFAgK-K5KgRIMWHQfK7UTTi-6CaoBIXeM-T3PQ_1pe-YNCHCbW1eTNCuf5L9sO6bcej4IENIH0WWR724ZLN2zI5E1iSeHRmKNoVSPuW3mhDhWk15XQfgMVFuTEa5ge01vhxjM7YAcNqjg8BAsJSl9thocNz1_Nyu-fUVVdheKfWDTDKQeaeaIajFDJBMzahmK82FVZg",
         "principal": {
           "user_id": "0192b7a4-5c1e-7d2a-9f00-4b1e2a9c0d11",
           "tenant_id": null,
@@ -141,27 +141,27 @@
       },
       {
         "name": "expired",
-        "token": "eyJhbGciOiJSUzI1NiIsImtpZCI6InRlc3Qta2V5LTEiLCJ0eXAiOiJKV1QifQ.eyJpc3MiOiJodHRwczovL21hdHVyYS50ZXN0L3JlYWxtcy9tYXR1cmEiLCJhdWQiOiJub3RlcyIsInN1YiI6IjAxOTJiN2E0LTVjMWUtN2QyYS05ZjAwLTRiMWUyYTljMGQxMSIsImlhdCI6MTc5MjEzOTQ2MCwiZXhwIjoxNzkyMTQwMDYwLCJhenAiOiJub3RlcyIsImVtYWlsIjoiYWRhQGV4YW1wbGUudGVzdCIsImVtYWlsX3ZlcmlmaWVkIjp0cnVlLCJuYW1lIjoiQWRhIExvdmVsYWNlIiwidGlkIjoiMDE5MmI3YTQtNjAwMC03MDAwLTgwMDAtMDAwMDAwMDAwMDAxIiwidGVuYW50IjoiYWNtZSIsIndpZCI6IjAxOTJiN2E0LTcwMDAtNzAwMC04MDAwLTAwMDAwMDAwMDBhMSIsInRyb2xlcyI6WyJhZG1pbiJdLCJyb2xlcyI6WyJlZGl0b3IiXSwicGVybXMiOlsibm90ZS5yZWFkIiwibm90ZS53cml0ZSJdLCJ2ZXIiOnsidSI6MTIsIm0iOjE1LCJ0IjoxMH0sInBtb2RlIjoic2hhcmVkIiwic2lkIjoic2Vzcy0xIn0.Ktu7VgYQfkZ1wv5d4EXmRZdmuyOsSjB02HZkx1bLLdw3-SZoHHMCg3x5DdWzHwthrvrUN_4r_aAb_VRE0xylAY_Az_5dCMcGrOEK2m9A9pM58V6PNrks6FOqgiEBVyuLu-6qO3CsEPykD0rmnllfgmHxogcBG8SNDEF2D5Os2OnIsaBS8kOXrLXmeZTDhStMs6-6NPC_y5fZbHl4C025kwJ76Xz9LNbKHiKHlKA6e08BNA2BefS9g3-26MQ4pOQcsDogEcy02amtgEmfWiLBxH78REny1MJFG5k4A4WTUAn2nwZncI03UuLUeCOuLzKcfefxhSMNpgrgLkCMkUWnLQ",
+        "token": "eyJhbGciOiJSUzI1NiIsImtpZCI6InRlc3Qta2V5LTEiLCJ0eXAiOiJKV1QifQ.eyJpc3MiOiJodHRwczovL21hdHVyYS50ZXN0L3JlYWxtcy9tYXR1cmEiLCJhdWQiOiJub3RlcyIsInN1YiI6IjAxOTJiN2E0LTVjMWUtN2QyYS05ZjAwLTRiMWUyYTljMGQxMSIsImlhdCI6MTc5MjEzOTQ2MCwiZXhwIjoxNzkyMTQwMDYwLCJhenAiOiJub3RlcyIsImVtYWlsIjoiYWRhQGV4YW1wbGUudGVzdCIsImVtYWlsX3ZlcmlmaWVkIjp0cnVlLCJuYW1lIjoiQWRhIExvdmVsYWNlIiwidGlkIjoiMDE5MmI3YTQtNjAwMC03MDAwLTgwMDAtMDAwMDAwMDAwMDAxIiwidGVuYW50IjoiYWNtZSIsIndpZCI6IjAxOTJiN2E0LTcwMDAtNzAwMC04MDAwLTAwMDAwMDAwMDBhMSIsInRyb2xlcyI6WyJhZG1pbiJdLCJyb2xlcyI6WyJlZGl0b3IiXSwicGVybXMiOlsibm90ZS5yZWFkIiwibm90ZS53cml0ZSJdLCJ2ZXIiOnsidSI6MTIsIm0iOjE1LCJ0IjoxMH0sInBtb2RlIjoic2hhcmVkIiwic2lkIjoic2Vzcy0xIn0.JsRKOOhWpYgUwq6v83wS36PE1xeEA4jCb7an9ejHw5jWxIYQVO2O2BA014dUQk5GLW8Zr6nkMkbLvnhJmkj7n-FQ3UDyxwSYj6L_3TsvalQdDCAFUfgwc8RXfVPOZURLT4cvaBbLUDz65fhV1QyrLRtHQS0aMSFtYSffUc3xAgp5o0wlPeuvrrFA7AwpG4g9Sca0m3XB858YjYpehwQr-rMcD3c1f1AM9_v4EYg8dJAxKBnOGvoYuKoEt5hLtLsVqT6u2hgstUutRL50_RWFO1ICuh_SY9ffWXMbEQOfI9-2fRcgoTZ5eyWh5xM1qs9Wol6KVZIPksLGRysS1B_0EA",
         "valid": false
       },
       {
         "name": "other audience",
-        "token": "eyJhbGciOiJSUzI1NiIsImtpZCI6InRlc3Qta2V5LTEiLCJ0eXAiOiJKV1QifQ.eyJpc3MiOiJodHRwczovL21hdHVyYS50ZXN0L3JlYWxtcy9tYXR1cmEiLCJhdWQiOiJiaWxsaW5nIiwic3ViIjoiMDE5MmI3YTQtNWMxZS03ZDJhLTlmMDAtNGIxZTJhOWMwZDExIiwiaWF0IjoxNzkyMTQwMzAwLCJleHAiOjE3OTIxNDA2MDAsImF6cCI6ImJpbGxpbmciLCJlbWFpbCI6ImFkYUBleGFtcGxlLnRlc3QiLCJlbWFpbF92ZXJpZmllZCI6dHJ1ZSwibmFtZSI6IkFkYSBMb3ZlbGFjZSIsInRpZCI6IjAxOTJiN2E0LTYwMDAtNzAwMC04MDAwLTAwMDAwMDAwMDAwMSIsInRlbmFudCI6ImFjbWUiLCJ3aWQiOiIwMTkyYjdhNC03MDAwLTcwMDAtODAwMC0wMDAwMDAwMDAwYTEiLCJ0cm9sZXMiOlsiYWRtaW4iXSwicm9sZXMiOlsiZWRpdG9yIl0sInBlcm1zIjpbIm5vdGUucmVhZCIsIm5vdGUud3JpdGUiXSwidmVyIjp7InUiOjEyLCJtIjoxNSwidCI6MTB9LCJwbW9kZSI6InNoYXJlZCIsInNpZCI6InNlc3MtMSJ9.YRQ-l8Z2JCSr50mH9tJ35CqSdTIxG6iK2bZebl6A-rV7R3IXk8PBn5B4ZcrGA2uW3nZSBd81SMl85TzBkmvC2oo00A5j7ZK6AxOsmFd9G1RjAvYY0TcQOmU98bBG7jljv2hnONnQJ1NJJz3m3JV3kISUlBqBsszdcLGJixwn6VLNR5HDeAcb1M4-23me80RbBfgixBI03Z5RuzvIHBvlzb8qs0rk35SKPsqhw71mBFWEyXBreNYo7dfl1QrInRPRRiPH41Ozf1JO1qHukrx1oAwiy9PJHnclh9J1KXUiYQ0u3fQ2G3wwt3vZ4NTW00Xkc-CdE0Qm2pMrzfUEEVC9HA",
+        "token": "eyJhbGciOiJSUzI1NiIsImtpZCI6InRlc3Qta2V5LTEiLCJ0eXAiOiJKV1QifQ.eyJpc3MiOiJodHRwczovL21hdHVyYS50ZXN0L3JlYWxtcy9tYXR1cmEiLCJhdWQiOiJiaWxsaW5nIiwic3ViIjoiMDE5MmI3YTQtNWMxZS03ZDJhLTlmMDAtNGIxZTJhOWMwZDExIiwiaWF0IjoxNzkyMTQwMzAwLCJleHAiOjE3OTIxNDA2MDAsImF6cCI6ImJpbGxpbmciLCJlbWFpbCI6ImFkYUBleGFtcGxlLnRlc3QiLCJlbWFpbF92ZXJpZmllZCI6dHJ1ZSwibmFtZSI6IkFkYSBMb3ZlbGFjZSIsInRpZCI6IjAxOTJiN2E0LTYwMDAtNzAwMC04MDAwLTAwMDAwMDAwMDAwMSIsInRlbmFudCI6ImFjbWUiLCJ3aWQiOiIwMTkyYjdhNC03MDAwLTcwMDAtODAwMC0wMDAwMDAwMDAwYTEiLCJ0cm9sZXMiOlsiYWRtaW4iXSwicm9sZXMiOlsiZWRpdG9yIl0sInBlcm1zIjpbIm5vdGUucmVhZCIsIm5vdGUud3JpdGUiXSwidmVyIjp7InUiOjEyLCJtIjoxNSwidCI6MTB9LCJwbW9kZSI6InNoYXJlZCIsInNpZCI6InNlc3MtMSJ9.L4d1cfjAKmcuEO3JZ2bbn-fT00VJxMZQBdovNZFrxj66tlwKsKEZ6eM19fFEo4nG6n1O6h3zbehV4YWErRWI1KjJItlGydv0_KgAElN78_e0u3IhngG7u8yWDNAKB-siQOTtfeucaxyrXKXXcMesbB8SCcE8pwnLJaemn-nx7PpAAqCmoEuCZWZ3_omAEquj6FP4Mj9UwqsMzSJbWBZLDMYjU_D8OnT3IImTn8prE4Rt6ohDHJohSlTV3q1iHlqSkrpjrAAlRWFO-cJmZGnzIS2jHJZsYERPNdBQ_cNz1lNQwy-YoTRRLRy-Fa0pid129UEej26Dzrq6NGrMVgCrlQ",
         "valid": false
       },
       {
         "name": "other issuer",
-        "token": "eyJhbGciOiJSUzI1NiIsImtpZCI6InRlc3Qta2V5LTEiLCJ0eXAiOiJKV1QifQ.eyJpc3MiOiJodHRwczovL2V2aWwudGVzdC9yZWFsbXMvbWF0dXJhIiwiYXVkIjoibm90ZXMiLCJzdWIiOiIwMTkyYjdhNC01YzFlLTdkMmEtOWYwMC00YjFlMmE5YzBkMTEiLCJpYXQiOjE3OTIxNDAzMDAsImV4cCI6MTc5MjE0MDYwMCwiYXpwIjoibm90ZXMiLCJlbWFpbCI6ImFkYUBleGFtcGxlLnRlc3QiLCJlbWFpbF92ZXJpZmllZCI6dHJ1ZSwibmFtZSI6IkFkYSBMb3ZlbGFjZSIsInRpZCI6IjAxOTJiN2E0LTYwMDAtNzAwMC04MDAwLTAwMDAwMDAwMDAwMSIsInRlbmFudCI6ImFjbWUiLCJ3aWQiOiIwMTkyYjdhNC03MDAwLTcwMDAtODAwMC0wMDAwMDAwMDAwYTEiLCJ0cm9sZXMiOlsiYWRtaW4iXSwicm9sZXMiOlsiZWRpdG9yIl0sInBlcm1zIjpbIm5vdGUucmVhZCIsIm5vdGUud3JpdGUiXSwidmVyIjp7InUiOjEyLCJtIjoxNSwidCI6MTB9LCJwbW9kZSI6InNoYXJlZCIsInNpZCI6InNlc3MtMSJ9.toLBSz9Q0jluPhubuFPJdxVXQsEUe8UI9vTMexCQDfw0j6wOiObXu_kqUlz37ImxF3SZ00icXF-NfyIjVysbGgtGtXxtDV3pwBWqSRCoQH9WVB8kejxaVm2Iz7GlZAFPrRO3jYcoQQ8WrVJ_9yrQUkZSiOn7qVHTLvYlAm5njatdr_mk2iig_NjvxjP4HYl8gRnZBkLOUo98rScnZCpcqctL5xiWb3gMHMu7lmabrSzjM_3DpaA4CToz1uVIOAL8ThP953EktU40lGHmTjFjAwF3oXHkq7Zn2ZYnsEP1MQKxDS6egGQ6Lif0MiA28CnA_PFoAS2Ro_VKvcgQsjQXlQ",
+        "token": "eyJhbGciOiJSUzI1NiIsImtpZCI6InRlc3Qta2V5LTEiLCJ0eXAiOiJKV1QifQ.eyJpc3MiOiJodHRwczovL2V2aWwudGVzdC9yZWFsbXMvbWF0dXJhIiwiYXVkIjoibm90ZXMiLCJzdWIiOiIwMTkyYjdhNC01YzFlLTdkMmEtOWYwMC00YjFlMmE5YzBkMTEiLCJpYXQiOjE3OTIxNDAzMDAsImV4cCI6MTc5MjE0MDYwMCwiYXpwIjoibm90ZXMiLCJlbWFpbCI6ImFkYUBleGFtcGxlLnRlc3QiLCJlbWFpbF92ZXJpZmllZCI6dHJ1ZSwibmFtZSI6IkFkYSBMb3ZlbGFjZSIsInRpZCI6IjAxOTJiN2E0LTYwMDAtNzAwMC04MDAwLTAwMDAwMDAwMDAwMSIsInRlbmFudCI6ImFjbWUiLCJ3aWQiOiIwMTkyYjdhNC03MDAwLTcwMDAtODAwMC0wMDAwMDAwMDAwYTEiLCJ0cm9sZXMiOlsiYWRtaW4iXSwicm9sZXMiOlsiZWRpdG9yIl0sInBlcm1zIjpbIm5vdGUucmVhZCIsIm5vdGUud3JpdGUiXSwidmVyIjp7InUiOjEyLCJtIjoxNSwidCI6MTB9LCJwbW9kZSI6InNoYXJlZCIsInNpZCI6InNlc3MtMSJ9.cCo5ydmrcCTLEKcDQgNwYtljDBa64NRIafVQg0ucmy0NISiFXf575nC7U6j9rrii--P_SF5xeyfs6Gm7o8K_kdd1qylsVXdgersKFLLIj7RhJpSYRvBWobMEG7UtuwvzEPVf2EdSjzkgcxm6K5wcItxSehW-K1HCirrEjxphJ-IeuPzoadgLjF3167ZbXOreHRsHubeaTWtvW0uBLMVVEWj0O2OtTlvArs1C5nJIZgd9tlfFhZuG9X3PttymwpC-a6qd-TWUlhsxbCkJUxeduhvWbWFjrIOA7Q_Csha5wsag6eurNjkyiPwsWOrEDfQR7jjRAFBro0yfTu8HpJ2Shw",
         "valid": false
       },
       {
         "name": "payload changed after signing",
-        "token": "eyJhbGciOiJSUzI1NiIsImtpZCI6InRlc3Qta2V5LTEiLCJ0eXAiOiJKV1QifQ.eyJpc3MiOiAiaHR0cHM6Ly9tYXR1cmEudGVzdC9yZWFsbXMvbWF0dXJhIiwgImF1ZCI6ICJub3RlcyIsICJzdWIiOiAiMDE5MmI3YTQtNWMxZS03ZDJhLTlmMDAtNGIxZTJhOWMwZDExIiwgImlhdCI6IDE3OTIxNDAzMDAsICJleHAiOiAxNzkyMTQwNjAwLCAiYXpwIjogIm5vdGVzIiwgImVtYWlsIjogImFkYUBleGFtcGxlLnRlc3QiLCAiZW1haWxfdmVyaWZpZWQiOiB0cnVlLCAibmFtZSI6ICJBZGEgTG92ZWxhY2UiLCAidGlkIjogIjAxOTJiN2E0LTYwMDAtNzAwMC04MDAwLTAwMDAwMDAwMDAwMSIsICJ0ZW5hbnQiOiAiYWNtZSIsICJ3aWQiOiAiMDE5MmI3YTQtNzAwMC03MDAwLTgwMDAtMDAwMDAwMDAwMGExIiwgInRyb2xlcyI6IFsiYWRtaW4iXSwgInJvbGVzIjogWyJlZGl0b3IiXSwgInBlcm1zIjogWyIqIl0sICJ2ZXIiOiB7InUiOiAxMiwgIm0iOiAxNSwgInQiOiAxMH0sICJwbW9kZSI6ICJzaGFyZWQiLCAic2lkIjogInNlc3MtMSJ9.XHZRo-lBKB-x324XY6oocozFvzmIo7FuSqos1eBcg_P5qC0QDqPNEM--3D5BG_BIiam0uT45zEQpEPMb_DyVLld1AKICWzI9ogb1xSGMneISnLZUzn3YRjJZufnta76kTl8cfEuqik8ZIX-ixB1vR_r0TY9arUk-oz9p1jbNig4pW191II727xWurJHA_TymkWD1Oga5TZDOPrn6nV9Uzzo_skE3Rg5Od_-Insm_WKR9WLECemcR_CDqUPMnLqicJniVFD930vivZXZXDRMtaFtIYOMJPSIGHiPUN6CJ6jexOyWCBFDOwNFjxXFuBkq4u9lNj_SHXsgWdZwguVLHEA",
+        "token": "eyJhbGciOiJSUzI1NiIsImtpZCI6InRlc3Qta2V5LTEiLCJ0eXAiOiJKV1QifQ.eyJpc3MiOiAiaHR0cHM6Ly9tYXR1cmEudGVzdC9yZWFsbXMvbWF0dXJhIiwgImF1ZCI6ICJub3RlcyIsICJzdWIiOiAiMDE5MmI3YTQtNWMxZS03ZDJhLTlmMDAtNGIxZTJhOWMwZDExIiwgImlhdCI6IDE3OTIxNDAzMDAsICJleHAiOiAxNzkyMTQwNjAwLCAiYXpwIjogIm5vdGVzIiwgImVtYWlsIjogImFkYUBleGFtcGxlLnRlc3QiLCAiZW1haWxfdmVyaWZpZWQiOiB0cnVlLCAibmFtZSI6ICJBZGEgTG92ZWxhY2UiLCAidGlkIjogIjAxOTJiN2E0LTYwMDAtNzAwMC04MDAwLTAwMDAwMDAwMDAwMSIsICJ0ZW5hbnQiOiAiYWNtZSIsICJ3aWQiOiAiMDE5MmI3YTQtNzAwMC03MDAwLTgwMDAtMDAwMDAwMDAwMGExIiwgInRyb2xlcyI6IFsiYWRtaW4iXSwgInJvbGVzIjogWyJlZGl0b3IiXSwgInBlcm1zIjogWyIqIl0sICJ2ZXIiOiB7InUiOiAxMiwgIm0iOiAxNSwgInQiOiAxMH0sICJwbW9kZSI6ICJzaGFyZWQiLCAic2lkIjogInNlc3MtMSJ9.ctSqMak5yRVcOgkEf1upYQ7oaKRap8xnru46k4RacmtC_S3dX_asljXi5TYHy2chOPbtkX_KGC0H6_2HQ9xhxql9_a-SCGmeSkTCD9rbuYN8D9kuKRRm4arDeLHfR2Qo6qwt81rZRvOckBMv6EMUYM3q6vPoHI69KThuawY82Xh0g6drNuvCdBBMCVD_abZjZEUy1PD9KhpVvDt8BaPnoFm6Xo8C3jvzCy-oLRDxKyZNhil5wcFOuYrNTM7CJO8J9pIZuWwa8pjtimfUe_O_2KniK3Ju0ujO6XvJ4Ml1kbaVUZ9VrJzS7Kkp6F7OKTieCdr2MX2uWS4uz_vwbnRicQ",
         "valid": false
       },
       {
         "name": "signed by an unknown key",
-        "token": "eyJhbGciOiJSUzI1NiIsImtpZCI6InRlc3Qta2V5LTEiLCJ0eXAiOiJKV1QifQ.eyJpc3MiOiJodHRwczovL21hdHVyYS50ZXN0L3JlYWxtcy9tYXR1cmEiLCJhdWQiOiJub3RlcyIsInN1YiI6IjAxOTJiN2E0LTVjMWUtN2QyYS05ZjAwLTRiMWUyYTljMGQxMSIsImlhdCI6MTc5MjE0MDMwMCwiZXhwIjoxNzkyMTQwNjAwLCJhenAiOiJub3RlcyIsImVtYWlsIjoiYWRhQGV4YW1wbGUudGVzdCIsImVtYWlsX3ZlcmlmaWVkIjp0cnVlLCJuYW1lIjoiQWRhIExvdmVsYWNlIiwidGlkIjoiMDE5MmI3YTQtNjAwMC03MDAwLTgwMDAtMDAwMDAwMDAwMDAxIiwidGVuYW50IjoiYWNtZSIsIndpZCI6IjAxOTJiN2E0LTcwMDAtNzAwMC04MDAwLTAwMDAwMDAwMDBhMSIsInRyb2xlcyI6WyJhZG1pbiJdLCJyb2xlcyI6WyJlZGl0b3IiXSwicGVybXMiOlsibm90ZS5yZWFkIiwibm90ZS53cml0ZSJdLCJ2ZXIiOnsidSI6MTIsIm0iOjE1LCJ0IjoxMH0sInBtb2RlIjoic2hhcmVkIiwic2lkIjoic2Vzcy0xIn0.WIFh3EDd8KNHZT8VItqc7TSgB9acq-qUBjyPS_fVRRRooQI4tr9dcQEzqaiYxmbIwTK0lUQBPmpEiYtcyjX7Q3hHRu7Xr_RyR275JSilDzlaz95jVT6gHUKfm1-LiHD11zdn8UvfEjwkI3xq0B4KXaiq6Z6L4ehE_Yw-MFqwgF8uUBLSpB2tRoUpUR69AU-lE7WyeXj37blC4M0qG-I_M-UKN6y1S80gekG1vLxytMryPMapuuK5e5eKZVt0eLlt735b6h5Sw2BOy7cPcGk0X4Uk01e7rMKDCQaGVrYVZKlE8uK2LmwFio5piKXCovqB-6lonaYJHXqxRKWbXHcglg",
+        "token": "eyJhbGciOiJSUzI1NiIsImtpZCI6InRlc3Qta2V5LTEiLCJ0eXAiOiJKV1QifQ.eyJpc3MiOiJodHRwczovL21hdHVyYS50ZXN0L3JlYWxtcy9tYXR1cmEiLCJhdWQiOiJub3RlcyIsInN1YiI6IjAxOTJiN2E0LTVjMWUtN2QyYS05ZjAwLTRiMWUyYTljMGQxMSIsImlhdCI6MTc5MjE0MDMwMCwiZXhwIjoxNzkyMTQwNjAwLCJhenAiOiJub3RlcyIsImVtYWlsIjoiYWRhQGV4YW1wbGUudGVzdCIsImVtYWlsX3ZlcmlmaWVkIjp0cnVlLCJuYW1lIjoiQWRhIExvdmVsYWNlIiwidGlkIjoiMDE5MmI3YTQtNjAwMC03MDAwLTgwMDAtMDAwMDAwMDAwMDAxIiwidGVuYW50IjoiYWNtZSIsIndpZCI6IjAxOTJiN2E0LTcwMDAtNzAwMC04MDAwLTAwMDAwMDAwMDBhMSIsInRyb2xlcyI6WyJhZG1pbiJdLCJyb2xlcyI6WyJlZGl0b3IiXSwicGVybXMiOlsibm90ZS5yZWFkIiwibm90ZS53cml0ZSJdLCJ2ZXIiOnsidSI6MTIsIm0iOjE1LCJ0IjoxMH0sInBtb2RlIjoic2hhcmVkIiwic2lkIjoic2Vzcy0xIn0.QKSlZDh0YDJ4Bfmb9wQOB8WvN46I7QnLpKACA-CXOpqkpAeGM9OEfb-3eINi2v_UbgCS75z8Qa09dHJ9dKsSj6PIrlVXFmY8gFNyWmDLMjL5YgSsRqglsaj_0U4kNutHrSntzx--IBM_GrSCflXMast-dsfEOhCTviax-xV_IvIBhPvPT2LkNiDjfV2PK7sKs4wtncR-1mBA6YCcql1mBc5XPeDCyvX2qoqmrrZ_MdQWOfXoJ_XqTchwQjlyI0SF0fzt5DDsiFQg578H5Oue84ZK35zA7o8tabezigmg0rysIGQe4LXa08MaUXoKyu_5d2NOotMo6drOVzVJSSFtuQ",
         "valid": false
       },
       {
@@ -171,13 +171,13 @@
       },
       {
         "name": "missing sub",
-        "token": "eyJhbGciOiJSUzI1NiIsImtpZCI6InRlc3Qta2V5LTEiLCJ0eXAiOiJKV1QifQ.eyJpc3MiOiJodHRwczovL21hdHVyYS50ZXN0L3JlYWxtcy9tYXR1cmEiLCJhdWQiOiJub3RlcyIsImlhdCI6MTc5MjE0MDMwMCwiZXhwIjoxNzkyMTQwNjAwLCJhenAiOiJub3RlcyIsImVtYWlsIjoiYWRhQGV4YW1wbGUudGVzdCIsImVtYWlsX3ZlcmlmaWVkIjp0cnVlLCJuYW1lIjoiQWRhIExvdmVsYWNlIiwidGlkIjoiMDE5MmI3YTQtNjAwMC03MDAwLTgwMDAtMDAwMDAwMDAwMDAxIiwidGVuYW50IjoiYWNtZSIsIndpZCI6IjAxOTJiN2E0LTcwMDAtNzAwMC04MDAwLTAwMDAwMDAwMDBhMSIsInRyb2xlcyI6WyJhZG1pbiJdLCJyb2xlcyI6WyJlZGl0b3IiXSwicGVybXMiOlsibm90ZS5yZWFkIiwibm90ZS53cml0ZSJdLCJ2ZXIiOnsidSI6MTIsIm0iOjE1LCJ0IjoxMH0sInBtb2RlIjoic2hhcmVkIiwic2lkIjoic2Vzcy0xIn0.Ne9R6e_xrjabgkbU2f1gqS6sEnqRErBPTDil2m6QYlpq5mhOJ5mXIKTBMNnWlgVAecHE7gD_eLmYA-w7nCnk6rfj7SOzApeCDG6VDRTvm3l06SVI_OkJdiV6YT-z5aAWrtSlz30vQP1MFfGV32fS45ZWHGVufHv0hvXdSKBa9nz5zkJQcilseEJYkzVonEKiNTecq_4PDYxH0WzhQL4vlVCq8iFFpanJcd3YZ9L_uOaANXfg3XgmNVMfcqY9bCGuQXwB072pr7dKOwAbgkHyutH8nwdd-MsbbFjWRqbJyb_1VWpzmRw__vrFj04c5C_gcAY2cAant3flbQXXMZDYMQ",
+        "token": "eyJhbGciOiJSUzI1NiIsImtpZCI6InRlc3Qta2V5LTEiLCJ0eXAiOiJKV1QifQ.eyJpc3MiOiJodHRwczovL21hdHVyYS50ZXN0L3JlYWxtcy9tYXR1cmEiLCJhdWQiOiJub3RlcyIsImlhdCI6MTc5MjE0MDMwMCwiZXhwIjoxNzkyMTQwNjAwLCJhenAiOiJub3RlcyIsImVtYWlsIjoiYWRhQGV4YW1wbGUudGVzdCIsImVtYWlsX3ZlcmlmaWVkIjp0cnVlLCJuYW1lIjoiQWRhIExvdmVsYWNlIiwidGlkIjoiMDE5MmI3YTQtNjAwMC03MDAwLTgwMDAtMDAwMDAwMDAwMDAxIiwidGVuYW50IjoiYWNtZSIsIndpZCI6IjAxOTJiN2E0LTcwMDAtNzAwMC04MDAwLTAwMDAwMDAwMDBhMSIsInRyb2xlcyI6WyJhZG1pbiJdLCJyb2xlcyI6WyJlZGl0b3IiXSwicGVybXMiOlsibm90ZS5yZWFkIiwibm90ZS53cml0ZSJdLCJ2ZXIiOnsidSI6MTIsIm0iOjE1LCJ0IjoxMH0sInBtb2RlIjoic2hhcmVkIiwic2lkIjoic2Vzcy0xIn0.SeA7HwZRM9hdrFn81bc-4wDhBQUVa3fV_r2ACRHbjBZx1pcqUMD-c7lFPAuaQXfAYY0N9sslI4Mqh3w-hgcRjYnIzBXYP9YGnui9m_6iQfHBnI1HyqV0M6_A56N6PiwuP_5NAcTipfjpguLkYqbKtGHQlTui8Ua-0yeN3lY-1fSZqrHuCcBKjfJVyBXddTE3H96oInd8gumIbkL0vzlVNrb_XKVbn0gEqjAAymLMFQqvQ0ggGAvHWpYYOtJWPhfO3gkP1wfUV3eLcq8rJdjEj5euqNXJyojFphyxRfxJApV9PFNj_63nFGgRedQ9CYzC_kCvDs_DthQ5q_w0hl1UfA",
         "valid": false
       }
     ]
   },
   "apply": {
-    "description": "Apply these events in this order (contract \u00a75): skip an event id already applied, keep a row only when its version is newer, create missing tenant/user/workspace rows as stubs with version 0, rename grants with an app role (a rename follows the grant events before it, as webhooks and the feed deliver them in commit order). 'applied' says which events are new; 'rows' is the final state of the listed columns (stub names are the id).",
+    "description": "Apply these events in this order (contract \u00a75): skip an event id already applied, keep a row only when its version is newer, create missing tenant/user/workspace rows as stubs with version 0, rename grants with an app role (a rename follows the grant events before it, as webhooks and the feed deliver them in commit order), and set a tenant's data_mode from a placement only when the placement's version is newer than placement_version (tenant changes then keep it). 'applied' says which events are new; 'rows' is the final state of the listed columns (stub names are the id).",
     "events": [
       {
         "specversion": "1.0",
@@ -511,6 +511,119 @@
           }
         },
         "tenantid": "0192b7a4-6000-7000-8000-000000000002"
+      },
+      {
+        "specversion": "1.0",
+        "id": "evt_14",
+        "source": "matura://installation/main",
+        "type": "matura.placement.requested",
+        "time": "2026-10-17T09:00:00Z",
+        "subject": "test/14",
+        "sequence": "14",
+        "datacontenttype": "application/json",
+        "data": {
+          "object": "placement",
+          "version": 29,
+          "placement": {
+            "tenant_id": "0192b7a4-6000-7000-8000-000000000002",
+            "app_id": "x",
+            "mode": "schema",
+            "state": "requested"
+          }
+        },
+        "tenantid": "0192b7a4-6000-7000-8000-000000000002"
+      },
+      {
+        "specversion": "1.0",
+        "id": "evt_15",
+        "source": "matura://installation/main",
+        "type": "matura.tenant.updated",
+        "time": "2026-10-17T09:00:00Z",
+        "subject": "test/15",
+        "sequence": "15",
+        "datacontenttype": "application/json",
+        "data": {
+          "object": "tenant",
+          "version": 40,
+          "tenant": {
+            "id": "0192b7a4-6000-7000-8000-000000000002",
+            "slug": "globex",
+            "name": "Globex Corp",
+            "kind": "company",
+            "status": "active",
+            "plan": null,
+            "data_mode_default": "shared",
+            "updated_at": "2026-10-17T09:00:00Z"
+          }
+        },
+        "tenantid": "0192b7a4-6000-7000-8000-000000000002"
+      },
+      {
+        "specversion": "1.0",
+        "id": "evt_16",
+        "source": "matura://installation/main",
+        "type": "matura.placement.provisioned",
+        "time": "2026-10-17T09:00:00Z",
+        "subject": "test/16",
+        "sequence": "16",
+        "datacontenttype": "application/json",
+        "data": {
+          "object": "placement",
+          "version": 52,
+          "placement": {
+            "tenant_id": "0192b7a4-6000-7000-8000-000000000003",
+            "app_id": "x",
+            "mode": "schema",
+            "state": "provisioned"
+          }
+        },
+        "tenantid": "0192b7a4-6000-7000-8000-000000000003"
+      },
+      {
+        "specversion": "1.0",
+        "id": "evt_17",
+        "source": "matura://installation/main",
+        "type": "matura.tenant.created",
+        "time": "2026-10-17T09:00:00Z",
+        "subject": "test/17",
+        "sequence": "17",
+        "datacontenttype": "application/json",
+        "data": {
+          "object": "tenant",
+          "version": 50,
+          "tenant": {
+            "id": "0192b7a4-6000-7000-8000-000000000003",
+            "slug": "initech",
+            "name": "Initech",
+            "kind": "company",
+            "status": "active",
+            "plan": null,
+            "data_mode_default": "shared",
+            "updated_at": "2026-10-17T09:00:00Z"
+          }
+        },
+        "tenantid": "0192b7a4-6000-7000-8000-000000000003"
+      },
+      {
+        "specversion": "1.0",
+        "id": "evt_18",
+        "source": "matura://installation/main",
+        "type": "matura.placement.requested",
+        "time": "2026-10-17T09:00:00Z",
+        "subject": "test/18",
+        "sequence": "18",
+        "datacontenttype": "application/json",
+        "data": {
+          "object": "placement",
+          "version": 51,
+          "placement": {
+            "tenant_id": "0192b7a4-6000-7000-8000-000000000003",
+            "app_id": "x",
+            "mode": "database",
+            "state": "requested"
+          }
+        },
+        "tenantid": "0192b7a4-6000-7000-8000-000000000003"
       }
     ],
     "applied": [
@@ -519,6 +632,11 @@
       true,
       true,
       false,
+      true,
+      true,
+      true,
+      true,
+      true,
       true,
       true,
       true,
@@ -539,17 +657,30 @@
           "status": "active",
           "plan": null,
           "data_mode": "shared",
-          "version": 10
+          "version": 10,
+          "placement_version": 0
         },
         {
           "id": "0192b7a4-6000-7000-8000-000000000002",
           "slug": "globex",
-          "name": "Globex",
+          "name": "Globex Corp",
           "kind": "company",
           "status": "active",
           "plan": null,
           "data_mode": "database",
-          "version": 30
+          "version": 40,
+          "placement_version": 32
+        },
+        {
+          "id": "0192b7a4-6000-7000-8000-000000000003",
+          "slug": "initech",
+          "name": "Initech",
+          "kind": "company",
+          "status": "active",
+          "plan": null,
+          "data_mode": "schema",
+          "version": 50,
+          "placement_version": 52
         }
       ],
       "matura_user": [

@@ -35,7 +35,8 @@ PostgreSQL and SQLite:
 INSERT INTO matura_tenant AS t (id, slug, name, kind, status, plan, data_mode, version, updated_at)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 ON CONFLICT (id) DO UPDATE SET slug = excluded.slug, name = excluded.name, kind = excluded.kind,
-    status = excluded.status, plan = excluded.plan, data_mode = excluded.data_mode,
+    status = excluded.status, plan = excluded.plan,
+    data_mode = CASE WHEN t.placement_version > 0 THEN t.data_mode ELSE excluded.data_mode END,
     version = excluded.version, updated_at = excluded.updated_at
 WHERE t.version < excluded.version;
 ```
@@ -51,7 +52,7 @@ ON DUPLICATE KEY UPDATE
     kind = IF(VALUES(version) > version, VALUES(kind), kind),
     status = IF(VALUES(version) > version, VALUES(status), status),
     plan = IF(VALUES(version) > version, VALUES(plan), plan),
-    data_mode = IF(VALUES(version) > version, VALUES(data_mode), data_mode),
+    data_mode = IF(VALUES(version) > version AND placement_version = 0, VALUES(data_mode), data_mode),
     updated_at = IF(VALUES(version) > version, VALUES(updated_at), updated_at),
     version = GREATEST(version, VALUES(version));
 ```
@@ -63,7 +64,9 @@ MERGE matura_tenant WITH (HOLDLOCK) AS t
 USING (VALUES (@id, @slug, @name, @kind, @status, @plan, @data_mode, @version, @updated_at))
     AS s (id, slug, name, kind, status, [plan], data_mode, version, updated_at) ON t.id = s.id
 WHEN MATCHED AND t.version < s.version THEN UPDATE SET slug = s.slug, name = s.name, kind = s.kind,
-    status = s.status, [plan] = s.[plan], data_mode = s.data_mode, version = s.version, updated_at = s.updated_at
+    status = s.status, [plan] = s.[plan],
+    data_mode = CASE WHEN t.placement_version > 0 THEN t.data_mode ELSE s.data_mode END,
+    version = s.version, updated_at = s.updated_at
 WHEN NOT MATCHED THEN INSERT (id, slug, name, kind, status, [plan], data_mode, version, updated_at)
     VALUES (s.id, s.slug, s.name, s.kind, s.status, s.[plan], s.data_mode, s.version, s.updated_at);
 ```
@@ -72,4 +75,15 @@ Two changes are not plain upserts:
 
 - **Role renamed** (`matura.app.role.updated` with `previous_name`): update `matura_role_grant.role` from the old name
   to the new one, mark the old `matura_app_role` row deleted at this version, and upsert the new one.
-- **Placement** (`matura.placement.*`): set `matura_tenant.data_mode` to the placement's `mode`.
+- **Placement** (`matura.placement.*`): the placement's `mode` is this app's `data_mode` for the tenant. It has its
+  own version, kept in `matura_tenant.placement_version` (0 until the first placement change): insert the tenant stub,
+  then set `data_mode` only when the placement's version is newer. Once a placement is known, tenant changes leave
+  `data_mode` alone (their `data_mode_default` is the tenant's default, not this app's placement), as above.
+
+```sql
+UPDATE matura_tenant SET data_mode = $1, placement_version = $2 WHERE id = $3 AND placement_version < $2;
+```
+
+`placement_version` was added after the first release of these files. `postgres.sql` and `sqlserver.sql` add it to an
+existing `matura_tenant`; on MySQL and SQLite run
+`ALTER TABLE matura_tenant ADD COLUMN placement_version bigint NOT NULL DEFAULT 0` once if your table predates it.

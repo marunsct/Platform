@@ -61,9 +61,9 @@ describe("Contract", () => {
     assert.equal(POSTGRES_SHARED_RLS_SQL, repoFile("docs/contract/sql/postgres-shared-rls.sql"));
     assert.equal(SQLITE_SQL, repoFile("docs/contract/sql/sqlite.sql"));
     const pg = ddl("postgresql");
-    assert.equal(pg.length, 11);
+    assert.equal(pg.length, 12);
     assert.ok(pg.every((s) => !s.includes("--")));
-    assert.equal(ddl("postgresql", { rls: true }).length, 11 + 20);
+    assert.equal(ddl("postgresql", { rls: true }).length, 12 + 20);
     assert.ok(ddl("postgresql", { rls: true }).at(-1)!.startsWith("CREATE POLICY tenant_isolation ON matura_user"));
     assert.equal(ddl("sqlite").length, 11);
     assert.throws(() => ddl("mysql" as "sqlite"), /docs\/contract\/sql/);

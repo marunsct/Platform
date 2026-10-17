@@ -14,8 +14,11 @@ CREATE TABLE matura_tenant (
     [plan] nvarchar(64) NULL,
     data_mode nvarchar(16) NOT NULL CHECK (data_mode IN ('shared','schema','database')),
     version bigint NOT NULL,
-    updated_at datetime2(6) NOT NULL
+    updated_at datetime2(6) NOT NULL,
+    placement_version bigint NOT NULL DEFAULT 0
 );
+IF COL_LENGTH('matura_tenant', 'placement_version') IS NULL
+ALTER TABLE matura_tenant ADD placement_version bigint NOT NULL DEFAULT 0;
 IF OBJECT_ID('matura_workspace') IS NULL
 CREATE TABLE matura_workspace (
     id uniqueidentifier NOT NULL PRIMARY KEY,
