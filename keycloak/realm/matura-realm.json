@@ -26,42 +26,6 @@
       }
     ]
   },
-  "clientScopes": [
-    {
-      "name": "matura-api-audience",
-      "protocol": "openid-connect",
-      "attributes": {
-        "include.in.token.scope": "false"
-      },
-      "protocolMappers": [
-        {
-          "name": "audience matura-api",
-          "protocol": "openid-connect",
-          "protocolMapper": "oidc-audience-mapper",
-          "config": {
-            "included.client.audience": "matura-api",
-            "access.token.claim": "true"
-          }
-        }
-      ]
-    },
-    {
-      "name": "matura-tenant",
-      "protocol": "openid-connect",
-      "description": "Matura tenant, workspace, roles and permissions for the app (contract \u00a72)",
-      "attributes": {
-        "include.in.token.scope": "false"
-      },
-      "protocolMappers": [
-        {
-          "name": "matura tenant and permissions",
-          "protocol": "openid-connect",
-          "protocolMapper": "matura-token-mapper",
-          "config": {}
-        }
-      ]
-    }
-  ],
   "clients": [
     {
       "clientId": "matura-api",
@@ -86,11 +50,16 @@
         "pkce.code.challenge.method": "S256",
         "post.logout.redirect.uris": "http://localhost:5173/*"
       },
-      "defaultClientScopes": [
-        "profile",
-        "email",
-        "roles",
-        "matura-api-audience"
+      "protocolMappers": [
+        {
+          "name": "audience matura-api",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.client.audience": "matura-api",
+            "access.token.claim": "true"
+          }
+        }
       ]
     },
     {
@@ -121,12 +90,13 @@
             "included.client.audience": "agentcanvas",
             "access.token.claim": "true"
           }
+        },
+        {
+          "name": "matura tenant and permissions",
+          "protocol": "openid-connect",
+          "protocolMapper": "matura-token-mapper",
+          "config": {}
         }
-      ],
-      "defaultClientScopes": [
-        "profile",
-        "email",
-        "matura-tenant"
       ]
     }
   ],

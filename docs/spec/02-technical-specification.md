@@ -130,8 +130,9 @@ Besides `roles`, the mapper adds `perms`: the union of the permissions of the us
 app in the token's tenant and workspace, sorted, `["*"]` if any role has `*`. Above 40 entries it adds
 `perms_ref: "matura_app_role"` instead (contract §2).
 
-The Java mapper (`keycloak/extensions`, provider id `matura-token-mapper`, attached to apps through the
-`matura-tenant` client scope) calls `POST /internal/v1/token-context` once per token issue (5-second in-memory cache)
+The Java mapper (`keycloak/extensions`, provider id `matura-token-mapper`, attached to each app's client as a
+protocol mapper; a realm import that lists its own client scopes would replace Keycloak's built-in ones, such as
+`basic`, which carries `sub`) calls `POST /internal/v1/token-context` once per token issue (5-second in-memory cache)
 and adds the claims in contract §2. It fails closed: if `maturad` cannot be reached, no token is issued. Tenant
 choice comes from the authorisation request parameter `matura_tenant=<slug|id>`, else the user's last-used tenant;
 `matura_workspace=<id>` picks a workspace, else the tenant's default. A user without a

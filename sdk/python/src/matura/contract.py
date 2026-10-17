@@ -228,7 +228,8 @@ class Contract:
                 "subject_type": p["subject_type"], "subject_id": d.id(p["subject_id"]), "role": p["role"],
                 "status": p["status"], "version": version, "updated_at": d.ts(p.get("updated_at"))})]
         if obj == "app_role":
-            role = p.get("role") if isinstance(p.get("role"), dict) else p
+            nested = p.get("role")
+            role: dict[str, Any] = nested if isinstance(nested, dict) else p
             out: list[tuple[str, dict[str, Any]]] = []
             prev = p.get("previous_name")
             if prev:  # renamed in Matura: grants follow, as they do there

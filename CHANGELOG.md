@@ -26,7 +26,8 @@
 - Token claims for apps: `POST /internal/v1/token-context` (tenant, workspace, tenant role, app roles, permissions
   or `perms_ref`, versions, placement mode; refusals for non-members, disabled apps and inactive users) and the
   Keycloak extension `matura-token-mapper` that puts them in access tokens (keycloak/extensions, Java 21).
-- Realm: `matura-tenant` client scope, an `agentcanvas` client, Google and GitHub brokers (disabled until keys are set);
+- Realm: an `agentcanvas` client carrying the token mapper (on the client, so the import keeps Keycloak's built-in
+  scopes such as `basic`, which carries `sub`), Google and GitHub brokers (disabled until keys are set);
   Compose builds Keycloak with the extension.
 - Python SDK `matura` (sdk/python): token verification and `Principal`, `require_permission` for FastAPI, the
   `matura_*` contract tables for PostgreSQL (with shared-mode RLS) and SQLite, `apply` with the version rule and

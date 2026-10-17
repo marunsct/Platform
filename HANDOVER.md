@@ -45,7 +45,7 @@ self-hosted, open standards, nothing phones home).
   with per-app filtering; webhook endpoints with an in-order, signed relay (one leader, backoff, give-up after 24 h);
   migration 0004; `internal/events` (CloudEvents envelope, `Matura-Signature`).
 - **Also built 2026-10-17:** token claims (`POST /internal/v1/token-context`) and the Keycloak mapper
-  (`keycloak/extensions`, `make keycloak-ext`); realm client `agentcanvas` and scope `matura-tenant`; Python SDK
+  (`keycloak/extensions`, `make keycloak-ext`); realm client `agentcanvas` with the mapper on the client (not a realm client scope: listing scopes in the import drops Keycloak's built-in `basic`, `profile`, `email`, `web-origins`); Python SDK
   (`sdk/python`, `uv run pytest` there; Postgres too with `MATURA_TEST_DATABASE_URL`); shared test vectors;
   `scripts/e2e_python_sdk.py` (passes against a local maturad).
 - **Left in TS2:** OpenAPI document (`api/openapi.yaml`).
