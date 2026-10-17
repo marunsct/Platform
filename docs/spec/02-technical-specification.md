@@ -441,7 +441,7 @@ api/openapi.yaml
   Changes that are not contract events call `audit()` directly: invitations created, resent, revoked and accepted;
   app secrets created and revoked; webhook endpoints created, changed and deleted; plans; database servers; security
   policies; audit destinations; exports (`audit.exported`); tenant lifecycle actions, plan changes and support
-  access (§5.2). A request refused with 403 (`forbidden`,
+  access (§5.3). A request refused with 403 (`forbidden`,
   `ip-not-allowed`, `operator-only`) is recorded as `authz.denied` in its own transaction.
 - **Actor.** `authenticate` puts a `store.Actor` in the request context: kind (`user`, `operator`, `app`), id, email,
   request id (the caller's `X-Request-Id` when short and printable, otherwise a new one; echoed in the response), client
