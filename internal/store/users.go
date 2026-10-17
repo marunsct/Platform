@@ -118,8 +118,7 @@ type MyTenant struct {
 func (s *Store) ListMyTenants(ctx context.Context, userID uuid.UUID) ([]MyTenant, error) {
 	var out []MyTenant
 	err := s.tx(ctx, Scope{UserID: userID}, func(tx pgx.Tx) error {
-		rows, err := tx.Query(ctx, `SELECT t.id, t.slug, t.name, t.kind, t.status, t.plan, t.data_mode_default, t.version,
-				t.created_at, t.updated_at, m.tenant_role
+		rows, err := tx.Query(ctx, `SELECT `+tenantColsOf("t")+`, m.tenant_role
 			FROM membership m JOIN tenant t ON t.id = m.tenant_id
 			WHERE m.user_id = $1 AND m.status = 'active' AND t.status NOT IN ('deleting','deleted')
 			ORDER BY t.name`, userID)
@@ -128,8 +127,8 @@ func (s *Store) ListMyTenants(ctx context.Context, userID uuid.UUID) ([]MyTenant
 		}
 		out, err = pgx.CollectRows(rows, func(r pgx.CollectableRow) (MyTenant, error) {
 			var m MyTenant
-			err := r.Scan(&m.ID, &m.Slug, &m.Name, &m.Kind, &m.Status, &m.Plan, &m.DataModeDefault, &m.Version,
-				&m.CreatedAt, &m.UpdatedAt, &m.TenantRole)
+			err := r.Scan(append(tenantDest(&m.Tenant), &m.TenantRole)...)
+			m.StatusReason = nil
 			return m, err
 		})
 		return err

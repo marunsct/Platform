@@ -31,6 +31,7 @@ type Server struct {
 	internalRoutes []route     // /internal/v1 routes for Keycloak (TS5)
 	routes         []string    // patterns registered by the last Handler call, for Routes
 	invites        Invitations // invitation links and accept page (TS6)
+	deleteGrace    time.Duration
 	trustedProxies []netip.Prefix
 	policies       sync.Map // tenant id -> cachedPolicy, for the IP allow-list
 	portal         *portal.Portal
@@ -44,7 +45,15 @@ type seenProfile struct {
 }
 
 func New(st *store.Store, auth Authenticator, keys secrets.KeyManager, log *slog.Logger) *Server {
-	return &Server{store: st, auth: auth, keys: keys, log: log, source: "matura://installation/main"}
+	return &Server{store: st, auth: auth, keys: keys, log: log, source: "matura://installation/main",
+		deleteGrace: 30 * 24 * time.Hour}
+}
+
+// SetDeletionGrace sets how long a deleted tenant can be restored before the purger deletes it (default 30 days).
+func (s *Server) SetDeletionGrace(d time.Duration) {
+	if d >= 0 {
+		s.deleteGrace = d
+	}
 }
 
 // SetSource sets the CloudEvents source this installation puts on events.
@@ -79,6 +88,10 @@ func (s *Server) Handler() http.Handler {
 	s.handle(api, "GET /v1/tenants/{tid}", s.getTenant)
 	s.handle(api, "PATCH /v1/tenants/{tid}", s.patchTenant)
 	s.handle(api, "DELETE /v1/tenants/{tid}", s.deleteTenant)
+	s.handle(api, "POST /v1/tenants/{tid}", s.tenantAction) // {tid}:restore
+	s.handle(api, "GET /v1/tenants/{tid}/entitlements", s.getEntitlements)
+	s.handle(api, "GET /v1/tenants/{tid}/support-access", s.listSupportAccess)
+	s.handle(api, "POST /v1/tenants/{tid}/support-access/{id}", s.supportAccessDecision) // {id}:approve, :deny, :revoke
 	s.handle(api, "GET /v1/tenants/{tid}/workspaces", s.listWorkspaces)
 	s.handle(api, "POST /v1/tenants/{tid}/workspaces", s.createWorkspace)
 	s.handle(api, "PATCH /v1/tenants/{tid}/workspaces/{wid}", s.patchWorkspace)
@@ -136,6 +149,14 @@ func (s *Server) Handler() http.Handler {
 	s.handle(api, "PATCH /admin/v1/apps/{slug}/webhooks/{id}", s.patchWebhook)
 	s.handle(api, "DELETE /admin/v1/apps/{slug}/webhooks/{id}", s.deleteWebhook)
 	s.handle(api, "POST /admin/v1/apps/{slug}/webhooks/{id}/test", s.testWebhook)
+	s.handle(api, "GET /admin/v1/tenants", s.adminListTenants)
+	s.handle(api, "POST /admin/v1/tenants/{tid}", s.adminTenantAction) // {tid}:suspend, :resume, :restore
+	s.handle(api, "DELETE /admin/v1/tenants/{tid}", s.adminDeleteTenant)
+	s.handle(api, "PUT /admin/v1/tenants/{tid}/plan", s.putTenantPlan)
+	s.handle(api, "GET /admin/v1/tenants/{tid}/support-access", s.adminListSupportAccess)
+	s.handle(api, "POST /admin/v1/tenants/{tid}/support-access", s.requestSupportAccess)
+	s.handle(api, "POST /admin/v1/tenants/{tid}/support-access/{id}", s.endSupportAccess) // {id}:end
+	s.handle(api, "GET /admin/v1/stats", s.stats)
 
 	// app backends, authenticated with their client id and secret (contract §7, technical specification §4)
 	appAPI := http.NewServeMux()
@@ -250,19 +271,63 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 }
 
 func problem(w http.ResponseWriter, status int, typ, detail string) {
-	w.Header().Set("Content-Type", "application/problem+json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(map[string]any{
+	problemWith(w, status, typ, detail, nil)
+}
+
+// problemWith adds extension members to the problem (RFC 9457 §3.2).
+func problemWith(w http.ResponseWriter, status int, typ, detail string, ext map[string]any) {
+	body := map[string]any{
 		"type":   "https://matura.dev/problems/" + typ,
 		"title":  http.StatusText(status),
 		"status": status,
 		"detail": detail,
-	})
+	}
+	for k, v := range ext {
+		body[k] = v
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(body)
 }
+
+// apiProblem is an error with its own problem type.
+type apiProblem struct {
+	status      int
+	typ, detail string
+}
+
+func (e *apiProblem) Error() string { return e.detail }
+
+var (
+	errTenantSuspended = &apiProblem{http.StatusForbidden, "tenant-suspended",
+		"this organisation is suspended; contact the installation's operators"}
+	errTenantPendingDeletion = &apiProblem{http.StatusForbidden, "tenant-pending-deletion",
+		"this organisation is scheduled for deletion; an owner can restore it"}
+	errSupportAccessRequired = &apiProblem{http.StatusForbidden, "support-access-required",
+		"operators see a tenant's admin views only with support access the tenant approved"}
+	errSupportReadOnly = &apiProblem{http.StatusForbidden, "support-access-read-only",
+		"support access is read-only; change tenants through /admin/v1"}
+)
 
 func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 	var inv *store.InvalidError
+	var lim *store.LimitError
+	var ap *apiProblem
 	switch {
+	case errors.As(err, &ap):
+		if ap == errSupportAccessRequired || ap == errSupportReadOnly {
+			s.auditDenied(r, ap.typ)
+		}
+		problem(w, ap.status, ap.typ, ap.detail)
+	case errors.As(err, &lim):
+		ext := map[string]any{"limit": lim.Limit}
+		if lim.Max != nil {
+			ext["max"], ext["used"] = *lim.Max, lim.Used
+		}
+		problemWith(w, http.StatusPaymentRequired, "plan-limit", lim.Msg, ext)
+	case errors.Is(err, store.ErrSupportAccessOff):
+		s.auditDenied(r, "support-access-off")
+		problem(w, http.StatusForbidden, "support-access-off", err.Error())
 	case errors.As(err, &inv):
 		problem(w, http.StatusUnprocessableEntity, "invalid", inv.Msg)
 	case errors.Is(err, store.ErrNotFound):
@@ -317,17 +382,59 @@ func ifMatch(r *http.Request) (int64, error) {
 	return v, nil
 }
 
+// operatorTenantRoutes are the tenant routes where operators act with operator scope: the tenant record, its
+// lifecycle, its placements, its entitlements and its security policy. Everything else in a tenant is the tenant's own business:
+// operators see it only through support access (read-only).
+var operatorTenantRoutes = map[string]bool{
+	"GET /v1/tenants/{tid}": true, "PATCH /v1/tenants/{tid}": true, "DELETE /v1/tenants/{tid}": true,
+	"POST /v1/tenants/{tid}": true, "GET /v1/tenants/{tid}/placements": true,
+	"GET /v1/tenants/{tid}/entitlements": true,
+	// an operator can lift an IP allow-list that locked a tenant out
+	"GET /v1/tenants/{tid}/security-policy": true, "PUT /v1/tenants/{tid}/security-policy": true,
+}
+
+// pendingDeletionRoutes are what members may still do while a deleted tenant can be restored: read it, restore it,
+// and repeat the deletion (no change).
+var pendingDeletionRoutes = map[string]bool{"GET /v1/tenants/{tid}": true, "POST /v1/tenants/{tid}": true,
+	"DELETE /v1/tenants/{tid}": true}
+
 // tenantAccess returns the scope for acting in a tenant. Members may read; owners and admins may manage.
-// Non-members get ErrNotFound so tenant ids cannot be probed. Operators may do everything.
+// Non-members get ErrNotFound so tenant ids cannot be probed. A suspended tenant refuses its members
+// (tenant-suspended), as does one pending deletion except to read it and restore it. Operators have operator scope
+// on operatorTenantRoutes; elsewhere they act as members of tenants they belong to, and otherwise need active
+// support access, which allows reads only, in the tenant's own scope.
 func (s *Server) tenantAccess(r *http.Request, tid uuid.UUID, manage bool) (store.Scope, store.Membership, error) {
 	p := principalFrom(r.Context())
-	sc := store.Scope{UserID: p.UserID, Operator: p.Operator}.InTenant(tid)
-	if p.Operator {
-		return sc, store.Membership{TenantRole: "operator"}, nil
+	if p.Operator && operatorTenantRoutes[r.Pattern] {
+		return store.Scope{UserID: p.UserID, Operator: true}.InTenant(tid), store.Membership{TenantRole: "operator"}, nil
 	}
-	m, err := s.store.MembershipOf(r.Context(), tid, p.UserID)
+	sc := store.Scope{UserID: p.UserID}.InTenant(tid)
+	m, status, err := s.store.TenantAccessOf(r.Context(), tid, p.UserID)
+	if errors.Is(err, store.ErrNotFound) && p.Operator {
+		if _, err := s.store.UseSupportAccess(r.Context(), tid, p.UserID); err != nil {
+			if errors.Is(err, store.ErrNotFound) {
+				return sc, m, errSupportAccessRequired
+			}
+			return sc, m, err
+		}
+		if r.Method != http.MethodGet {
+			return sc, m, errSupportReadOnly
+		}
+		return sc, store.Membership{TenantRole: "support"}, nil
+	}
 	if err != nil {
 		return sc, m, err
+	}
+	switch status {
+	case "active":
+	case "suspended":
+		return sc, m, errTenantSuspended
+	case "pending_deletion":
+		if !pendingDeletionRoutes[r.Pattern] {
+			return sc, m, errTenantPendingDeletion
+		}
+	default:
+		return sc, m, store.ErrNotFound
 	}
 	if err := s.checkIP(r, tid); err != nil {
 		return sc, m, err

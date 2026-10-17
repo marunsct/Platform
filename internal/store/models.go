@@ -19,16 +19,30 @@ type User struct {
 }
 
 type Tenant struct {
-	ID              uuid.UUID `json:"id"`
-	Slug            string    `json:"slug"`
-	Name            string    `json:"name"`
-	Kind            string    `json:"kind"`
-	Status          string    `json:"status"`
-	Plan            *string   `json:"plan"`
-	DataModeDefault string    `json:"data_mode_default"`
-	Version         int64     `json:"version"`
-	CreatedAt       time.Time `json:"created_at"`
-	UpdatedAt       time.Time `json:"updated_at"`
+	ID              uuid.UUID  `json:"id"`
+	Slug            string     `json:"slug"`
+	Name            string     `json:"name"`
+	Kind            string     `json:"kind"`
+	Status          string     `json:"status"`
+	Plan            *string    `json:"plan"`
+	DataModeDefault string     `json:"data_mode_default"`
+	StatusReason    *string    `json:"status_reason,omitempty"` // operators only
+	PurgeAfter      *time.Time `json:"purge_after"`             // pending_deletion: when the purger deletes it
+	SupportAccess   string     `json:"support_access"`          // approval, allowed or off
+	Version         int64      `json:"version"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
+}
+
+// Contract is the tenant as apps see it in events and snapshots (contract §3): a tenant waiting out its deletion
+// grace period is suspended to them (no access, data kept; purge_after says when it goes), and the operator's
+// reason stays in Matura.
+func (t Tenant) Contract() Tenant {
+	if t.Status == "pending_deletion" {
+		t.Status = "suspended"
+	}
+	t.StatusReason = nil
+	return t
 }
 
 type Workspace struct {

@@ -251,7 +251,7 @@ Delivered as signed webhooks (TS7c) and, from M5, NATS subjects `matura.<tenant>
 
 | Type | Sent when |
 |---|---|
-| `matura.tenant.created`, `.updated`, `.suspended`, `.reactivated`, `.deleting`, `.deleted` | tenant lifecycle |
+| `matura.tenant.created`, `.updated`, `.suspended`, `.reactivated`, `.deleting`, `.deleted` | tenant lifecycle; a tenant waiting out its deletion grace period arrives as `suspended` with `purge_after` set (it can still be restored: keep its data until `.deleting`) |
 | `matura.workspace.created`, `.updated`, `.archived`, `.deleted` | workspaces |
 | `matura.user.created`, `.updated`, `.deactivated`, `.deleted` | profile changes (sent to every app the user's tenants use) |
 | `matura.membership.added`, `.updated`, `.removed` | members |

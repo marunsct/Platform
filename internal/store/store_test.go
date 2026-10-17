@@ -56,7 +56,8 @@ func TestRowLevelSecurityFailsClosed(t *testing.T) {
 	tenant(t, st, a, "acme")
 
 	// the runtime role with no tenant set sees no tenant-owned rows at all
-	for _, table := range []string{"tenant", "workspace", "membership", "tenant_app", "role_grant", "placement"} {
+	for _, table := range []string{"tenant", "workspace", "membership", "tenant_app", "role_grant", "placement",
+		"support_access"} {
 		var n int
 		if err := pool.QueryRow(ctx, "SELECT count(*) FROM "+table).Scan(&n); err != nil {
 			t.Fatalf("%s: %v", table, err)

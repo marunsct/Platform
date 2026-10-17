@@ -22,6 +22,7 @@ import (
 	"github.com/marunsct/Platform/internal/audit"
 	"github.com/marunsct/Platform/internal/config"
 	"github.com/marunsct/Platform/internal/events"
+	"github.com/marunsct/Platform/internal/lifecycle"
 	"github.com/marunsct/Platform/internal/mail"
 	"github.com/marunsct/Platform/internal/metrics"
 	"github.com/marunsct/Platform/internal/placement"
@@ -103,6 +104,8 @@ func run(log *slog.Logger) error {
 	go relay.Run(ctx)
 	provisioner := &placement.Provisioner{Store: st, Keys: keys, Log: log}
 	go provisioner.Run(ctx)
+	purger := &lifecycle.Purger{Store: st, Log: log}
+	go purger.Run(ctx)
 	streamer := &audit.Streamer{Store: st, Keys: keys, Log: log}
 	go streamer.Run(ctx)
 
@@ -110,6 +113,7 @@ func run(log *slog.Logger) error {
 	server.SetSource(cfg.EventSource)
 	server.SetTrustedProxies(cfg.TrustedProxies)
 	server.EnableInternal(cfg.InternalToken)
+	server.SetDeletionGrace(cfg.DeleteGrace)
 	server.SetInvitations(api.Invitations{AcceptURL: cfg.InviteAcceptURL, PublicURL: cfg.PublicURL,
 		Issuer: cfg.Issuer, ClientID: cfg.PortalClientID})
 	server.SetPortal(portal.Config{Auth: cfg.Auth, Issuer: cfg.Issuer, ClientID: cfg.PortalClientID})
