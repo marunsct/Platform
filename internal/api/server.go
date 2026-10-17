@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/netip"
 	"strconv"
 	"strings"
 	"sync"
@@ -29,6 +30,8 @@ type Server struct {
 	internalRoutes []route     // /internal/v1 routes for Keycloak (TS5)
 	routes         []string    // patterns registered by the last Handler call, for Routes
 	invites        Invitations // invitation links and accept page (TS6)
+	trustedProxies []netip.Prefix
+	policies       sync.Map // tenant id -> cachedPolicy, for the IP allow-list
 }
 
 // seenProfile remembers a profile already written; it is re-checked after a minute so a deactivated account stops
@@ -83,6 +86,17 @@ func (s *Server) Handler() http.Handler {
 	s.handle(api, "POST /v1/tenants/{tid}/invitations/{id}", s.invitationAction) // {id}:resend
 	s.handle(api, "DELETE /v1/tenants/{tid}/invitations/{id}", s.revokeInvitation)
 	s.handle(api, "POST /v1/invitations:accept", s.acceptInvitation)
+	s.handle(api, "GET /v1/tenants/{tid}/audit", s.listAudit)
+	s.handle(api, "GET /v1/tenants/{tid}/audit/export", s.exportAudit)
+	s.handle(api, "GET /v1/tenants/{tid}/audit:verify", s.verifyAudit)
+	s.handle(api, "GET /v1/tenants/{tid}/audit/sinks", s.listAuditSinks)
+	s.handle(api, "POST /v1/tenants/{tid}/audit/sinks", s.createAuditSink)
+	s.handle(api, "PATCH /v1/tenants/{tid}/audit/sinks/{id}", s.patchAuditSink)
+	s.handle(api, "DELETE /v1/tenants/{tid}/audit/sinks/{id}", s.deleteAuditSink)
+	s.handle(api, "GET /v1/tenants/{tid}/security-policy", s.getSecurityPolicy)
+	s.handle(api, "PUT /v1/tenants/{tid}/security-policy", s.putSecurityPolicy)
+	s.handle(api, "GET /admin/v1/audit", s.adminListAudit)
+	s.handle(api, "GET /admin/v1/audit:verify", s.adminVerifyAudit)
 	s.handle(api, "GET /v1/apps", s.listApps)
 	s.handle(api, "PUT /admin/v1/apps/{slug}", s.applyApp)
 	s.handle(api, "GET /v1/apps/{slug}/roles", s.listRoles)
@@ -162,9 +176,12 @@ func (s *Server) ready(w http.ResponseWriter, r *http.Request) {
 }
 
 // authenticate verifies the caller. App backends (HTTP Basic with client id and secret) go to appNext; users and
-// operators (bearer tokens) go to next, after their profile is recorded on first sight or when it changed.
+// operators (bearer tokens) go to next, after their profile is recorded on first sight or when it changed. The
+// caller, request id and client address go into the context for the audit log.
 func (s *Server) authenticate(next, appNext http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		actor := store.Actor{RequestID: requestID(r), IP: s.clientIP(r).String(), UserAgent: r.UserAgent()}
+		w.Header().Set("X-Request-Id", actor.RequestID)
 		if id, secret, ok := r.BasicAuth(); ok {
 			app, err := s.store.AuthenticateApp(r.Context(), id, secret)
 			if err != nil {
@@ -172,7 +189,8 @@ func (s *Server) authenticate(next, appNext http.Handler) http.Handler {
 				problem(w, http.StatusUnauthorized, "unauthenticated", "unknown client id or secret")
 				return
 			}
-			ctx := withPrincipal(r.Context(), Principal{AppID: app.ID})
+			actor.Kind, actor.ID = "app", app.ID
+			ctx := store.WithActor(withPrincipal(r.Context(), Principal{AppID: app.ID}), actor)
 			appNext.ServeHTTP(w, r.WithContext(withApp(ctx, app)))
 			return
 		}
@@ -197,11 +215,17 @@ func (s *Server) authenticate(next, appNext http.Handler) http.Handler {
 			}
 			s.seen.Store(p.UserID, seenProfile{profile: profile, at: time.Now()})
 		}
+		actor.Kind, actor.ID, actor.Email = "user", p.UserID, p.Email
+		if p.Operator {
+			actor.Kind = "operator"
+		}
+		r = r.WithContext(store.WithActor(withPrincipal(r.Context(), p), actor))
 		if strings.HasPrefix(r.URL.Path, "/admin/") && !p.Operator {
+			s.auditDenied(r, "operator-only")
 			problem(w, http.StatusForbidden, "operator-only", "this endpoint is for installation operators")
 			return
 		}
-		next.ServeHTTP(w, r.WithContext(withPrincipal(r.Context(), p)))
+		next.ServeHTTP(w, r)
 	})
 }
 
@@ -236,7 +260,11 @@ func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 	case errors.Is(err, store.ErrVersion):
 		problem(w, http.StatusPreconditionFailed, "version-mismatch", "changed since you read it; reload and retry")
 	case errors.Is(err, errForbidden):
+		s.auditDenied(r, "forbidden")
 		problem(w, http.StatusForbidden, "forbidden", err.Error())
+	case errors.Is(err, errIPNotAllowed):
+		s.auditDenied(r, "ip-not-allowed")
+		problem(w, http.StatusForbidden, "ip-not-allowed", err.Error())
 	default:
 		s.log.ErrorContext(r.Context(), "request failed", "method", r.Method, "path", r.URL.Path, "err", err)
 		problem(w, http.StatusInternalServerError, "internal", "something went wrong")
@@ -287,6 +315,9 @@ func (s *Server) tenantAccess(r *http.Request, tid uuid.UUID, manage bool) (stor
 	}
 	m, err := s.store.MembershipOf(r.Context(), tid, p.UserID)
 	if err != nil {
+		return sc, m, err
+	}
+	if err := s.checkIP(r, tid); err != nil {
 		return sc, m, err
 	}
 	if manage && m.TenantRole != "owner" && m.TenantRole != "admin" {

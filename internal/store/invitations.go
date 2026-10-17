@@ -125,6 +125,13 @@ func (s *Store) CreateInvitation(ctx context.Context, sc Scope, tenantID uuid.UU
 	}
 	var out Invitation
 	err := s.tx(ctx, sc.InTenant(tenantID), func(tx pgx.Tx) error {
+		policy, err := getPolicy(ctx, tx, tenantID)
+		if err != nil {
+			return err
+		}
+		if !policy.AllowsEmail(in.Email) {
+			return invalid("this tenant only invites addresses in %s", strings.Join(policy.AllowedEmailDomains, ", "))
+		}
 		if err := checkInvitedRoles(ctx, tx, tenantID, in.AppRoles); err != nil {
 			return err
 		}
@@ -158,6 +165,9 @@ func (s *Store) CreateInvitation(ctx context.Context, sc Scope, tenantID uuid.UU
 			VALUES ($1, $2, $3, $4, $5, 'link', $6, $7, now() + $8 * interval '1 second', 'pending', $9, 1, $10)
 			RETURNING `+invitationCols, ids.New(), tenantID, in.Email, in.TenantRole, roles, deliverTo,
 			HashToken(in.Token), int64(InvitationTTL.Seconds()), invitedBy, v)); err != nil {
+			return err
+		}
+		if err := auditInvitation(ctx, tx, "invitation.created", out); err != nil {
 			return err
 		}
 		return enqueueEmail(ctx, tx, tenantID, compose(out))
@@ -233,6 +243,9 @@ func (s *Store) ResendInvitation(ctx context.Context, sc Scope, tenantID, id uui
 			tenantID, id, HashToken(token), int64(InvitationTTL.Seconds()), v)); err != nil {
 			return err
 		}
+		if err := auditInvitation(ctx, tx, "invitation.resent", out); err != nil {
+			return err
+		}
 		return enqueueEmail(ctx, tx, tenantID, compose(out))
 	})
 	return out, err
@@ -252,9 +265,12 @@ func (s *Store) RevokeInvitation(ctx context.Context, sc Scope, tenantID, id uui
 		if err != nil {
 			return err
 		}
-		_, err = tx.Exec(ctx, `UPDATE invitation SET state = 'revoked', version = $3 WHERE tenant_id = $1 AND id = $2`,
-			tenantID, id, v)
-		return err
+		if _, err = tx.Exec(ctx, `UPDATE invitation SET state = 'revoked', version = $3 WHERE tenant_id = $1 AND id = $2`,
+			tenantID, id, v); err != nil {
+			return err
+		}
+		cur.State = "revoked"
+		return auditInvitation(ctx, tx, "invitation.revoked", cur)
 	})
 }
 
@@ -327,6 +343,9 @@ func (s *Store) AcceptInvitation(ctx context.Context, userID uuid.UUID, email, t
 			tenantID, inv.ID, userID, v)); err != nil {
 			return err
 		}
+		if err := auditInvitation(ctx, tx, "invitation.accepted", inv); err != nil {
+			return err
+		}
 		m, err = getMember(ctx, tx, tenantID, userID, false)
 		return err
 	})
@@ -355,4 +374,10 @@ func (s *Store) PreviewInvitation(ctx context.Context, token string) (Invitation
 		return out, ErrInvitationGone
 	}
 	return out, err
+}
+
+func auditInvitation(ctx context.Context, tx pgx.Tx, action string, inv Invitation) error {
+	return audit(ctx, tx, inv.TenantID, action, "tenants/"+inv.TenantID.String()+"/invitations/"+inv.ID.String(),
+		map[string]any{"id": inv.ID, "email": inv.Email, "tenant_role": inv.TenantRole, "app_roles": inv.AppRoles,
+			"deliver_to": inv.DeliverTo, "state": inv.State, "expires_at": inv.ExpiresAt, "sent_count": inv.SentCount})
 }

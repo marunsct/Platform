@@ -54,8 +54,12 @@ func (s *Store) CreateAppSecret(ctx context.Context, sc Scope, appSlug, label st
 			return err
 		}
 		out = AppSecret{ID: ids.New(), App: app.Slug, ClientID: app.ClientID, Label: label, Secret: secret}
-		return tx.QueryRow(ctx, `INSERT INTO app_secret (id, app_id, label, secret_hash) VALUES ($1, $2, $3, $4)
-			RETURNING created_at`, out.ID, app.ID, label, hashSecret(secret)).Scan(&out.CreatedAt)
+		if err := tx.QueryRow(ctx, `INSERT INTO app_secret (id, app_id, label, secret_hash) VALUES ($1, $2, $3, $4)
+			RETURNING created_at`, out.ID, app.ID, label, hashSecret(secret)).Scan(&out.CreatedAt); err != nil {
+			return err
+		}
+		return audit(ctx, tx, uuid.Nil, "app.secret.created", "apps/"+app.Slug+"/secrets/"+out.ID.String(),
+			map[string]any{"id": out.ID, "app": app.Slug, "label": label})
 	})
 	return out, err
 }
@@ -93,7 +97,11 @@ func (s *Store) RevokeAppSecret(ctx context.Context, sc Scope, appSlug string, i
 		if err == nil && tag.RowsAffected() == 0 {
 			err = ErrNotFound
 		}
-		return err
+		if err != nil {
+			return err
+		}
+		return audit(ctx, tx, uuid.Nil, "app.secret.revoked", "apps/"+app.Slug+"/secrets/"+id.String(),
+			map[string]any{"id": id, "app": app.Slug})
 	})
 }
 
@@ -194,7 +202,10 @@ func (s *Store) CreateWebhook(ctx context.Context, sc Scope, km secrets.KeyManag
 		}
 		out, err = scanWebhook(tx.QueryRow(ctx, `SELECT `+webhookCols+` FROM webhook_endpoint w
 			JOIN app a ON a.id = w.app_id WHERE w.id = $1`, id))
-		return err
+		if err != nil {
+			return err
+		}
+		return auditWebhook(ctx, tx, "app.webhook.created", out)
 	})
 	out.Secret = secret
 	return out, err
@@ -242,7 +253,10 @@ func (s *Store) UpdateWebhook(ctx context.Context, sc Scope, appSlug string, id 
 		}
 		out, err = scanWebhook(tx.QueryRow(ctx, `SELECT `+webhookCols+` FROM webhook_endpoint w
 			JOIN app a ON a.id = w.app_id WHERE w.id = $1`, id))
-		return err
+		if err != nil {
+			return err
+		}
+		return auditWebhook(ctx, tx, "app.webhook.updated", out)
 	})
 	return out, err
 }
@@ -254,7 +268,11 @@ func (s *Store) DeleteWebhook(ctx context.Context, sc Scope, appSlug string, id 
 		if err == nil && tag.RowsAffected() == 0 {
 			err = ErrNotFound
 		}
-		return err
+		if err != nil {
+			return err
+		}
+		return audit(ctx, tx, uuid.Nil, "app.webhook.deleted", "apps/"+appSlug+"/webhooks/"+id.String(),
+			map[string]any{"id": id, "app": appSlug})
 	})
 }
 
@@ -365,4 +383,9 @@ func (s *Store) WebhookKey(ctx context.Context, km secrets.KeyManager, id uuid.U
 		return nil, err
 	}
 	return km.Open(sealed, webhookAAD(id))
+}
+
+func auditWebhook(ctx context.Context, tx pgx.Tx, action string, h Webhook) error {
+	return audit(ctx, tx, uuid.Nil, action, "apps/"+h.App+"/webhooks/"+h.ID.String(),
+		map[string]any{"id": h.ID, "app": h.App, "url": h.URL, "status": h.Status})
 }

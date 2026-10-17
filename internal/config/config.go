@@ -4,6 +4,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net/netip"
 	"os"
 	"strings"
 )
@@ -28,6 +29,7 @@ type Config struct {
 	SMTPFrom           string
 	SMTPUser           string
 	SMTPPassword       string
+	TrustedProxies     []netip.Prefix // reverse proxies whose X-Forwarded-For is believed (IP allow-lists, audit)
 }
 
 func getenv(key, def string) string {
@@ -58,6 +60,20 @@ func FromEnv() (Config, error) {
 		SMTPFrom:           getenv("MATURA_SMTP_FROM", "no-reply@matura.local"),
 		SMTPUser:           os.Getenv("MATURA_SMTP_USER"),
 		SMTPPassword:       os.Getenv("MATURA_SMTP_PASSWORD"),
+	}
+	for _, raw := range strings.Split(os.Getenv("MATURA_TRUSTED_PROXIES"), ",") {
+		if raw = strings.TrimSpace(raw); raw == "" {
+			continue
+		}
+		p, err := netip.ParsePrefix(raw)
+		if err != nil {
+			a, aerr := netip.ParseAddr(raw)
+			if aerr != nil {
+				return c, fmt.Errorf("MATURA_TRUSTED_PROXIES: %q is not an address or CIDR range", raw)
+			}
+			p = netip.PrefixFrom(a, a.BitLen())
+		}
+		c.TrustedProxies = append(c.TrustedProxies, p.Masked())
 	}
 	return c, c.Validate()
 }

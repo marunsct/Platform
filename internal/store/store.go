@@ -84,7 +84,8 @@ func nextVersion(ctx context.Context, tx pgx.Tx) (int64, error) {
 	return v, err
 }
 
-// emit records a change in the outbox, in the same transaction as the change (technical specification §8).
+// emit records a change in the outbox and the audit log, in the same transaction as the change (technical
+// specification §8, §13).
 func emit(ctx context.Context, tx pgx.Tx, version int64, tenantID uuid.UUID, typ, subject string, payload any) error {
 	body, err := json.Marshal(payload)
 	if err != nil {
@@ -94,9 +95,11 @@ func emit(ctx context.Context, tx pgx.Tx, version int64, tenantID uuid.UUID, typ
 	if tenantID != uuid.Nil {
 		tid = tenantID
 	}
-	_, err = tx.Exec(ctx, `INSERT INTO outbox (version, tenant_id, type, subject, payload) VALUES ($1, $2, $3, $4, $5)`,
-		version, tid, "matura."+typ, subject, body)
-	return err
+	if _, err = tx.Exec(ctx, `INSERT INTO outbox (version, tenant_id, type, subject, payload) VALUES ($1, $2, $3, $4, $5)`,
+		version, tid, "matura."+typ, subject, body); err != nil {
+		return err
+	}
+	return audit(ctx, tx, tenantID, typ, subject, json.RawMessage(body))
 }
 
 // mapErr turns driver errors into the package's errors.
