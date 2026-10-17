@@ -49,8 +49,12 @@ self-hosted, open standards, nothing phones home).
   (`sdk/python`, `uv run pytest` there; Postgres too with `MATURA_TEST_DATABASE_URL`); shared test vectors;
   `scripts/e2e_python_sdk.py` (passes against a local maturad).
 - **Left in TS2:** OpenAPI document (`api/openapi.yaml`).
-- **Next:** doc 21 §3: data placement (TS7b), invitations (TS6), token mapper (TS5), realm (TS4-lite), Python SDK
-  (TS7), any-language kit (TS7e), then AgentCanvas on Matura (TS9a).
+- **AgentCanvas on Matura (TS9a), 2026-10-17:** draft marunsct/AgentCanvas#49 (v0.27.0, branch
+  `claude/project-thread-nhbr1g`): `AGENTCANVAS_AUTH_MODE=matura`, permissions `canvas.read`/`inbox.review`/
+  `workflow.build`/`org.admin` mapped onto its four roles, webhooks at `/v1/matura/events`, change feed, vendored SDK,
+  `matura/manifest.json`. Ask the owner before merging it (not covered by AgentCanvas's sprint merge grant).
+- **Next:** doc 21 §3: data placement (TS7b), invitations (TS6), sign-up and brokering (TS4-lite), any-language kit
+  (TS7e: OpenAPI, TypeScript SDK, conformance CLI, contract SQL for other databases).
 - `main` holds LICENSE, SECURITY.md, CONTRIBUTING.md.
 
 ## 3. Where to read

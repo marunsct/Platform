@@ -49,7 +49,7 @@ Ordered so that each step is testable without the next one.
 | 7 | Sign-in realm | TS4-lite | realm-as-code: sign-up, verify email, reset password, Google and GitHub brokers (disabled until keys are set), `matura-api` audience, app client template | realm imports; documented first-run |
 | 8 | Python SDK | TS7 | token verification with JWKS cache, `Principal`, `require_permission`, contract tables migration, `apply` with the version rule, webhook receiver, feed reader, tenant session routing for three modes | example FastAPI app serves two tenants; keeps serving with `maturad` stopped |
 | 9 | Any-language kit | TS7e | contract SQL for Postgres, MySQL, SQL Server, SQLite; token and event test vectors; TypeScript SDK; `matura conformance` CLI | the sample apps pass the kit; a deliberately leaky app fails it |
-| 10 | AgentCanvas on Matura | TS9a | AgentCanvas pull request (FastAPI + React): Python SDK, contract tables, its `organization`/`app_user`/`membership` mapped onto `matura_*`, `org_id` → `tenant_id` with RLS, manifest with its four roles, sign-in through Matura behind a flag | AgentCanvas runs for two tenants with no data crossing; its own sign-in still works behind the flag |
+| 10 | AgentCanvas on Matura (draft [AgentCanvas#49](https://github.com/marunsct/AgentCanvas/pull/49)) | TS9a | AgentCanvas pull request (FastAPI + React): Python SDK, contract tables, its `organization`/`app_user`/`membership` mapped onto `matura_*`, `org_id` → `tenant_id` with RLS, manifest with its four roles, sign-in through Matura behind a flag | AgentCanvas runs for two tenants with no data crossing; its own sign-in still works behind the flag |
 
 ## 4. After M1
 
