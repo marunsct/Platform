@@ -2,6 +2,7 @@ package events
 
 import (
 	"encoding/json"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -60,6 +61,31 @@ func TestEnvelope(t *testing.T) {
 		"matura.user.deleted": "user", "matura.app.manifest.updated": "app_manifest"} {
 		if got := ObjectOf(typ); got != want {
 			t.Errorf("ObjectOf(%s) = %s, want %s", typ, got, want)
+		}
+	}
+}
+
+// TestSharedVectors: the Go verifier agrees with docs/contract/test-vectors.json, which every SDK also checks.
+func TestSharedVectors(t *testing.T) {
+	raw, err := os.ReadFile("../../docs/contract/test-vectors.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var v struct {
+		Secret     string `json:"secret"`
+		Signatures []struct {
+			Name, Body, Header string
+			Now                int64
+			Valid              bool
+		} `json:"signatures"`
+	}
+	if err := json.Unmarshal(raw, &v); err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range v.Signatures {
+		err := Verify([]byte(v.Secret), s.Header, []byte(s.Body), time.Unix(s.Now, 0))
+		if (err == nil) != s.Valid {
+			t.Errorf("%s: err=%v, want valid=%v", s.Name, err, s.Valid)
 		}
 	}
 }

@@ -28,5 +28,10 @@
   Keycloak extension `matura-token-mapper` that puts them in access tokens (keycloak/extensions, Java 21).
 - Realm: `matura-tenant` client scope, an `agentcanvas` client, Google and GitHub brokers (disabled until keys are set);
   Compose builds Keycloak with the extension.
+- Python SDK `matura` (sdk/python): token verification and `Principal`, `require_permission` for FastAPI, the
+  `matura_*` contract tables for PostgreSQL (with shared-mode RLS) and SQLite, `apply` with the version rule and
+  hooks, signed webhook receiver, change-feed sync with snapshot bootstrap, and a fake issuer for tests.
+- Shared webhook signature test vectors (docs/contract/test-vectors.json), checked by the Go and Python tests;
+  `scripts/e2e_python_sdk.py` checks the SDK against a running maturad.
 - Build plan to 1.0 (docs/plan/21) and a guide for designing apps on Matura (docs/guide).
 - Docker Compose stack with Postgres, Keycloak (realm `matura`), Mailpit and `maturad`; CI with Postgres-backed tests.

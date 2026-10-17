@@ -1,0 +1,41 @@
+{
+  "description": "Signed sample events for testing a Matura webhook receiver in any language (contract \u00a710.2). Verify each with the given 'now'; 'valid' says whether it must be accepted.",
+  "secret": "whsec_test_vector_secret",
+  "signatures": [
+    {
+      "name": "valid",
+      "body": "{\"specversion\":\"1.0\",\"id\":\"evt_42\",\"source\":\"matura://installation/main\",\"type\":\"matura.membership.added\",\"time\":\"2026-10-16T09:12:03Z\",\"subject\":\"tenants/0192b7a4-6000-7000-8000-000000000001/members/0192b7a4-5c1e-7d2a-9f00-4b1e2a9c0d11\",\"tenantid\":\"0192b7a4-6000-7000-8000-000000000001\",\"sequence\":\"9\",\"datacontenttype\":\"application/json\",\"data\":{\"object\":\"membership\",\"version\":41,\"membership\":{\"tenant_id\":\"0192b7a4-6000-7000-8000-000000000001\",\"user_id\":\"0192b7a4-5c1e-7d2a-9f00-4b1e2a9c0d11\",\"tenant_role\":\"admin\",\"status\":\"active\",\"joined_at\":\"2026-10-16T09:12:03Z\",\"version\":41,\"updated_at\":\"2026-10-16T09:12:03Z\"}}}",
+      "header": "t=1792140300,v1=f32c6ad98caf7790a8f7717abdcbd61ae68290742d8913cdf5531ca4dc084fb5",
+      "now": 1792140360,
+      "valid": true
+    },
+    {
+      "name": "body changed",
+      "body": "{\"specversion\":\"1.0\",\"id\":\"evt_42\",\"source\":\"matura://installation/main\",\"type\":\"matura.membership.added\",\"time\":\"2026-10-16T09:12:03Z\",\"subject\":\"tenants/0192b7a4-6000-7000-8000-000000000001/members/0192b7a4-5c1e-7d2a-9f00-4b1e2a9c0d11\",\"tenantid\":\"0192b7a4-6000-7000-8000-000000000001\",\"sequence\":\"9\",\"datacontenttype\":\"application/json\",\"data\":{\"object\":\"membership\",\"version\":41,\"membership\":{\"tenant_id\":\"0192b7a4-6000-7000-8000-000000000001\",\"user_id\":\"0192b7a4-5c1e-7d2a-9f00-4b1e2a9c0d11\",\"tenant_role\":\"owner\",\"status\":\"active\",\"joined_at\":\"2026-10-16T09:12:03Z\",\"version\":41,\"updated_at\":\"2026-10-16T09:12:03Z\"}}}",
+      "header": "t=1792140300,v1=f32c6ad98caf7790a8f7717abdcbd61ae68290742d8913cdf5531ca4dc084fb5",
+      "now": 1792140360,
+      "valid": false
+    },
+    {
+      "name": "too old",
+      "body": "{\"specversion\":\"1.0\",\"id\":\"evt_42\",\"source\":\"matura://installation/main\",\"type\":\"matura.membership.added\",\"time\":\"2026-10-16T09:12:03Z\",\"subject\":\"tenants/0192b7a4-6000-7000-8000-000000000001/members/0192b7a4-5c1e-7d2a-9f00-4b1e2a9c0d11\",\"tenantid\":\"0192b7a4-6000-7000-8000-000000000001\",\"sequence\":\"9\",\"datacontenttype\":\"application/json\",\"data\":{\"object\":\"membership\",\"version\":41,\"membership\":{\"tenant_id\":\"0192b7a4-6000-7000-8000-000000000001\",\"user_id\":\"0192b7a4-5c1e-7d2a-9f00-4b1e2a9c0d11\",\"tenant_role\":\"admin\",\"status\":\"active\",\"joined_at\":\"2026-10-16T09:12:03Z\",\"version\":41,\"updated_at\":\"2026-10-16T09:12:03Z\"}}}",
+      "header": "t=1792140300,v1=f32c6ad98caf7790a8f7717abdcbd61ae68290742d8913cdf5531ca4dc084fb5",
+      "now": 1792140601,
+      "valid": false
+    },
+    {
+      "name": "other secret",
+      "body": "{\"specversion\":\"1.0\",\"id\":\"evt_42\",\"source\":\"matura://installation/main\",\"type\":\"matura.membership.added\",\"time\":\"2026-10-16T09:12:03Z\",\"subject\":\"tenants/0192b7a4-6000-7000-8000-000000000001/members/0192b7a4-5c1e-7d2a-9f00-4b1e2a9c0d11\",\"tenantid\":\"0192b7a4-6000-7000-8000-000000000001\",\"sequence\":\"9\",\"datacontenttype\":\"application/json\",\"data\":{\"object\":\"membership\",\"version\":41,\"membership\":{\"tenant_id\":\"0192b7a4-6000-7000-8000-000000000001\",\"user_id\":\"0192b7a4-5c1e-7d2a-9f00-4b1e2a9c0d11\",\"tenant_role\":\"admin\",\"status\":\"active\",\"joined_at\":\"2026-10-16T09:12:03Z\",\"version\":41,\"updated_at\":\"2026-10-16T09:12:03Z\"}}}",
+      "header": "t=1792140300,v1=7690fe286795d8609bca37496715512b4a0b6e37edca52c751e210ed5c5376e8",
+      "now": 1792140300,
+      "valid": false
+    },
+    {
+      "name": "rotated: second v1 matches",
+      "body": "{\"specversion\":\"1.0\",\"id\":\"evt_42\",\"source\":\"matura://installation/main\",\"type\":\"matura.membership.added\",\"time\":\"2026-10-16T09:12:03Z\",\"subject\":\"tenants/0192b7a4-6000-7000-8000-000000000001/members/0192b7a4-5c1e-7d2a-9f00-4b1e2a9c0d11\",\"tenantid\":\"0192b7a4-6000-7000-8000-000000000001\",\"sequence\":\"9\",\"datacontenttype\":\"application/json\",\"data\":{\"object\":\"membership\",\"version\":41,\"membership\":{\"tenant_id\":\"0192b7a4-6000-7000-8000-000000000001\",\"user_id\":\"0192b7a4-5c1e-7d2a-9f00-4b1e2a9c0d11\",\"tenant_role\":\"admin\",\"status\":\"active\",\"joined_at\":\"2026-10-16T09:12:03Z\",\"version\":41,\"updated_at\":\"2026-10-16T09:12:03Z\"}}}",
+      "header": "t=1792140300,v1=f32c6ad98caf7790a8f7717abdcbd61ae68290742d8913cdf5531ca4dc084fb5,v1=0000000000000000000000000000000000000000000000000000000000000000",
+      "now": 1792140300,
+      "valid": true
+    }
+  ]
+}
