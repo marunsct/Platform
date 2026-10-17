@@ -3,6 +3,9 @@
 ## Unreleased
 
 ### Added
+- `matura-conformance` (`cmd/matura-conformance`, `internal/conformance`): a black-box checker for any app. It runs a
+  test issuer, seeds two tenants with signed events, and checks token refusals, permissions, tenant isolation through
+  the app's own API (manifest `conformance` section) and webhook signature handling (docs/guide/conformance.md).
 - `scripts/e2e_invite_signup.mjs`: browser test of sign-up, invitation and the resulting AgentCanvas token claims
   against running Keycloak, maturad and Mailpit.
 - OpenAPI 3.1 document for every maturad route (`api/openapi.yaml`), with a test that fails when the router and the

@@ -62,6 +62,7 @@ self-hosted, open standards, nothing phones home).
 - **End to end, 2026-10-17:** `scripts/e2e_invite_signup.mjs` (Playwright) passed against Keycloak 26.4 with the
   extension, maturad (OIDC) and Mailpit: owner invites, invitee signs up on the accept page, verifies email, joins
   with the invited AgentCanvas role, and the AgentCanvas token carries `tid`, `roles`, `perms`.
+- **Conformance kit, 2026-10-17:** `matura-conformance` with a sample notes app in its tests (honest passes all 21 checks; each leak fails its check). Not yet checked: feed catch-up, version ordering, `tenant-not-ready`.
 - **Next:** doc 21 §3: any-language kit
   (TS7e: OpenAPI, TypeScript SDK, conformance CLI, contract SQL for other databases).
 - `main` holds LICENSE, SECURITY.md, CONTRIBUTING.md.
