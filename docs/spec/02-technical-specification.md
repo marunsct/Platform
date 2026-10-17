@@ -110,7 +110,7 @@ that mode unless `MATURA_ENV=development`.
 | Tenants | `POST/GET /v1/tenants`, `GET/PATCH/DELETE /v1/tenants/{tid}`, `POST /v1/tenants/{tid}:restore` |
 | Workspaces | `GET/POST /v1/tenants/{tid}/workspaces`, `PATCH/DELETE …/{wid}` |
 | Members | `GET /v1/tenants/{tid}/members`, `PATCH/DELETE …/{uid}` |
-| Invitations | `POST/GET /v1/tenants/{tid}/invitations`, `POST …/{id}:resend`, `DELETE …/{id}`, `POST /v1/invitations:accept` |
+| Invitations | `POST/GET /v1/tenants/{tid}/invitations`, `POST …/{id}:resend`, `DELETE …/{id}`, `POST /v1/invitations:accept`; unauthenticated: `GET /invitations/accept` (page), `GET /invitations/preview?token=` (§5.1) |
 | Apps | `PUT /admin/v1/apps/{slug}` (apply manifest), `GET /v1/apps`, `POST/DELETE /v1/tenants/{tid}/apps/{app}` |
 | App roles | `GET /v1/apps/{slug}/roles`; operators: `POST /admin/v1/apps/{slug}/roles`, `PATCH/DELETE /admin/v1/apps/{slug}/roles/{name}` (RL-8 to RL-11) |
 | Grants | `GET/POST /v1/tenants/{tid}/grants`, `DELETE …/{id}` |
@@ -123,6 +123,34 @@ that mode unless `MATURA_ENV=development`.
 | Health | `GET /healthz/live`, `GET /healthz/ready` |
 
 The OpenAPI 3.1 document lives in `api/openapi.yaml` and is the source for generated clients.
+
+### 5.1 Invitations and email (TS6)
+
+- **Invite** (owners and admins; only owners invite owners): `{email, tenant_role (default member), app_roles:
+  [{app, role, workspace_id?}], delivery: "link", deliver_to?}`. App roles are checked up front (app enabled, role
+  exists, workspace in the tenant). An active member's address answers 409; an earlier pending invitation to the
+  same address is revoked. `delivery: temp_password` answers 422 until it is built.
+- **Token:** 32 random bytes, base64url, in the link `MATURA_INVITE_ACCEPT_URL?token=…`; only its SHA-256 is stored.
+  Links expire after 7 days (`expires_at`; a pending invitation past it lists as `expired`). The create and resend
+  responses carry `accept_url` (not stored) so an admin can pass a link on when email is not set up.
+- **Resend** issues a new token and expiry (the old link stops working) and works on pending and expired invitations;
+  **revoke** ends a pending one.
+- **Accept** (`POST /v1/invitations:accept {token}`, signed in): the token is looked up in operator scope, then the
+  rest runs in the invitation's tenant. Refused with **410** when the invitation is accepted, revoked, expired, the
+  tenant is not active or the token is unknown ("ask your admin for a new invitation"), and **403** when the
+  signed-in email is not the invited one. Otherwise: membership with the tenant role (an existing member keeps theirs),
+  the invitation's app roles (one that can no longer be granted is skipped), each other enabled app's default role
+  (RL-4), and the invitation marked accepted. Members added directly (`POST …/members`) get default roles too.
+  Membership and grant changes reach apps as usual; invitations themselves are not contract events.
+- **Accept page:** `GET /invitations/accept` is a self-contained page served by maturad. It shows the tenant and
+  address (`/invitations/preview`), signs in or registers (`prompt=create`) at Keycloak with authorization code + PKCE
+  as the public client `MATURA_PORTAL_CLIENT_ID` (default `matura-console`, whose redirect URIs must include the
+  page), then accepts. It sends no referrer and removes the token from the address bar. The customer portal (TS8)
+  can replace it via `MATURA_INVITE_ACCEPT_URL`.
+- **Email outbox:** `email_outbox` rows are written in the same transaction as the invitation (anyone may insert;
+  only operator scope reads). The mailer (one active replica, advisory lock 7351005) sends due rows over SMTP
+  (STARTTLS when offered; credentials only over TLS or to localhost) and retries with backoff (1, 2, 4 … 64 minutes)
+  up to 8 attempts, then marks the row `failed`. Without `MATURA_SMTP_ADDR` mail is queued but not sent.
 
 ## 6. Token mapper (TS5)
 
@@ -274,7 +302,11 @@ and reports `ready`. Expand-and-contract migrations are required, since tenants 
 | `MATURA_ISSUER` | Keycloak realm URL |
 | `MATURA_AUTH` | `oidc` (default) or `dev` |
 | `MATURA_KEK` | base64 key-encryption key |
-| `MATURA_PUBLIC_URL` | for links in emails |
+| `MATURA_PUBLIC_URL` | where people reach maturad, for links in emails (default `http://localhost:8080`) |
+| `MATURA_INVITE_ACCEPT_URL` | page invitation links open (default `<MATURA_PUBLIC_URL>/invitations/accept`) |
+| `MATURA_PORTAL_CLIENT_ID` | public Keycloak client the accept page signs in with (default `matura-console`) |
+| `MATURA_SMTP_ADDR` | `host:port` of the mail relay; unset: emails are queued, not sent |
+| `MATURA_SMTP_FROM`, `MATURA_SMTP_USER`, `MATURA_SMTP_PASSWORD` | sender address (default `no-reply@matura.local`) and optional login |
 
 ## 11. Testing
 

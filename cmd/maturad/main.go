@@ -21,6 +21,7 @@ import (
 	"github.com/marunsct/Platform/internal/api"
 	"github.com/marunsct/Platform/internal/config"
 	"github.com/marunsct/Platform/internal/events"
+	"github.com/marunsct/Platform/internal/mail"
 	"github.com/marunsct/Platform/internal/placement"
 	"github.com/marunsct/Platform/internal/secrets"
 	"github.com/marunsct/Platform/internal/store"
@@ -103,6 +104,16 @@ func run(log *slog.Logger) error {
 	server := api.New(st, auth, keys, log)
 	server.SetSource(cfg.EventSource)
 	server.EnableInternal(cfg.InternalToken)
+	server.SetInvitations(api.Invitations{AcceptURL: cfg.InviteAcceptURL, PublicURL: cfg.PublicURL,
+		Issuer: cfg.Issuer, ClientID: cfg.PortalClientID})
+	if cfg.SMTPAddr != "" {
+		mailer := &mail.Mailer{Store: st, Log: log, Sender: mail.SMTP{Addr: cfg.SMTPAddr, From: cfg.SMTPFrom,
+			User: cfg.SMTPUser, Password: cfg.SMTPPassword}}
+		go mailer.Run(ctx)
+	} else {
+		log.Warn("MATURA_SMTP_ADDR is not set: invitation emails are queued but not sent; " +
+			"the API returns each invitation's link so an admin can pass it on")
+	}
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,
 		Handler:           server.Handler(),

@@ -3,6 +3,12 @@
 ## Unreleased
 
 ### Added
+- Invitations and email (TS6): admins invite by email with a tenant role and app roles (`/v1/tenants/{tid}/invitations`,
+  resend, revoke); links carry a single-use token stored only as a hash and expire after 7 days; the invitee accepts
+  on maturad's page (`/invitations/accept`, Keycloak sign-in or sign-up with PKCE) or through
+  `POST /v1/invitations:accept`. New members get each enabled app's default role unless the invitation names one
+  (RL-4), also when added directly. Email outbox written with the change and an SMTP mailer with retries (migration
+  0007; `MATURA_SMTP_*`, `MATURA_PUBLIC_URL`); Compose sends through Mailpit.
 - Data placement (TS7b): a provisioner creates platform-managed storage on registered database servers (shared:
   `<app>_shared` with owner and runtime roles; schema: `t_<tenant>` in `<app>_bridge`, owned by the tenant's role;
   database: `<app>_t_<tenant>`, CONNECT revoked from PUBLIC), retries failed steps, and drops a deleted tenant's

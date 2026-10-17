@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 )
 
 type Config struct {
@@ -20,6 +21,13 @@ type Config struct {
 	KEK                string // base64 key-encryption key for stored secrets
 	InternalToken      string // shared with Keycloak's Matura extension for /internal/v1
 	EventSource        string // CloudEvents source of this installation
+	PublicURL          string // where people reach maturad, for links in emails
+	InviteAcceptURL    string // page invitation links open; default <PublicURL>/invitations/accept
+	PortalClientID     string // public Keycloak client the accept page signs in with
+	SMTPAddr           string // host:port of the mail relay; empty: emails are queued but not sent
+	SMTPFrom           string
+	SMTPUser           string
+	SMTPPassword       string
 }
 
 func getenv(key, def string) string {
@@ -43,6 +51,13 @@ func FromEnv() (Config, error) {
 		KEK:                os.Getenv("MATURA_KEK"),
 		InternalToken:      os.Getenv("MATURA_INTERNAL_TOKEN"),
 		EventSource:        getenv("MATURA_EVENT_SOURCE", "matura://installation/main"),
+		PublicURL:          getenv("MATURA_PUBLIC_URL", "http://localhost:8080"),
+		InviteAcceptURL:    os.Getenv("MATURA_INVITE_ACCEPT_URL"),
+		PortalClientID:     getenv("MATURA_PORTAL_CLIENT_ID", "matura-console"),
+		SMTPAddr:           os.Getenv("MATURA_SMTP_ADDR"),
+		SMTPFrom:           getenv("MATURA_SMTP_FROM", "no-reply@matura.local"),
+		SMTPUser:           os.Getenv("MATURA_SMTP_USER"),
+		SMTPPassword:       os.Getenv("MATURA_SMTP_PASSWORD"),
 	}
 	return c, c.Validate()
 }
@@ -57,6 +72,9 @@ func (c Config) Validate() error {
 	}
 	if c.InternalToken != "" && len(c.InternalToken) < 32 {
 		return errors.New("MATURA_INTERNAL_TOKEN must be at least 32 characters (openssl rand -hex 32)")
+	}
+	if c.SMTPAddr != "" && !strings.Contains(c.SMTPFrom, "@") {
+		return errors.New("MATURA_SMTP_FROM must be an email address")
 	}
 	switch c.Auth {
 	case "dev":

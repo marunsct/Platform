@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/marunsct/Platform/internal/api"
 	"github.com/marunsct/Platform/internal/ids"
@@ -71,6 +72,12 @@ func setup(t *testing.T) *httptest.Server {
 
 // setupFull also returns the store and keys, for tests that run the relay or the provisioner.
 func setupFull(t *testing.T) (*httptest.Server, *store.Store, secrets.KeyManager) {
+	srv, st, keys, _ := setupPool(t)
+	return srv, st, keys
+}
+
+// setupPool also returns the runtime role's pool, for tests that change rows directly (say, to expire them).
+func setupPool(t *testing.T) (*httptest.Server, *store.Store, secrets.KeyManager, *pgxpool.Pool) {
 	pool := testdb.New(t)
 	keys, err := secrets.NewLocal(base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{7}, 32)))
 	if err != nil {
@@ -83,9 +90,11 @@ func setupFull(t *testing.T) (*httptest.Server, *store.Store, secrets.KeyManager
 	}
 	server := api.New(st, api.DevAuthenticator{}, keys, slog.New(slog.NewTextHandler(logs, nil)))
 	server.EnableInternal(internalToken)
+	server.SetInvitations(api.Invitations{PublicURL: "http://matura.test", Issuer: "http://keycloak.test/realms/matura",
+		ClientID: "matura-console"})
 	srv := httptest.NewServer(server.Handler())
 	t.Cleanup(srv.Close)
-	return srv, st, keys
+	return srv, st, keys, pool
 }
 
 var manifest = map[string]any{
@@ -123,6 +132,9 @@ func TestCrossTenant(t *testing.T) {
 	grant := alice.must(http.StatusCreated, "POST", "/v1/tenants/"+aid+"/grants",
 		map[string]any{"app": "devflow", "user_id": alice.user, "role": "admin"})
 	gid := grant["id"].(string)
+	inv := alice.must(http.StatusCreated, "POST", "/v1/tenants/"+aid+"/invitations",
+		map[string]any{"email": "carol@example.test"})
+	iid := inv["id"].(string)
 
 	routes := []struct {
 		method, path string
@@ -144,6 +156,10 @@ func TestCrossTenant(t *testing.T) {
 		{"GET", "/v1/tenants/" + aid + "/grants", nil},
 		{"POST", "/v1/tenants/" + aid + "/grants", map[string]any{"app": "devflow", "user_id": bob.user, "role": "admin"}},
 		{"DELETE", "/v1/tenants/" + aid + "/grants/" + gid, nil},
+		{"GET", "/v1/tenants/" + aid + "/invitations", nil},
+		{"POST", "/v1/tenants/" + aid + "/invitations", map[string]any{"email": "x@example.test"}},
+		{"POST", "/v1/tenants/" + aid + "/invitations/" + iid + ":resend", nil},
+		{"DELETE", "/v1/tenants/" + aid + "/invitations/" + iid, nil},
 	}
 	for _, rt := range routes {
 		if got, out := bob.do(rt.method, rt.path, rt.body); got != http.StatusNotFound {

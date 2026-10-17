@@ -25,8 +25,9 @@ type Server struct {
 	log   *slog.Logger
 	seen  sync.Map // user id -> seenProfile, so unchanged profiles skip the database
 
-	source         string  // CloudEvents source of this installation
-	internalRoutes []route // /internal/v1 routes for Keycloak (TS5)
+	source         string      // CloudEvents source of this installation
+	internalRoutes []route     // /internal/v1 routes for Keycloak (TS5)
+	invites        Invitations // invitation links and accept page (TS6)
 }
 
 // seenProfile remembers a profile already written; it is re-checked after a minute so a deactivated account stops
@@ -51,6 +52,8 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz/live", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) })
 	mux.HandleFunc("GET /healthz/ready", s.ready)
+	mux.HandleFunc("GET /invitations/accept", s.acceptPageHandler)
+	mux.HandleFunc("GET /invitations/preview", s.previewInvitation)
 
 	api := http.NewServeMux()
 	api.HandleFunc("GET /v1/me", s.getMe)
@@ -73,6 +76,11 @@ func (s *Server) Handler() http.Handler {
 	api.HandleFunc("POST /v1/tenants/{tid}/grants", s.createGrant)
 	api.HandleFunc("DELETE /v1/tenants/{tid}/grants/{id}", s.revokeGrant)
 	api.HandleFunc("GET /v1/tenants/{tid}/placements", s.listPlacements)
+	api.HandleFunc("GET /v1/tenants/{tid}/invitations", s.listInvitations)
+	api.HandleFunc("POST /v1/tenants/{tid}/invitations", s.createInvitation)
+	api.HandleFunc("POST /v1/tenants/{tid}/invitations/{id}", s.invitationAction) // {id}:resend
+	api.HandleFunc("DELETE /v1/tenants/{tid}/invitations/{id}", s.revokeInvitation)
+	api.HandleFunc("POST /v1/invitations:accept", s.acceptInvitation)
 	api.HandleFunc("GET /v1/apps", s.listApps)
 	api.HandleFunc("PUT /admin/v1/apps/{slug}", s.applyApp)
 	api.HandleFunc("GET /v1/apps/{slug}/roles", s.listRoles)

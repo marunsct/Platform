@@ -56,7 +56,10 @@ self-hosted, open standards, nothing phones home).
 - **Data placement (TS7b), 2026-10-17:** `internal/placement` provisioner (run by maturad), placement endpoints, migration
   0006; `TestPlatformManagedPlacements` provisions all three modes on the test server and checks tenants cannot
   reach each other's schema or database.
-- **Next:** doc 21 §3: invitations (TS6), sign-up and brokering (TS4-lite), any-language kit
+- **Invitations and email (TS6), 2026-10-17:** invitation API and accept page (`internal/api/invitations.go`,
+  `accept.html`), default roles on joining (RL-4), email outbox and SMTP mailer (`internal/mail`), migration 0007;
+  `TestInvitations`. Temporary-password delivery and bulk CSV are not built yet (doc 13 TS6 extras).
+- **Next:** doc 21 §3: sign-up and brokering (TS4-lite), any-language kit
   (TS7e: OpenAPI, TypeScript SDK, conformance CLI, contract SQL for other databases).
 - `main` holds LICENSE, SECURITY.md, CONTRIBUTING.md.
 

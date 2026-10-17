@@ -1,6 +1,7 @@
 # Local evaluation stack: docker compose -f deploy/compose/compose.yaml up
 #   maturad   http://localhost:8080   (MATURA_AUTH=dev: send X-Matura-Dev-User: <uuid>)
 #   Keycloak  http://localhost:8180   (admin / admin; realm "matura")
+#   Mailpit   http://localhost:8025   (every email maturad and Keycloak send)
 name: matura
 services:
   postgres:
@@ -50,6 +51,9 @@ services:
       MATURA_MIGRATE_DATABASE_URL: postgres://matura_owner:matura-owner-dev@postgres:5432/matura?sslmode=disable
       MATURA_KEK: bWF0dXJhLWRldmVsb3BtZW50LW9ubHkta2V5LTAwMDE=  # development only; production: openssl rand -base64 32
       MATURA_INTERNAL_TOKEN: *internal-token
+      MATURA_PUBLIC_URL: http://localhost:8080        # invitation links point here
+      MATURA_SMTP_ADDR: mailpit:1025                  # invitation emails land in Mailpit
+      MATURA_SMTP_FROM: no-reply@matura.local
     ports: ["8080:8080"]
     depends_on:
       postgres: { condition: service_healthy }

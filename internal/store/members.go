@@ -62,12 +62,15 @@ func addMember(ctx context.Context, tx pgx.Tx, tenantID, userID uuid.UUID, role 
 	return m, emit(ctx, tx, v, tenantID, "membership.added", memberSubject(tenantID, userID), m)
 }
 
+// AddMember adds a user with an account; they get each enabled app's default role (RL-4).
 func (s *Store) AddMember(ctx context.Context, sc Scope, tenantID, userID uuid.UUID, role string) (Membership, error) {
 	var out Membership
 	err := s.tx(ctx, sc.InTenant(tenantID), func(tx pgx.Tx) error {
 		var err error
-		out, err = addMember(ctx, tx, tenantID, userID, role)
-		return err
+		if out, err = addMember(ctx, tx, tenantID, userID, role); err != nil {
+			return err
+		}
+		return grantDefaults(ctx, tx, tenantID, userID, nil)
 	})
 	return out, err
 }

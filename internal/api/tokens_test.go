@@ -60,9 +60,8 @@ func TestTokenContext(t *testing.T) {
 	acme := alice.must(http.StatusCreated, "POST", "/v1/tenants", map[string]any{"slug": "acme", "name": "Acme"})
 	aid := acme["id"].(string)
 	alice.must(http.StatusOK, "PUT", "/v1/tenants/"+aid+"/apps/agentcanvas", nil)
+	// bob gets agentcanvas's default role, viewer, on joining (RL-4)
 	alice.must(http.StatusCreated, "POST", "/v1/tenants/"+aid+"/members", map[string]any{"user_id": bob.user})
-	alice.must(http.StatusCreated, "POST", "/v1/tenants/"+aid+"/grants",
-		map[string]any{"app": "agentcanvas", "user_id": bob.user, "role": "viewer"})
 	ws := alice.must(http.StatusCreated, "POST", "/v1/tenants/"+aid+"/workspaces", map[string]any{"name": "Lab"})
 	alice.must(http.StatusCreated, "POST", "/v1/tenants/"+aid+"/grants",
 		map[string]any{"app": "agentcanvas", "user_id": bob.user, "role": "editor", "workspace_id": ws["id"]})
