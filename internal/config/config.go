@@ -33,6 +33,9 @@ type Config struct {
 	SMTPPassword       string
 	DeleteGrace        time.Duration  // how long a deleted tenant can be restored; default 30 days
 	TrustedProxies     []netip.Prefix // reverse proxies whose X-Forwarded-For is believed (IP allow-lists, audit)
+	ProductName        string         // name shown on the trust page and in readiness reports
+	TrustPage          bool           // serve the public trust page at /trust (MATURA_TRUST_PAGE=on)
+	SecurityContact    string         // optional address the trust page gives for security reports
 }
 
 func getenv(key, def string) string {
@@ -49,7 +52,7 @@ func FromEnv() (Config, error) {
 		MigrateDatabaseURL: os.Getenv("MATURA_MIGRATE_DATABASE_URL"),
 		RuntimeRole:        getenv("MATURA_RUNTIME_ROLE", "matura_app"),
 		HTTPAddr:           getenv("MATURA_HTTP_ADDR", ":8080"),
-		MetricsAddr:        getenv("MATURA_METRICS_ADDR", ":9090"),
+		MetricsAddr:        metricsAddr(),
 		Issuer:             os.Getenv("MATURA_ISSUER"),
 		Audience:           getenv("MATURA_AUDIENCE", "matura-api"),
 		OperatorRole:       getenv("MATURA_OPERATOR_ROLE", "matura-operator"),
@@ -64,6 +67,15 @@ func FromEnv() (Config, error) {
 		SMTPFrom:           getenv("MATURA_SMTP_FROM", "no-reply@matura.local"),
 		SMTPUser:           os.Getenv("MATURA_SMTP_USER"),
 		SMTPPassword:       os.Getenv("MATURA_SMTP_PASSWORD"),
+		ProductName:        getenv("MATURA_PRODUCT_NAME", "Matura"),
+		SecurityContact:    os.Getenv("MATURA_SECURITY_CONTACT"),
+	}
+	switch v := strings.ToLower(getenv("MATURA_TRUST_PAGE", "off")); v {
+	case "on", "true", "1":
+		c.TrustPage = true
+	case "off", "false", "0":
+	default:
+		return c, fmt.Errorf("MATURA_TRUST_PAGE must be on or off, got %q", v)
 	}
 	grace := getenv("MATURA_TENANT_DELETE_GRACE", "720h")
 	d, err := time.ParseDuration(grace)
@@ -115,4 +127,12 @@ func (c Config) Validate() error {
 		return fmt.Errorf("MATURA_AUTH must be oidc or dev, got %q", c.Auth)
 	}
 	return nil
+}
+
+// metricsAddr is MATURA_METRICS_ADDR, default :9090; set but empty turns the metrics listener off.
+func metricsAddr() string {
+	if v, ok := os.LookupEnv("MATURA_METRICS_ADDR"); ok {
+		return v
+	}
+	return ":9090"
 }

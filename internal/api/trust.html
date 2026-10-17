@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>{{.T.Product}} security</title>
+<style>{{.CSS}}</style>
+</head>
+<body>
+<main>
+<header>
+<h1>{{.T.Product}} security</h1>
+<p class="lead">{{.T.InPlace}} of {{.T.Applicable}} published controls are in place on this installation.</p>
+<p class="muted">Checked {{.Checked}} UTC from the installation's live configuration and evidence.</p>
+</header>
+<ul class="controls">
+{{range .T.Controls}}<li class="{{.Status}}"><span class="badge">{{statusText .Status}}</span><div><strong>{{.Title}}</strong>{{if .Refs}}<small>{{range $i, $r := .Refs}}{{if $i}} · {{end}}{{$r.Framework}} {{$r.ID}}{{end}}</small>{{end}}</div></li>
+{{end}}</ul>
+{{if .T.SecurityContact}}<p>Report a security issue: <a href="mailto:{{.T.SecurityContact}}">{{.T.SecurityContact}}</a></p>{{end}}
+<p class="muted notice">{{.T.Notice}}</p>
+<p class="muted">Machine-readable: <a href="trust.json">trust.json</a></p>
+</main>
+</body>
+</html>

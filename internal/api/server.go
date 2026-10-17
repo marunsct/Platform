@@ -16,6 +16,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/marunsct/Platform/internal/portal"
+	"github.com/marunsct/Platform/internal/readiness"
 	"github.com/marunsct/Platform/internal/secrets"
 	"github.com/marunsct/Platform/internal/store"
 )
@@ -35,7 +36,9 @@ type Server struct {
 	trustedProxies []netip.Prefix
 	policies       sync.Map // tenant id -> cachedPolicy, for the IP allow-list
 	portal         *portal.Portal
-	directory      UserDirectory // identity provider accounts of erased users (TS17); nil skips
+	directory      UserDirectory     // identity provider accounts of erased users (TS17); nil skips
+	install        readiness.Install // this installation's configuration, for readiness (TS24)
+	trust          trustCache        // rendered trust page (TS25)
 }
 
 // seenProfile remembers a profile already written; it is re-checked after a minute so a deactivated account stops
@@ -47,7 +50,7 @@ type seenProfile struct {
 
 func New(st *store.Store, auth Authenticator, keys secrets.KeyManager, log *slog.Logger) *Server {
 	return &Server{store: st, auth: auth, keys: keys, log: log, source: "matura://installation/main",
-		deleteGrace: 30 * 24 * time.Hour}
+		deleteGrace: 30 * 24 * time.Hour, install: readiness.Install{Product: "Matura"}}
 }
 
 // SetDeletionGrace sets how long a deleted tenant can be restored before the purger deletes it (default 30 days).
@@ -81,6 +84,8 @@ func (s *Server) Handler() http.Handler {
 	s.handle(mux, "GET /invitations/preview", s.previewInvitation)
 	s.handle(mux, "GET /portal/config.json", s.portal.ConfigJSON)
 	s.handle(mux, "GET /portal/", s.portal.Files)
+	s.handle(mux, "GET /trust", s.trustPage(false))
+	s.handle(mux, "GET /trust.json", s.trustPage(true))
 
 	api := http.NewServeMux()
 	s.handle(api, "GET /v1/me", s.getMe)
@@ -166,6 +171,9 @@ func (s *Server) Handler() http.Handler {
 	s.handle(api, "POST /admin/v1/tenants/{tid}/support-access", s.requestSupportAccess)
 	s.handle(api, "POST /admin/v1/tenants/{tid}/support-access/{id}", s.endSupportAccess) // {id}:end
 	s.handle(api, "GET /admin/v1/stats", s.stats)
+	s.handle(api, "GET /admin/v1/readiness", s.getReadiness)
+	s.handle(api, "GET /admin/v1/evidence", s.listEvidence)
+	s.handle(api, "POST /admin/v1/evidence", s.recordEvidence)
 
 	// app backends, authenticated with their client id and secret (contract §7, technical specification §4)
 	appAPI := http.NewServeMux()

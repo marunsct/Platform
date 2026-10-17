@@ -48,6 +48,8 @@ tags:
     description: The tamper-evident audit log and its streaming destinations.
   - name: security
     description: Tenant security policies.
+  - name: readiness
+    description: Readiness controls, evidence and the public trust page. Readiness is not an audit or a certification.
   - name: privacy
     description: Tenant data export, audit retention and legal hold.
   - name: operator
@@ -84,6 +86,49 @@ paths:
           description: Ready to serve.
         '503':
           $ref: '#/components/responses/NotReady'
+  /trust:
+    get:
+      operationId: trustPage
+      summary: Public trust page
+      description: |
+        The installation's public security posture: the readiness controls marked public, each in place, not in
+        place or not applicable, with framework references. No evidence text or tenant data. Off unless
+        `MATURA_TRUST_PAGE=on` (404 otherwise). Rendered on request and kept for five minutes; no scripts, a strict
+        Content-Security-Policy with the inline style's hash.
+      tags: [readiness]
+      security: []
+      responses:
+        '200':
+          description: The page.
+          headers:
+            Content-Security-Policy:
+              schema:
+                type: string
+            Cache-Control:
+              schema:
+                type: string
+          content:
+            text/html:
+              schema:
+                type: string
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /trust.json:
+    get:
+      operationId: trustJSON
+      summary: Public trust page as JSON
+      description: The same content as `/trust`, machine-readable. Off unless `MATURA_TRUST_PAGE=on`.
+      tags: [readiness]
+      security: []
+      responses:
+        '200':
+          description: The public posture.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Trust'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /invitations/accept:
     get:
       operationId: invitationAcceptPage
@@ -2656,6 +2701,101 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+  /admin/v1/readiness:
+    get:
+      operationId: getReadiness
+      summary: Readiness report
+      description: |
+        Operators. Evaluates every control against the installation's configuration and live state (tenant
+        security policies and audit destinations, every audit chain recomputed, webhook health, the newest evidence
+        of each kind) and lists each gap with its fix. `score` is passed / applicable, in percent. Not an audit:
+        mappings to SOC 2, ISO/IEC 27001:2022 and GDPR are indicative. `matura check` reads this endpoint.
+      tags: [operator, readiness]
+      responses:
+        '200':
+          description: The report.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadinessReport'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /admin/v1/evidence:
+    get:
+      operationId: listEvidence
+      summary: List recorded evidence
+      description: Operators. Newest first.
+      tags: [operator, readiness]
+      parameters:
+        - name: kind
+          in: query
+          schema:
+            $ref: '#/components/schemas/EvidenceKind'
+        - name: limit
+          in: query
+          description: Default 100, at most 1000.
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: The evidence.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Evidence'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      operationId: recordEvidence
+      summary: Record evidence
+      description: |
+        Operators and scripts with an operator token (`scripts/backup.sh restore-test --report`). The evidence is
+        appended to the installation audit chain as action `evidence.<kind>`, so it is tamper-evident; it cannot be
+        changed or deleted. A restore test and a vulnerability scan stay current for 35 days, an access review for 92.
+      tags: [operator, readiness]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [kind, passed]
+              additionalProperties: false
+              properties:
+                kind:
+                  $ref: '#/components/schemas/EvidenceKind'
+                passed:
+                  type: boolean
+                details:
+                  type: object
+                  description: Free-form, at most 16 KiB.
+      responses:
+        '201':
+          description: Recorded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Evidence'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
   /admin/v1/users:
     get:
       operationId: listUsers
@@ -4563,6 +4703,157 @@ components:
         updated_at:
           type: [string, 'null']
           format: date-time
+    EvidenceKind:
+      type: string
+      enum: [restore-test, access-review, vulnerability-scan]
+    Evidence:
+      type: object
+      required: [id, kind, passed, details, recorded_at, recorded_by, seq, hash]
+      properties:
+        id:
+          type: integer
+          format: int64
+          description: The audit event's id.
+        kind:
+          $ref: '#/components/schemas/EvidenceKind'
+        passed:
+          type: boolean
+        details:
+          type: object
+        recorded_at:
+          type: string
+          format: date-time
+        recorded_by:
+          type: string
+          description: Email (or id) of the operator whose token recorded it.
+        seq:
+          type: integer
+          format: int64
+          description: Position in the installation audit chain.
+        hash:
+          type: string
+          description: The audit event's hash (hex).
+    FrameworkRef:
+      type: object
+      required: [framework, id]
+      properties:
+        framework:
+          type: string
+          enum: [SOC 2, ISO/IEC 27001:2022, GDPR]
+        id:
+          type: string
+          examples: [CC6.1, A.8.13, Art. 32(1)(c)]
+    ReadinessControl:
+      type: object
+      required: [id, title, scope, status, evidence, fix, docs, public, optional, refs]
+      properties:
+        id:
+          type: string
+          examples: [install-kek, tenant-mfa]
+        title:
+          type: string
+        scope:
+          type: string
+          enum: [installation, tenant]
+        status:
+          type: string
+          enum: [pass, fail, not-applicable]
+        evidence:
+          type: string
+        fix:
+          type: string
+        docs:
+          type: string
+          format: uri
+        public:
+          type: boolean
+          description: Shown on the trust page.
+        optional:
+          type: boolean
+          description: Counted only when configured.
+        refs:
+          type: array
+          items:
+            $ref: '#/components/schemas/FrameworkRef'
+        tenants:
+          type: array
+          description: Tenant controls only, one entry per active tenant.
+          items:
+            type: object
+            required: [tenant_id, slug, status, evidence]
+            properties:
+              tenant_id:
+                type: string
+                format: uuid
+              slug:
+                type: string
+              status:
+                type: string
+                enum: [pass, fail, not-applicable]
+              evidence:
+                type: string
+    ReadinessReport:
+      type: object
+      required: [generated_at, product, notice, score, passed, failed, not_applicable, controls, summary]
+      properties:
+        generated_at:
+          type: string
+          format: date-time
+        product:
+          type: string
+        notice:
+          type: string
+        score:
+          type: number
+          description: Percent of applicable controls that pass, one decimal.
+        passed:
+          type: integer
+        failed:
+          type: integer
+        not_applicable:
+          type: integer
+        controls:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReadinessControl'
+        summary:
+          type: object
+          description: Settings policy templates are filled from (docs/guide/readiness.md).
+          additionalProperties: true
+    Trust:
+      type: object
+      required: [product, generated_at, notice, in_place, applicable, controls]
+      properties:
+        product:
+          type: string
+        generated_at:
+          type: string
+          format: date-time
+        notice:
+          type: string
+        in_place:
+          type: integer
+        applicable:
+          type: integer
+        security_contact:
+          type: string
+        controls:
+          type: array
+          items:
+            type: object
+            required: [id, title, status, refs]
+            properties:
+              id:
+                type: string
+              title:
+                type: string
+              status:
+                type: string
+                enum: [in-place, not-in-place, not-applicable]
+              refs:
+                type: array
+                items:
+                  $ref: '#/components/schemas/FrameworkRef'
     TenantExport:
       type: object
       required: [id, tenant_id, requested_by, state, size_bytes, sha256, error, created_at, finished_at, expires_at]

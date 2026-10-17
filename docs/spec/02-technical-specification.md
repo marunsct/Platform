@@ -127,6 +127,7 @@ that mode unless `MATURA_ENV=development`.
 | Audit | `GET /v1/tenants/{tid}/audit`, `GET …/audit/export` (NDJSON), `GET …/audit:verify`, `GET/POST …/audit/sinks`, `PATCH/DELETE …/audit/sinks/{id}`; operators: `GET /admin/v1/audit`, `GET /admin/v1/audit:verify` (§13) |
 | Security policy | `GET/PUT /v1/tenants/{tid}/security-policy` (§13.4) |
 | Privacy | `GET/POST /v1/tenants/{tid}/exports`, `GET …/exports/{id}`, `GET …/exports/{id}/download` (§14.1); `GET/PUT /v1/tenants/{tid}/retention` (§14.4) |
+| Readiness | operators: `GET /admin/v1/readiness`, `GET/POST /admin/v1/evidence`; unauthenticated, off by default: `GET /trust`, `GET /trust.json` (§15) |
 | Internal (Keycloak) | `POST /internal/v1/token-context` `{user_id, email, email_verified, name, locale, client_id, tenant, workspace}` → claims for the mapper, or `403 {error: access_denied, error_description}`; bearer `MATURA_INTERNAL_TOKEN` |
 | Health | `GET /healthz/live`, `GET /healthz/ready` |
 
@@ -397,6 +398,9 @@ and reports `ready`. Expand-and-contract migrations are required, since tenants 
 | `MATURA_SMTP_FROM`, `MATURA_SMTP_USER`, `MATURA_SMTP_PASSWORD` | sender address (default `no-reply@matura.local`) and optional login |
 | `MATURA_TENANT_DELETE_GRACE` | how long a deleted tenant can be restored before it is purged (Go duration, default `720h`) |
 | `MATURA_TRUSTED_PROXIES` | comma-separated addresses or CIDR ranges of reverse proxies whose `X-Forwarded-For` is believed; unset: the connection's address is the client's |
+| `MATURA_PRODUCT_NAME` | name on the trust page and in readiness reports (default `Matura`) |
+| `MATURA_TRUST_PAGE` | `on` serves the public trust page at `/trust` and `/trust.json`; `off` (default) answers 404 |
+| `MATURA_SECURITY_CONTACT` | optional address the trust page gives for security reports |
 
 ## 11. Testing
 
@@ -423,6 +427,8 @@ internal/placement/     provisioner (TS7b)
 internal/events/        outbox relay, webhooks, feed (TS7c)
 internal/audit/         audit streaming to tenant destinations (TS9)
 internal/privacy/       tenant exports and audit retention worker (TS17)
+internal/readiness/     control catalogue, evaluation, OSCAL and trust-page view (TS24, TS25)
+cmd/matura/             operator CLI: `matura check` (TS24)
 keycloak/realm/         realm-as-code
 keycloak/extensions/    Java SPIs (TS5)
 internal/portal/        embedded portal build and its handler (TS8)
@@ -430,6 +436,7 @@ web/portal/             customer portal source: React, Vite, Tailwind (TS3, TS8)
 sdk/python/             matura SDK (TS7)
 sdk/typescript/         @matura/sdk (TS7e)
 sdk/go/                 Go SDK, its own module (TS7e)
+docs/templates/         policy templates filled by `matura check --policies` (TS25)
 deploy/compose/         docker compose
 api/openapi.yaml
 ```
@@ -595,3 +602,59 @@ Audit events are hashed and append-only, so erasure cannot edit them without bre
 - Verification and exports start at the anchor: the first remaining event's `prev_hash` must equal `anchor_hash`
   (`TestAuditRetention`). Installation events (no tenant) are not purged yet; archive tiers (doc 07: 7 years) come
   with the backup module.
+## 15. Readiness (TS24, TS25)
+
+Readiness evaluates controls against the installation's real state and reports gaps; it never claims compliance
+(every report and the trust page carry `readiness.Notice`). Operator guide: `docs/guide/readiness.md`.
+
+### 15.1 Controls and the report
+
+- **Catalogue.** `readiness.Catalogue` (`internal/readiness/controls.go`) lists each control: id, title, scope
+  (`installation` or `tenant`), `public` (shown on the trust page), `optional` (counted only once configured), fix
+  text, and framework references (SOC 2 Trust Services Criteria, ISO/IEC 27001:2022 Annex A, GDPR articles) kept
+  conservative: a clause is listed only where the control is a direct technical contribution to it. Operational
+  controls (SMTP, webhooks) have none. The docs link is `docs/guide/readiness.md#<id>`.
+- **Facts.** `GET /admin/v1/readiness` gathers `readiness.Facts` in operator scope: the installation's configuration
+  (`Server.SetReadiness`, from `MATURA_ENV`, `MATURA_AUTH`, `MATURA_KEK` set, `MATURA_SMTP_ADDR` set,
+  `MATURA_METRICS_ADDR` set, `MATURA_PUBLIC_URL`); `store.TenantPostures` (every tenant that is not deleted with its
+  security policy and counts of active and failing audit destinations, one query); `store.VerifyAudit` of the
+  installation chain and of each active tenant's chain; `store.WebhookHealth`; and per evidence kind the newest
+  record and the count in the last 90 days.
+- **Evaluation.** Installation controls return `pass`, `fail` or `not-applicable` with an evidence string. Tenant
+  controls run per active tenant (returning `not-applicable` for kinds they do not cover, e.g. personal tenants) and
+  pass only when every applicable tenant passes; the result lists each tenant. `score` = passed ÷ (passed + failed)
+  × 100, one decimal; 0 when nothing applies. `summary` holds the counts and dates policy templates are filled from.
+- **Cost.** Verification recomputes every chain, so the report is O(audit events). Fine at M3 volumes; signed
+  checkpoints (§13.2, not yet) will let it start from the last checkpoint.
+
+### 15.2 Evidence
+
+`POST /admin/v1/evidence {kind, passed, details?}` (operators): `kind` ∈ `restore-test` (current for 35 days),
+`vulnerability-scan` (35 days), `access-review` (92 days); `details` a JSON object ≤ 16 KiB. No table of its own:
+the record is an event in the installation audit chain with action `evidence.<kind>`, target `evidence/<kind>` and
+data `{kind, passed, details}`, so it is hash-chained, append-only and exported with the chain. The response and
+`GET /admin/v1/evidence?kind=&limit=` give `{id, kind, passed, details, recorded_at, recorded_by, seq, hash}`.
+`scripts/backup.sh restore-test <dir> --report <url>` posts its result with `MATURA_TOKEN` (passed or not, with each
+database's outcome, the backup directory and its `created_at`).
+
+### 15.3 `matura check`
+
+`cmd/matura` reads the report with `MATURA_TOKEN` (or `X-Matura-Dev-*` headers from `MATURA_DEV_USER` on development
+installs) from `MATURA_URL`/`--url`. Output: a table and the gaps with fix, docs link and references (default),
+`--json` (the report), or `--oscal`: OSCAL 1.1.2 assessment results with one result, an observation per control and a
+finding per applicable control (`satisfied` / `not-satisfied`), UUIDv5 derived from `generated_at` and the control
+id so the same report gives the same document. `--min-score N` exits 1 below N; usage and connection errors exit 2.
+`--policies DIR --out DIR --set k=v` fills `{{placeholder}}`s in every `*.md` template except `README.md` from the
+report's summary and `--set`, and lists the ones left. Golden files in `cmd/matura/testdata` pin the three outputs.
+
+### 15.4 Trust page
+
+`GET /trust` and `GET /trust.json` (no authentication) serve `readiness.Public(report)`: public controls only, each
+`in-place`, `not-in-place` or `not-applicable` with its references, plus the product name, totals, optional security
+contact and the notice; never evidence text or tenant data. Off unless `MATURA_TRUST_PAGE=on` (404). Each replica
+renders on request and caches both forms for 5 minutes (`Cache-Control: public, max-age=300`); recording evidence
+clears the cache on that replica. The HTML has no scripts, one inline stylesheet, and
+`Content-Security-Policy: default-src 'none'; style-src 'sha256-<hash of the stylesheet>'; img-src 'none';
+script-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`, plus `X-Content-Type-Options:
+nosniff` and `Referrer-Policy: no-referrer`. `/trust.json` allows any origin.
+
