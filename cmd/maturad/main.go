@@ -26,6 +26,7 @@ import (
 	"github.com/marunsct/Platform/internal/metrics"
 	"github.com/marunsct/Platform/internal/placement"
 	"github.com/marunsct/Platform/internal/portal"
+	"github.com/marunsct/Platform/internal/privacy"
 	"github.com/marunsct/Platform/internal/secrets"
 	"github.com/marunsct/Platform/internal/store"
 )
@@ -105,6 +106,8 @@ func run(log *slog.Logger) error {
 	go provisioner.Run(ctx)
 	streamer := &audit.Streamer{Store: st, Keys: keys, Log: log}
 	go streamer.Run(ctx)
+	privacyWorker := &privacy.Worker{Store: st, Log: log}
+	go privacyWorker.Run(ctx)
 
 	server := api.New(st, auth, keys, log)
 	server.SetSource(cfg.EventSource)

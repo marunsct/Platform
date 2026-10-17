@@ -79,19 +79,6 @@ func (s *Server) patchUser(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, u)
 }
 
-func (s *Server) deleteUser(w http.ResponseWriter, r *http.Request) {
-	id, ok := pathUUID(w, r, "uid")
-	if !ok {
-		return
-	}
-	if err := s.store.DeleteUser(r.Context(), operatorScope(r), id); err != nil {
-		s.fail(w, r, err)
-		return
-	}
-	s.seen.Delete(id)
-	w.WriteHeader(http.StatusNoContent)
-}
-
 // --- operator: app secrets and webhooks ---------------------------------------------------------------------------
 
 func (s *Server) listAppSecrets(w http.ResponseWriter, r *http.Request) {

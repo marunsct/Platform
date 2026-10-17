@@ -34,6 +34,7 @@ type Server struct {
 	trustedProxies []netip.Prefix
 	policies       sync.Map // tenant id -> cachedPolicy, for the IP allow-list
 	portal         *portal.Portal
+	directory      UserDirectory // identity provider accounts of erased users (TS17); nil skips
 }
 
 // seenProfile remembers a profile already written; it is re-checked after a minute so a deactivated account stops
@@ -124,6 +125,14 @@ func (s *Server) Handler() http.Handler {
 	s.handle(api, "POST /admin/v1/db-servers/{id}/test", s.testDBServer)
 
 	s.handle(api, "GET /v1/me/tenants", s.myTenants)
+	s.handle(api, "GET /v1/me/export", s.exportMe)
+	s.handle(api, "DELETE /v1/me", s.deleteMe)
+	s.handle(api, "GET /v1/tenants/{tid}/exports", s.listExports)
+	s.handle(api, "POST /v1/tenants/{tid}/exports", s.createExport)
+	s.handle(api, "GET /v1/tenants/{tid}/exports/{id}", s.getExport)
+	s.handle(api, "GET /v1/tenants/{tid}/exports/{id}/download", s.downloadExport)
+	s.handle(api, "GET /v1/tenants/{tid}/retention", s.getRetention)
+	s.handle(api, "PUT /v1/tenants/{tid}/retention", s.putRetention)
 	s.handle(api, "GET /admin/v1/users", s.listUsers)
 	s.handle(api, "GET /admin/v1/users/{uid}", s.getUser)
 	s.handle(api, "PATCH /admin/v1/users/{uid}", s.patchUser)
@@ -250,14 +259,20 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 }
 
 func problem(w http.ResponseWriter, status int, typ, detail string) {
+	writeProblem(w, status, typ, detail, nil)
+}
+
+// writeProblem is problem with extension members (RFC 9457 §3.2).
+func writeProblem(w http.ResponseWriter, status int, typ, detail string, ext map[string]any) {
+	body := map[string]any{}
+	for k, v := range ext {
+		body[k] = v
+	}
+	body["type"], body["title"], body["status"], body["detail"] =
+		"https://matura.dev/problems/"+typ, http.StatusText(status), status, detail
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(map[string]any{
-		"type":   "https://matura.dev/problems/" + typ,
-		"title":  http.StatusText(status),
-		"status": status,
-		"detail": detail,
-	})
+	_ = json.NewEncoder(w).Encode(body)
 }
 
 func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {

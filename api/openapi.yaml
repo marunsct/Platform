@@ -48,6 +48,8 @@ tags:
     description: The tamper-evident audit log and its streaming destinations.
   - name: security
     description: Tenant security policies.
+  - name: privacy
+    description: Tenant data export, audit retention and legal hold.
   - name: operator
     description: Installation operators only.
   - name: app-backend
@@ -179,6 +181,47 @@ paths:
                     $ref: '#/components/schemas/User'
                   operator:
                     type: boolean
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    delete:
+      operationId: deleteMe
+      summary: Erase the signed-in user's account
+      description: |
+        GDPR erasure (technical specification §14.2), the same as an operator's `DELETE /admin/v1/users/{uid}`:
+        memberships end and grants are revoked (contract events, so apps delete the user), pending invitations to the
+        address are revoked and every invitation to it carries the pseudonym, queued mail to it is deleted, the
+        email and name are shown as `deleted-user-<hash>` wherever the audit log is read (the hashed events are not
+        edited, so every chain still verifies), the account is marked deleted and the sign-in account is deleted in
+        the identity provider when one is configured. Refused with 409 `last-owner` (listing the `tenants`) while the
+        user is the only owner of a tenant.
+      tags: [me]
+      responses:
+        '204':
+          description: Erased.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/LastOwner'
+  /v1/me/export:
+    get:
+      operationId: exportMe
+      summary: Export everything Matura holds about the signed-in user
+      description: |
+        GDPR access and portability (technical specification §14.2): the profile, memberships in every tenant (any
+        state), app role grants (active and revoked), invitations to the user's address, and the audit events the
+        user caused (newest 50 000; `truncated` says when more exist). Recorded as `user.exported`.
+      tags: [me]
+      responses:
+        '200':
+          description: The user's data, as a JSON attachment.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserData'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -1235,6 +1278,187 @@ paths:
         '410':
           $ref: '#/components/responses/Gone'
 
+  # --- privacy: tenant export and audit retention -----------------------------------------------------------------
+  /v1/tenants/{tid}/exports:
+    parameters:
+      - $ref: '#/components/parameters/tid'
+    get:
+      operationId: listExports
+      summary: List the tenant's data exports
+      description: Owners and operators. The 50 newest, newest first.
+      tags: [privacy]
+      responses:
+        '200':
+          description: The exports.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenantExportList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      operationId: createExport
+      summary: Export the tenant's data
+      description: |
+        Owners and operators (technical specification §14.1). Queues a job; the privacy worker builds a JSON bundle
+        of the tenant, its workspaces, members, invitations, active grants and the roles they use, placements (no
+        credentials), security policy, retention, and the audit chain from its anchor with hashes. One export runs
+        at a time per tenant (409 otherwise). Poll the export until `state` is `ready`, then download it.
+      tags: [privacy]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '202':
+          description: Queued.
+          headers:
+            Location:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenantExport'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /v1/tenants/{tid}/exports/{id}:
+    parameters:
+      - $ref: '#/components/parameters/tid'
+      - $ref: '#/components/parameters/id'
+    get:
+      operationId: getExport
+      summary: Read an export's state
+      description: Owners and operators.
+      tags: [privacy]
+      responses:
+        '200':
+          description: The export.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenantExport'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /v1/tenants/{tid}/exports/{id}/download:
+    parameters:
+      - $ref: '#/components/parameters/tid'
+      - $ref: '#/components/parameters/id'
+    get:
+      operationId: downloadExport
+      summary: Download a ready export
+      description: |
+        Owners and operators, for 24 hours after the export is ready; then the bundle is deleted (410). Each
+        download is recorded as `tenant_export.downloaded`. `Matura-Export-SHA256` is the bundle's digest.
+      tags: [privacy]
+      responses:
+        '200':
+          description: The bundle, as a JSON attachment.
+          headers:
+            Matura-Export-SHA256:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenantBundle'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '410':
+          $ref: '#/components/responses/Gone'
+  /v1/tenants/{tid}/retention:
+    parameters:
+      - $ref: '#/components/parameters/tid'
+    get:
+      operationId: getRetention
+      summary: Read the tenant's audit retention and legal hold
+      description: Owners and admins. A tenant that never set one gets the default (400 days, no hold, version 0).
+      tags: [privacy]
+      responses:
+        '200':
+          description: The retention.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Retention'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      operationId: putRetention
+      summary: Set the tenant's audit retention and legal hold
+      description: |
+        Owners and operators. The privacy worker deletes audit events older than `retention_days` (hourly) by
+        moving the chain's anchor, so verification still passes; nothing is deleted while `legal_hold` is on.
+        Recorded as `audit_retention.updated`.
+      tags: [privacy]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                retention_days:
+                  type: integer
+                  minimum: 30
+                  maximum: 3650
+                  description: Omitted or 0 is the default, 400.
+                legal_hold:
+                  type: boolean
+                legal_hold_reason:
+                  type: [string, 'null']
+                  description: Required while legal_hold is on.
+      responses:
+        '200':
+          description: The retention.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Retention'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '412':
+          $ref: '#/components/responses/PreconditionFailed'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+
   # --- apps and roles ---------------------------------------------------------------------------------------------
   /v1/apps:
     get:
@@ -2016,12 +2240,12 @@ paths:
           $ref: '#/components/responses/Unprocessable'
     delete:
       operationId: deleteUser
-      summary: Delete a user
-      description: Operators.
+      summary: Erase a user
+      description: Operators. The same erasure as `DELETE /v1/me` (technical specification §14.2).
       tags: [operator]
       responses:
         '204':
-          description: Deleted.
+          description: Erased.
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -2029,7 +2253,7 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
-          $ref: '#/components/responses/Conflict'
+          $ref: '#/components/responses/LastOwner'
 
   # --- app backends -----------------------------------------------------------------------------------------------
   /v1/apps/{app}/changes:
@@ -2496,6 +2720,22 @@ components:
         application/problem+json:
           schema:
             $ref: '#/components/schemas/Problem'
+    LastOwner:
+      description: |
+        The user is the only active owner of the tenants listed in `tenants` (problem type `last-owner`); make
+        someone else owner of each, or delete it, first.
+      content:
+        application/problem+json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/Problem'
+              - type: object
+                properties:
+                  tenants:
+                    type: array
+                    items:
+                      type: string
+                      format: uuid
     Unprocessable:
       description: Well-formed but invalid.
       content:
@@ -3469,6 +3709,12 @@ components:
           type: string
         hash:
           type: string
+        redacted:
+          type: boolean
+          description: |
+            Present and true when an erased user's email or name is shown as their pseudonym (technical
+            specification §14.3). `hash` is the stored event's, so the event does not recompute from the fields
+            shown; the next event's `prev_hash` still links to it.
     AuditPage:
       type: object
       required: [items, next_cursor]
@@ -3481,7 +3727,7 @@ components:
           type: [string, 'null']
     AuditVerification:
       type: object
-      required: [ok, events, head_seq, head_hash, first_break]
+      required: [ok, events, anchor_seq, anchor_hash, head_seq, head_hash, first_break]
       properties:
         ok:
           type: boolean
@@ -3489,6 +3735,13 @@ components:
           type: integer
           format: int64
           description: Events checked before the first break.
+        anchor_seq:
+          type: integer
+          format: int64
+          description: Events up to here were purged by retention; checking starts after it (0 for the genesis).
+        anchor_hash:
+          type: string
+          description: The hash the first remaining event's prev_hash must equal.
         head_seq:
           type: integer
           format: int64
@@ -3583,6 +3836,180 @@ components:
           description: CIDR ranges.
           items:
             type: string
+        version:
+          type: integer
+          format: int64
+        updated_at:
+          type: [string, 'null']
+          format: date-time
+    TenantExport:
+      type: object
+      required: [id, tenant_id, requested_by, state, size_bytes, sha256, error, created_at, finished_at, expires_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        requested_by:
+          type: [string, 'null']
+          format: uuid
+        state:
+          type: string
+          enum: [queued, running, ready, failed, expired]
+        size_bytes:
+          type: [integer, 'null']
+          format: int64
+        sha256:
+          type: [string, 'null']
+          description: Hex digest of the bundle.
+        error:
+          type: [string, 'null']
+        created_at:
+          type: string
+          format: date-time
+        finished_at:
+          type: [string, 'null']
+          format: date-time
+        expires_at:
+          type: [string, 'null']
+          format: date-time
+          description: The bundle is deleted after this.
+    TenantExportList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/TenantExport'
+    TenantBundle:
+      type: object
+      description: A tenant export (`format` `matura.tenant-export/v1`). Secrets are never included.
+      required: [format, export_id, generated_at, tenant, workspaces, members, invitations, grants, roles, placements,
+        security_policy, retention, audit]
+      properties:
+        format:
+          type: string
+          const: matura.tenant-export/v1
+        export_id:
+          type: string
+          format: uuid
+        generated_at:
+          type: string
+          format: date-time
+        tenant:
+          $ref: '#/components/schemas/Tenant'
+        workspaces:
+          type: array
+          items:
+            $ref: '#/components/schemas/Workspace'
+        members:
+          type: array
+          items:
+            $ref: '#/components/schemas/Membership'
+        invitations:
+          type: array
+          items:
+            $ref: '#/components/schemas/Invitation'
+        grants:
+          type: array
+          items:
+            $ref: '#/components/schemas/Grant'
+        roles:
+          type: array
+          description: The app roles the grants use.
+          items:
+            $ref: '#/components/schemas/AppRole'
+        placements:
+          type: array
+          items:
+            $ref: '#/components/schemas/Placement'
+        security_policy:
+          $ref: '#/components/schemas/SecurityPolicy'
+        retention:
+          $ref: '#/components/schemas/Retention'
+        audit:
+          type: object
+          required: [anchor_seq, anchor_hash, head_seq, head_hash, events]
+          description: The chain from its anchor to its head; each event links to the one before.
+          properties:
+            anchor_seq:
+              type: integer
+              format: int64
+            anchor_hash:
+              type: string
+            head_seq:
+              type: integer
+              format: int64
+            head_hash:
+              type: string
+            events:
+              type: array
+              items:
+                $ref: '#/components/schemas/AuditEvent'
+    UserData:
+      type: object
+      description: Everything Matura holds about one user (`format` `matura.user-export/v1`).
+      required: [format, generated_at, profile, memberships, grants, invitations, audit]
+      properties:
+        format:
+          type: string
+          const: matura.user-export/v1
+        generated_at:
+          type: string
+          format: date-time
+        profile:
+          $ref: '#/components/schemas/User'
+        memberships:
+          type: array
+          items:
+            allOf:
+              - $ref: '#/components/schemas/Membership'
+              - type: object
+                required: [tenant_slug, tenant_name]
+                properties:
+                  tenant_slug:
+                    type: string
+                  tenant_name:
+                    type: string
+        grants:
+          type: array
+          items:
+            $ref: '#/components/schemas/Grant'
+        invitations:
+          type: array
+          items:
+            $ref: '#/components/schemas/Invitation'
+        audit:
+          type: object
+          required: [events, truncated]
+          properties:
+            events:
+              type: array
+              description: Events the user caused, oldest first.
+              items:
+                $ref: '#/components/schemas/AuditEvent'
+            truncated:
+              type: boolean
+    Retention:
+      type: object
+      required: [tenant_id, retention_days, legal_hold, legal_hold_reason, anchor_seq, version, updated_at]
+      properties:
+        tenant_id:
+          type: string
+          format: uuid
+        retention_days:
+          type: integer
+        legal_hold:
+          type: boolean
+        legal_hold_reason:
+          type: [string, 'null']
+        anchor_seq:
+          type: integer
+          format: int64
+          description: Audit events up to this position have been purged.
         version:
           type: integer
           format: int64

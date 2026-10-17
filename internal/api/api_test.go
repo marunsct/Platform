@@ -27,6 +27,7 @@ type client struct {
 	srv  *httptest.Server
 	user uuid.UUID
 	op   bool
+	name string // X-Matura-Dev-Name, when set
 }
 
 func (c client) do(method, path string, body any) (int, map[string]any) {
@@ -40,6 +41,9 @@ func (c client) do(method, path string, body any) (int, map[string]any) {
 	if c.user != uuid.Nil {
 		req.Header.Set("X-Matura-Dev-User", c.user.String())
 		req.Header.Set("X-Matura-Dev-Email", c.user.String()[24:]+"@example.test")
+		if c.name != "" {
+			req.Header.Set("X-Matura-Dev-Name", c.name)
+		}
 	}
 	if c.op {
 		req.Header.Set("X-Matura-Dev-Operator", "true")
