@@ -300,6 +300,7 @@ and reports `ready`. Expand-and-contract migrations are required, since tenants 
 | `MATURA_DATABASE_URL` | control-plane database, runtime role |
 | `MATURA_MIGRATE_DATABASE_URL` | same database, owner role (migrations at start-up) |
 | `MATURA_HTTP_ADDR` | default `:8080` |
+| `MATURA_METRICS_ADDR` | default `:9090`; serves Prometheus `/metrics` (request counts and latency by route, queue backlogs) on its own listener; empty turns it off |
 | `MATURA_ISSUER` | Keycloak realm URL |
 | `MATURA_AUTH` | `oidc` (default) or `dev` |
 | `MATURA_KEK` | base64 key-encryption key |

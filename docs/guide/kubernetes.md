@@ -54,8 +54,8 @@ tenants when invited or added.
 - Pods run as non-root with a read-only root filesystem, no capabilities and the runtime-default seccomp profile.
 - A pod disruption budget keeps one maturad running during node drains; replicas spread across nodes.
 - Network policies allow only the HTTP ports, and Keycloak's cache port between Keycloak pods.
-- `autoscaling.enabled` adds a CPU-based autoscaler; `metrics.serviceMonitor.enabled` scrapes `/metrics` with the
-  Prometheus Operator.
+- `autoscaling.enabled` adds a CPU-based autoscaler; `metrics.serviceMonitor.enabled` scrapes `/metrics` on port 9090
+  (`MATURA_METRICS_ADDR`) with the Prometheus Operator.
 
 Check the chart with `helm lint deploy/helm/matura` and `helm template … | kubeconform -strict`.
 Backups: [backup.md](backup.md).

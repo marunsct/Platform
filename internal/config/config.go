@@ -14,6 +14,7 @@ type Config struct {
 	MigrateDatabaseURL string // owner role, runs migrations at start-up
 	RuntimeRole        string // role that receives table privileges after migrations
 	HTTPAddr           string
+	MetricsAddr        string // separate listener for /metrics; empty turns it off
 	Issuer             string // Keycloak realm URL
 	Audience           string
 	OperatorRole       string // realm role that grants operator scope
@@ -44,6 +45,7 @@ func FromEnv() (Config, error) {
 		MigrateDatabaseURL: os.Getenv("MATURA_MIGRATE_DATABASE_URL"),
 		RuntimeRole:        getenv("MATURA_RUNTIME_ROLE", "matura_app"),
 		HTTPAddr:           getenv("MATURA_HTTP_ADDR", ":8080"),
+		MetricsAddr:        getenv("MATURA_METRICS_ADDR", ":9090"),
 		Issuer:             os.Getenv("MATURA_ISSUER"),
 		Audience:           getenv("MATURA_AUDIENCE", "matura-api"),
 		OperatorRole:       getenv("MATURA_OPERATOR_ROLE", "matura-operator"),

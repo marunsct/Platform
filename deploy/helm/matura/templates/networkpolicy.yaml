@@ -11,7 +11,7 @@ spec:
     matchLabels: {{- include "matura.selector" (dict "root" . "component" "maturad") | nindent 6 }}
   policyTypes: [Ingress]
   ingress:
-    - ports: [{ port: 8080 }]
+    - ports: [{ port: 8080 }, { port: 9090 }]
 {{- if .Values.keycloak.enabled }}
 ---
 apiVersion: networking.k8s.io/v1

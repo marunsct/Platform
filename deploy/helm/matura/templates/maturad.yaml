@@ -33,6 +33,7 @@ spec:
           securityContext: {{- toYaml .Values.securityContext | nindent 12 }}
           ports:
             - { name: http, containerPort: 8080 }
+            - { name: metrics, containerPort: 9090 }
           env:
             - { name: MATURA_ENV, value: {{ .Values.env | quote }} }
             - { name: MATURA_AUTH, value: {{ .Values.maturad.auth | quote }} }
@@ -100,6 +101,7 @@ spec:
   selector: {{- include "matura.selector" (dict "root" . "component" "maturad") | nindent 4 }}
   ports:
     - { name: http, port: {{ .Values.service.port }}, targetPort: http }
+    - { name: metrics, port: 9090, targetPort: metrics }
 {{- if .Values.podDisruptionBudget.enabled }}
 ---
 apiVersion: policy/v1
