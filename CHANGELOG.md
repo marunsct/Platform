@@ -3,6 +3,8 @@
 ## Unreleased
 
 ### Added
+- `scripts/e2e_invite_signup.mjs`: browser test of sign-up, invitation and the resulting AgentCanvas token claims
+  against running Keycloak, maturad and Mailpit.
 - OpenAPI 3.1 document for every maturad route (`api/openapi.yaml`), with a test that fails when the router and the
   document disagree.
 - Any-language kit, first part (TS7e): contract SQL for PostgreSQL (plus shared-mode RLS), MySQL/MariaDB, SQL Server
