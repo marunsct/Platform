@@ -42,7 +42,8 @@
       "directAccessGrantsEnabled": false,
       "redirectUris": [
         "http://localhost:5173/*",
-        "http://localhost:8080/invitations/accept"
+        "http://localhost:8080/invitations/accept",
+        "http://localhost:8080/portal/*"
       ],
       "webOrigins": [
         "http://localhost:5173",
@@ -50,7 +51,7 @@
       ],
       "attributes": {
         "pkce.code.challenge.method": "S256",
-        "post.logout.redirect.uris": "http://localhost:5173/*"
+        "post.logout.redirect.uris": "http://localhost:5173/*##http://localhost:8080/portal/*"
       },
       "protocolMappers": [
         {
