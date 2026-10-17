@@ -17,7 +17,7 @@ what is built first and how. The app-facing part is in the [app integration cont
     │  └── events (webhooks) ◄───┘  │  └── provisioner ──► registered Postgres servers
     │                               │                      (shared db / schemas / databases)
     └── change feed, placements ◄───┘
-  Consoles (React, M2) ──► maturad /v1, /admin/v1
+  Consoles (React, /portal/) ──► maturad /v1, /admin/v1
 ```
 
 | Component | Built in | Responsibility now | Later |
@@ -26,7 +26,7 @@ what is built first and how. The app-facing part is in the [app integration cont
 | Postgres 16 `matura` | SQL migrations (embedded, applied at start) | control-plane data, RLS, outbox, jobs | CloudNativePG (M5) |
 | Keycloak 26 | realm-as-code JSON, Java SPI | sign-in, sign-up, social login, sessions, tokens | MFA, passkeys, SSO brokering (M3–M4) |
 | Python SDK | `sdk/python`, FastAPI first | verify, principal, contract tables, sync, routing | Django, TypeScript, Go SDKs |
-| Consoles | React (doc 18) | M2 | |
+| Consoles | React 19, Vite, Tailwind 4, TanStack Router and Query (`web/portal`, embedded in maturad at `/portal/`) | customer portal I (TS8): members, invitations, app access, workspaces, roles, My account | portal II and operator console (TS9–TS10) |
 
 Deferred until first needed: NATS (webhooks suffice until M5), Temporal (jobs table with `SKIP LOCKED` until
 tier moves in M5), OpenFGA (M4), OpenBao (secrets encrypted by a local key-encryption key behind a `KeyManager`
@@ -152,6 +152,30 @@ The OpenAPI 3.1 document lives in `api/openapi.yaml` and is the source for gener
   only operator scope reads). The mailer (one active replica, advisory lock 7351005) sends due rows over SMTP
   (STARTTLS when offered; credentials only over TLS or to localhost) and retries with backoff (1, 2, 4 … 64 minutes)
   up to 8 attempts, then marks the row `failed`. Without `MATURA_SMTP_ADDR` mail is queued but not sent.
+
+### 5.2 Customer portal (TS3, TS8)
+
+- **Serving:** the portal is a static single-page app (`web/portal`) whose build output is committed in
+  `internal/portal/dist` and embedded with `go:embed`, so `go build` needs no Node. maturad serves it at `/portal/`
+  (`/portal` redirects there): built files as they are, hashed `assets/` with a one-year immutable cache, and
+  `index.html` (`no-cache`) for any other path without an extension so the browser router can show it. Missing
+  files with an extension answer 404.
+- **Runtime configuration:** `GET /portal/config.json` gives `auth` (`oidc` or `dev`), `issuer` (`MATURA_ISSUER`),
+  `client_id` (`MATURA_PORTAL_CLIENT_ID`) and `product`, with `Cache-Control: no-store`.
+- **Headers:** every portal response carries `Content-Security-Policy: default-src 'none'; script-src 'self';
+  style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self' <issuer origin>; manifest-src 'self';
+  base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'`, plus `nosniff`,
+  `Referrer-Policy: no-referrer`, `X-Frame-Options: DENY` and `Cross-Origin-Opener-Policy: same-origin`.
+- **Sign-in:** authorization code with PKCE (S256) as the public client, redirect URI `<origin>/portal/callback`
+  (the realm export allows `http://localhost:8080/portal/*`). Endpoints come from the issuer's discovery document.
+  Tokens are kept in memory only; session storage holds just the in-flight verifier, state and return path. The
+  access token is refreshed 30 s before expiry (one refresh for concurrent callers); when refreshing fails, or the
+  API answers 401, or the page is reloaded, the browser goes back through Keycloak, which signs the user straight
+  in while its session lasts. Only paths under `/portal/` are followed after sign-in. Sign-out uses the end-session
+  endpoint with `id_token_hint`. With `MATURA_AUTH=dev` the portal instead asks which user to act as and sends the
+  `X-Matura-Dev-*` headers.
+- **API use:** same origin, `/v1` and `/admin/v1` only; every POST carries an `Idempotency-Key`; renaming a tenant
+  sends `If-Match`. A 403 shows a "you need admin access" state rather than an error.
 
 ## 6. Token mapper (TS5)
 
@@ -305,7 +329,7 @@ and reports `ready`. Expand-and-contract migrations are required, since tenants 
 | `MATURA_KEK` | base64 key-encryption key |
 | `MATURA_PUBLIC_URL` | where people reach maturad, for links in emails (default `http://localhost:8080`) |
 | `MATURA_INVITE_ACCEPT_URL` | page invitation links open (default `<MATURA_PUBLIC_URL>/invitations/accept`) |
-| `MATURA_PORTAL_CLIENT_ID` | public Keycloak client the accept page signs in with (default `matura-console`) |
+| `MATURA_PORTAL_CLIENT_ID` | public Keycloak client the portal and the accept page sign in with (default `matura-console`) |
 | `MATURA_SMTP_ADDR` | `host:port` of the mail relay; unset: emails are queued, not sent |
 | `MATURA_SMTP_FROM`, `MATURA_SMTP_USER`, `MATURA_SMTP_PASSWORD` | sender address (default `no-reply@matura.local`) and optional login |
 
@@ -334,6 +358,8 @@ internal/placement/     provisioner (TS7b)
 internal/events/        outbox relay, webhooks, feed (TS7c)
 keycloak/realm/         realm-as-code
 keycloak/extensions/    Java SPIs (TS5)
+internal/portal/        embedded portal build and its handler (TS8)
+web/portal/             customer portal source: React, Vite, Tailwind (TS3, TS8)
 sdk/python/             matura SDK (TS7)
 deploy/compose/         docker compose
 api/openapi.yaml
