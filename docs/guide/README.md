@@ -5,6 +5,7 @@
 | [Designing an app for Matura](designing-apps-for-matura.md) | developers building a new app on Matura or moving an existing one: what lives where, permissions, tenant-safe data models, storage modes, sync, UI, testing and a ship checklist |
 | [Kubernetes](kubernetes.md) | operators installing Matura with the Helm chart, including drop-in mode with an existing Keycloak |
 | [Backups](backup.md) | operators backing up and test-restoring Matura's databases |
+| [Customer portal](portal.md) | anyone running, using or developing the customer admin portal served at `/portal/` |
 | [Conformance kit](conformance.md) | anyone checking that an app, in any language, refuses bad tokens and missing permissions, keeps tenants apart and verifies signed events |
 
 SDKs (same features in each: token verification, permission checks, webhook receiver, contract tables with the

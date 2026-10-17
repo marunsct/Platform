@@ -15,6 +15,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/marunsct/Platform/internal/portal"
 	"github.com/marunsct/Platform/internal/secrets"
 	"github.com/marunsct/Platform/internal/store"
 )
@@ -32,6 +33,7 @@ type Server struct {
 	invites        Invitations // invitation links and accept page (TS6)
 	trustedProxies []netip.Prefix
 	policies       sync.Map // tenant id -> cachedPolicy, for the IP allow-list
+	portal         *portal.Portal
 }
 
 // seenProfile remembers a profile already written; it is re-checked after a minute so a deactivated account stops
@@ -52,13 +54,23 @@ func (s *Server) SetSource(src string) {
 	}
 }
 
+// SetPortal configures the customer portal served at /portal/ (TS8).
+func (s *Server) SetPortal(c portal.Config) {
+	s.portal = portal.New(c)
+}
+
 func (s *Server) Handler() http.Handler {
 	s.routes = nil
+	if s.portal == nil {
+		s.portal = portal.New(portal.Config{})
+	}
 	mux := http.NewServeMux()
 	s.handle(mux, "GET /healthz/live", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) })
 	s.handle(mux, "GET /healthz/ready", s.ready)
 	s.handle(mux, "GET /invitations/accept", s.acceptPageHandler)
 	s.handle(mux, "GET /invitations/preview", s.previewInvitation)
+	s.handle(mux, "GET /portal/config.json", s.portal.ConfigJSON)
+	s.handle(mux, "GET /portal/", s.portal.Files)
 
 	api := http.NewServeMux()
 	s.handle(api, "GET /v1/me", s.getMe)

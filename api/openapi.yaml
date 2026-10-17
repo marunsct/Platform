@@ -26,6 +26,8 @@ security:
 tags:
   - name: health
     description: Probes and liveness.
+  - name: portal
+    description: The customer portal web app.
   - name: me
     description: The signed-in user.
   - name: tenants
@@ -120,6 +122,43 @@ paths:
                 $ref: '#/components/schemas/InvitationPreview'
         '410':
           $ref: '#/components/responses/Gone'
+  /portal/:
+    get:
+      operationId: portalApp
+      summary: Customer portal
+      description: |
+        The customer portal, a single-page app embedded in maturad. Built files are served as they are (hashed
+        `assets/` are cached for a year); any other path under `/portal/` returns `index.html` so the app's router
+        can show it, except missing files with an extension, which are 404. Every response carries a strict
+        Content-Security-Policy (`script-src 'self'`, `style-src 'self'`, `connect-src` limited to maturad and the
+        issuer). `/portal` redirects here.
+      tags: [portal]
+      security: []
+      responses:
+        '200':
+          description: A built file, or `index.html` for the app's own routes.
+          content:
+            text/html:
+              schema:
+                type: string
+        '404':
+          description: A missing file.
+  /portal/config.json:
+    get:
+      operationId: portalConfig
+      summary: Portal runtime configuration
+      description: |
+        What the portal needs to sign in: the OIDC issuer and the public client it uses (authorization code with
+        PKCE), or `auth: dev` when maturad trusts development headers. `Cache-Control: no-store`.
+      tags: [portal]
+      security: []
+      responses:
+        '200':
+          description: The configuration.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PortalConfig'
 
   # --- me ---------------------------------------------------------------------------------------------------------
   /v1/me:
@@ -3049,6 +3088,22 @@ components:
         expires_at:
           type: string
           format: date-time
+
+    PortalConfig:
+      type: object
+      required: [auth, issuer, client_id, product]
+      properties:
+        auth:
+          type: string
+          enum: [oidc, dev]
+        issuer:
+          type: string
+          description: OIDC issuer the browser signs in with; empty when not configured.
+        client_id:
+          type: string
+          description: Public client (default `matura-console`).
+        product:
+          type: string
 
     Plan:
       type: object

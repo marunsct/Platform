@@ -25,7 +25,7 @@ type Config struct {
 	EventSource        string // CloudEvents source of this installation
 	PublicURL          string // where people reach maturad, for links in emails
 	InviteAcceptURL    string // page invitation links open; default <PublicURL>/invitations/accept
-	PortalClientID     string // public Keycloak client the accept page signs in with
+	PortalClientID     string // public Keycloak client the portal and the accept page sign in with (PKCE)
 	SMTPAddr           string // host:port of the mail relay; empty: emails are queued but not sent
 	SMTPFrom           string
 	SMTPUser           string

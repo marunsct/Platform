@@ -25,6 +25,7 @@ import (
 	"github.com/marunsct/Platform/internal/mail"
 	"github.com/marunsct/Platform/internal/metrics"
 	"github.com/marunsct/Platform/internal/placement"
+	"github.com/marunsct/Platform/internal/portal"
 	"github.com/marunsct/Platform/internal/secrets"
 	"github.com/marunsct/Platform/internal/store"
 )
@@ -111,6 +112,7 @@ func run(log *slog.Logger) error {
 	server.EnableInternal(cfg.InternalToken)
 	server.SetInvitations(api.Invitations{AcceptURL: cfg.InviteAcceptURL, PublicURL: cfg.PublicURL,
 		Issuer: cfg.Issuer, ClientID: cfg.PortalClientID})
+	server.SetPortal(portal.Config{Auth: cfg.Auth, Issuer: cfg.Issuer, ClientID: cfg.PortalClientID})
 	if cfg.SMTPAddr != "" {
 		mailer := &mail.Mailer{Store: st, Log: log, Sender: mail.SMTP{Addr: cfg.SMTPAddr, From: cfg.SMTPFrom,
 			User: cfg.SMTPUser, Password: cfg.SMTPPassword}}
