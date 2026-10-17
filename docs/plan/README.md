@@ -28,4 +28,6 @@
 | 19 | [Research findings and plan changes](19-research-findings.md) | What deep research found (market, buyers, AI rules, agent auth) and the 14 changes adopted |
 | 20 | [End-to-end delivery plan](20-end-to-end-delivery-plan.md) | Milestones M0–M6; identity and tenancy pulled forward so DevFlow and AgentCanvas sign in early; data placement and the app contract |
 
-Specifications: [`../spec/`](../spec/README.md). Decisions: [`../adr/`](../adr/README.md). Research with sources: [`../research/`](../research/README.md).
+| 21 | [Build plan to finish the product](21-build-plan.md) | What "finished" means (1.0), the M1 build sequence slice by slice, and what follows |
+
+Specifications: [`../spec/`](../spec/README.md). Decisions: [`../adr/`](../adr/README.md). Guides for app developers: [`../guide/`](../guide/README.md). Research with sources: [`../research/`](../research/README.md).
