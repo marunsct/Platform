@@ -107,22 +107,23 @@ that mode unless `MATURA_ENV=development`.
 
 | Area | Endpoints |
 |---|---|
-| Tenants | `POST/GET /v1/tenants`, `GET/PATCH/DELETE /v1/tenants/{tid}`, `POST /v1/tenants/{tid}:restore` |
-| Workspaces | `GET/POST /v1/tenants/{tid}/workspaces`, `PATCH/DELETE …/{wid}` |
-| Members | `GET /v1/tenants/{tid}/members`, `PATCH/DELETE …/{uid}` |
+| Tenants | `POST/GET /v1/tenants`, `GET/PATCH/DELETE /v1/tenants/{tid}` (planned: `POST /v1/tenants/{tid}:restore`) |
+| Workspaces | `GET/POST /v1/tenants/{tid}/workspaces`, `PATCH …/{wid}` (archive by status) |
+| Members | `GET/POST /v1/tenants/{tid}/members`, `PATCH/DELETE …/{uid}` |
 | Invitations | `POST/GET /v1/tenants/{tid}/invitations`, `POST …/{id}:resend`, `DELETE …/{id}`, `POST /v1/invitations:accept`; unauthenticated: `GET /invitations/accept` (page), `GET /invitations/preview?token=` (§5.1) |
-| Apps | `PUT /admin/v1/apps/{slug}` (apply manifest), `GET /v1/apps`, `POST/DELETE /v1/tenants/{tid}/apps/{app}` |
+| Apps | `PUT /admin/v1/apps/{slug}` (apply manifest), `GET /v1/apps`, `GET /v1/tenants/{tid}/apps`, `PUT/DELETE /v1/tenants/{tid}/apps/{app}` |
 | App roles | `GET /v1/apps/{slug}/roles`; operators: `POST /admin/v1/apps/{slug}/roles`, `PATCH/DELETE /admin/v1/apps/{slug}/roles/{name}` (RL-8 to RL-11) |
 | Grants | `GET/POST /v1/tenants/{tid}/grants`, `DELETE …/{id}` |
-| Users | `GET/PATCH /v1/me`, `GET /v1/me/tenants`, `GET/PATCH/DELETE /admin/v1/users/{uid}` |
-| Database servers | `POST/GET /admin/v1/db-servers`, `PATCH/DELETE …/{id}`, `POST …/{id}:test` |
+| Users | `GET /v1/me`, `GET /v1/me/tenants`, `GET/PATCH/DELETE /admin/v1/users/{uid}` |
+| Database servers | `POST/GET /admin/v1/db-servers`, `PATCH/DELETE …/{id}`, `POST …/{id}/test` |
 | Placements | `GET /v1/tenants/{tid}/placements`; app: `GET /v1/apps/{app}/placements/{tid}`, `PUT` (app-managed register), `POST …:ready`, `POST …:deleted`; app: `POST /v1/apps/{app}/placements/{tid}/credentials` (short-lived connection) |
 | Sync | `GET /v1/apps/{app}/changes`, `GET /v1/apps/{app}/snapshot?tenant=` |
-| Webhooks | `POST/GET /admin/v1/apps/{app}/webhooks`, `POST …/{id}:test` |
+| Webhooks | `POST/GET /admin/v1/apps/{app}/webhooks`, `PATCH/DELETE …/{id}`, `POST …/{id}/test` |
 | Internal (Keycloak) | `POST /internal/v1/token-context` `{user_id, email, email_verified, name, locale, client_id, tenant, workspace}` → claims for the mapper, or `403 {error: access_denied, error_description}`; bearer `MATURA_INTERNAL_TOKEN` |
 | Health | `GET /healthz/live`, `GET /healthz/ready` |
 
-The OpenAPI 3.1 document lives in `api/openapi.yaml` and is the source for generated clients.
+The OpenAPI 3.1 document lives in `api/openapi.yaml` and is the source for generated clients;
+`TestOpenAPIMatchesRoutes` fails when a served route is missing from it or a documented one is not served.
 
 ### 5.1 Invitations and email (TS6)
 

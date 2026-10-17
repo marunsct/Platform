@@ -3,6 +3,11 @@
 ## Unreleased
 
 ### Added
+- OpenAPI 3.1 document for every maturad route (`api/openapi.yaml`), with a test that fails when the router and the
+  document disagree.
+- Any-language kit, first part (TS7e): contract SQL for PostgreSQL (plus shared-mode RLS), MySQL/MariaDB, SQL Server
+  and SQLite with version-rule upserts per database (`docs/contract/sql`); token and apply vectors added to
+  `docs/contract/test-vectors.json` (`scripts/gen_contract_vectors.py`), run by the Python SDK.
 - Invitations and email (TS6): admins invite by email with a tenant role and app roles (`/v1/tenants/{tid}/invitations`,
   resend, revoke); links carry a single-use token stored only as a hash and expire after 7 days; the invitee accepts
   on maturad's page (`/invitations/accept`, Keycloak sign-in or sign-up with PKCE) or through

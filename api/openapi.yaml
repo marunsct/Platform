@@ -1,0 +1,2975 @@
+openapi: 3.1.0
+info:
+  title: Matura control plane API
+  version: 0.1.0
+  summary: The HTTP API of maturad, Matura's control plane.
+  description: |
+    Tenants, workspaces, members, invitations, app enablement, role grants, data placement and the app change feed.
+
+    - Users and operators send an OIDC access token from Keycloak (`bearer`). Endpoints under `/admin/v1` need the
+      operator realm role.
+    - App backends send HTTP Basic with their client id and secret (`appBasic`) to `/v1/apps/{app}/changes`,
+      `/snapshot` and `/placements`. Another app's slug answers 404.
+    - Keycloak's Matura extension calls `/internal/v1` with the shared `MATURA_INTERNAL_TOKEN` (`internalToken`).
+      These routes are only served when that token is configured.
+
+    Errors are `application/problem+json`. Ids of other tenants, and ids that are not UUIDs, answer 404 so they
+    cannot be probed. Request bodies reject unknown fields (400). A POST under `/v1` or `/admin/v1` may carry an
+    `Idempotency-Key`; a retry with the same key and body gets the stored response with `Idempotency-Replayed: true`.
+  license:
+    name: Apache-2.0
+    identifier: Apache-2.0
+servers:
+  - url: /
+security:
+  - bearer: []
+tags:
+  - name: health
+    description: Probes and liveness.
+  - name: me
+    description: The signed-in user.
+  - name: tenants
+    description: Tenants (organisations).
+  - name: workspaces
+    description: Workspaces inside a tenant.
+  - name: members
+    description: Tenant memberships.
+  - name: invitations
+    description: Invitations to join a tenant.
+  - name: apps
+    description: Apps, their roles and which tenants enabled them.
+  - name: grants
+    description: App role grants to members.
+  - name: placements
+    description: Where tenant data lives.
+  - name: operator
+    description: Installation operators only.
+  - name: app-backend
+    description: Called by app backends with their client credentials.
+  - name: internal
+    description: Called by Keycloak's Matura extension.
+
+paths:
+  # --- health and public pages ------------------------------------------------------------------------------------
+  /healthz/live:
+    get:
+      operationId: live
+      summary: Liveness probe
+      tags: [health]
+      security: []
+      responses:
+        '204':
+          description: The process is up.
+  /healthz/ready:
+    get:
+      operationId: ready
+      summary: Readiness probe
+      description: Checks that the database answers.
+      tags: [health]
+      security: []
+      responses:
+        '204':
+          description: Ready to serve.
+        '503':
+          $ref: '#/components/responses/NotReady'
+  /invitations/accept:
+    get:
+      operationId: invitationAcceptPage
+      summary: Invitation accept page
+      description: |
+        Self-contained HTML page an invitation link opens. It shows the invitation (from `/invitations/preview`),
+        signs the invitee in with Keycloak (authorization code with PKCE) and calls `POST /v1/invitations:accept`.
+      tags: [invitations]
+      security: []
+      parameters:
+        - name: token
+          in: query
+          description: The invitation token from the link. Read by the page's script, not by the server.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The page.
+          content:
+            text/html:
+              schema:
+                type: string
+  /invitations/preview:
+    get:
+      operationId: previewInvitation
+      summary: Preview an invitation
+      description: 'Unauthenticated; the token is the credential. Responses are `Cache-Control: no-store`.'
+      tags: [invitations]
+      security: []
+      parameters:
+        - name: token
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: What the accept page shows before sign-in.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvitationPreview'
+        '410':
+          $ref: '#/components/responses/Gone'
+
+  # --- me ---------------------------------------------------------------------------------------------------------
+  /v1/me:
+    get:
+      operationId: getMe
+      summary: The signed-in user
+      tags: [me]
+      responses:
+        '200':
+          description: The user's profile and whether they are an operator.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [user, operator]
+                properties:
+                  user:
+                    $ref: '#/components/schemas/User'
+                  operator:
+                    type: boolean
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /v1/me/tenants:
+    get:
+      operationId: listMyTenants
+      summary: Tenants the signed-in user belongs to
+      description: Active memberships in tenants that are not being deleted, with the user's role; for tenant switchers.
+      tags: [me]
+      responses:
+        '200':
+          description: The tenants, by name.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MyTenantList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  # --- tenants ----------------------------------------------------------------------------------------------------
+  /v1/tenants:
+    get:
+      operationId: listTenants
+      summary: List tenants
+      description: The caller's tenants; operators see all.
+      tags: [tenants]
+      responses:
+        '200':
+          description: The tenants.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenantList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      operationId: createTenant
+      summary: Create a tenant
+      description: |
+        The caller becomes its owner. Only operators may set `plan`, `owner_id` or a `kind` other than `company`.
+      tags: [tenants]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [slug, name]
+              properties:
+                slug:
+                  type: string
+                name:
+                  type: string
+                kind:
+                  type: string
+                  enum: [company, shared, personal]
+                  default: company
+                plan:
+                  type: string
+                  description: Operators only.
+                owner_id:
+                  type: string
+                  format: uuid
+                  description: Operators only; create the tenant on someone's behalf.
+      responses:
+        '201':
+          description: The new tenant.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tenant'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+  /v1/tenants/{tid}:
+    parameters:
+      - $ref: '#/components/parameters/tid'
+    get:
+      operationId: getTenant
+      summary: Get a tenant
+      description: Members and operators. The `ETag` is the tenant's version, for `If-Match`.
+      tags: [tenants]
+      responses:
+        '200':
+          description: The tenant.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tenant'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      operationId: updateTenant
+      summary: Update a tenant
+      description: Owners and admins may rename; only operators may change `plan` or `status`.
+      tags: [tenants]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                name:
+                  type: string
+                plan:
+                  type: string
+                  description: Operators only.
+                status:
+                  type: string
+                  enum: [provisioning, active, suspended, deleting, deleted]
+                  description: Operators only.
+      responses:
+        '200':
+          description: The updated tenant.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tenant'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '412':
+          $ref: '#/components/responses/PreconditionFailed'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+    delete:
+      operationId: deleteTenant
+      summary: Delete a tenant
+      description: Owners and operators. Sets the status to `deleting`, which starts the grace period.
+      tags: [tenants]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      responses:
+        '202':
+          description: Deletion started; the tenant with status `deleting`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tenant'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '412':
+          $ref: '#/components/responses/PreconditionFailed'
+
+  # --- workspaces -------------------------------------------------------------------------------------------------
+  /v1/tenants/{tid}/workspaces:
+    parameters:
+      - $ref: '#/components/parameters/tid'
+    get:
+      operationId: listWorkspaces
+      summary: List workspaces
+      tags: [workspaces]
+      responses:
+        '200':
+          description: The tenant's workspaces.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      operationId: createWorkspace
+      summary: Create a workspace
+      description: Owners and admins.
+      tags: [workspaces]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [name]
+              properties:
+                name:
+                  type: string
+      responses:
+        '201':
+          description: The new workspace.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Workspace'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+  /v1/tenants/{tid}/workspaces/{wid}:
+    parameters:
+      - $ref: '#/components/parameters/tid'
+      - $ref: '#/components/parameters/wid'
+    patch:
+      operationId: updateWorkspace
+      summary: Update a workspace
+      description: Owners and admins. Rename or archive.
+      tags: [workspaces]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                name:
+                  type: string
+                status:
+                  type: string
+                  enum: [active, archived, deleted]
+      responses:
+        '200':
+          description: The updated workspace.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Workspace'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+
+  # --- members ----------------------------------------------------------------------------------------------------
+  /v1/tenants/{tid}/members:
+    parameters:
+      - $ref: '#/components/parameters/tid'
+    get:
+      operationId: listMembers
+      summary: List members
+      tags: [members]
+      responses:
+        '200':
+          description: The tenant's members, with email and display name.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MembershipList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      operationId: addMember
+      summary: Add a member
+      description: |
+        Owners and admins add someone who already has an account, by `user_id` or `email` (422 when no account uses
+        the email; invite them instead). Only owners add owners. The member gets each enabled app's default role.
+      tags: [members]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                user_id:
+                  type: string
+                  format: uuid
+                email:
+                  type: string
+                  format: email
+                tenant_role:
+                  $ref: '#/components/schemas/TenantRole'
+      responses:
+        '201':
+          description: The membership.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Membership'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+  /v1/tenants/{tid}/members/{uid}:
+    parameters:
+      - $ref: '#/components/parameters/tid'
+      - $ref: '#/components/parameters/uid'
+    patch:
+      operationId: updateMember
+      summary: Change a member's role or status
+      description: Owners and admins; only owners make, change or unmake owners.
+      tags: [members]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                tenant_role:
+                  $ref: '#/components/schemas/TenantRole'
+                status:
+                  type: string
+                  enum: [active, deactivated, removed]
+      responses:
+        '200':
+          description: The updated membership.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Membership'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+    delete:
+      operationId: removeMember
+      summary: Remove a member
+      description: Anyone may leave; removing someone else needs owner or admin, and removing an owner needs an owner.
+      tags: [members]
+      responses:
+        '204':
+          description: Removed.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  # --- tenant apps ------------------------------------------------------------------------------------------------
+  /v1/tenants/{tid}/apps:
+    parameters:
+      - $ref: '#/components/parameters/tid'
+    get:
+      operationId: listTenantApps
+      summary: List the tenant's apps
+      tags: [apps]
+      responses:
+        '200':
+          description: Apps the tenant has enabled or disabled, with their placement.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenantAppList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /v1/tenants/{tid}/apps/{app}:
+    parameters:
+      - $ref: '#/components/parameters/tid'
+      - $ref: '#/components/parameters/app'
+    put:
+      operationId: enableTenantApp
+      summary: Enable an app for the tenant
+      description: Owners and admins. Records where the tenant's data will live (placement `requested`).
+      tags: [apps]
+      responses:
+        '200':
+          description: The tenant's app.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenantApp'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+    delete:
+      operationId: disableTenantApp
+      summary: Disable an app for the tenant
+      description: Owners and admins.
+      tags: [apps]
+      responses:
+        '204':
+          description: Disabled.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  # --- grants -----------------------------------------------------------------------------------------------------
+  /v1/tenants/{tid}/grants:
+    parameters:
+      - $ref: '#/components/parameters/tid'
+    get:
+      operationId: listGrants
+      summary: List role grants
+      tags: [grants]
+      parameters:
+        - name: app
+          in: query
+          description: Only grants of this app (slug).
+          schema:
+            type: string
+        - name: user_id
+          in: query
+          description: Only grants to this user.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: The grants.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GrantList'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      operationId: createGrant
+      summary: Grant an app role
+      description: Owners and admins. `workspace_id` scopes the grant to one workspace of a workspace-scoped app.
+      tags: [grants]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [app, user_id, role]
+              properties:
+                app:
+                  type: string
+                  description: App slug.
+                user_id:
+                  type: string
+                  format: uuid
+                role:
+                  type: string
+                workspace_id:
+                  type: [string, 'null']
+                  format: uuid
+      responses:
+        '201':
+          description: The grant.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Grant'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+  /v1/tenants/{tid}/grants/{id}:
+    parameters:
+      - $ref: '#/components/parameters/tid'
+      - $ref: '#/components/parameters/id'
+    delete:
+      operationId: revokeGrant
+      summary: Revoke a grant
+      description: Owners and admins.
+      tags: [grants]
+      responses:
+        '204':
+          description: Revoked.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  # --- placements (tenant view) -----------------------------------------------------------------------------------
+  /v1/tenants/{tid}/placements:
+    parameters:
+      - $ref: '#/components/parameters/tid'
+    get:
+      operationId: listTenantPlacements
+      summary: Where the tenant's app data lives
+      tags: [placements]
+      responses:
+        '200':
+          description: One placement per enabled app.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlacementList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # --- invitations ------------------------------------------------------------------------------------------------
+  /v1/tenants/{tid}/invitations:
+    parameters:
+      - $ref: '#/components/parameters/tid'
+    get:
+      operationId: listInvitations
+      summary: List invitations
+      description: Owners and admins. A pending invitation past `expires_at` lists as `expired`.
+      tags: [invitations]
+      responses:
+        '200':
+          description: The invitations.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvitationList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      operationId: createInvitation
+      summary: Invite someone
+      description: |
+        Owners and admins; only owners invite owners. Emails a link valid for 7 days. App roles are checked up front.
+        An active member's address answers 409; an earlier pending invitation to the address is revoked.
+        `delivery: temp_password` answers 422 (not built yet).
+      tags: [invitations]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [email]
+              properties:
+                email:
+                  type: string
+                  format: email
+                tenant_role:
+                  $ref: '#/components/schemas/TenantRole'
+                app_roles:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/InvitedRole'
+                delivery:
+                  type: string
+                  enum: [link, temp_password]
+                  default: link
+                deliver_to:
+                  type: string
+                  description: Send the email here instead of the invited address.
+      responses:
+        '201':
+          description: The invitation, with its link.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvitationWithLink'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+  /v1/tenants/{tid}/invitations/{id}:resend:
+    parameters:
+      - $ref: '#/components/parameters/tid'
+      - $ref: '#/components/parameters/id'
+    post:
+      operationId: resendInvitation
+      summary: Resend an invitation
+      description: |
+        Owners and admins. Issues a new token and expiry (the old link stops working); works on pending and expired
+        invitations.
+      tags: [invitations]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: The invitation, with its new link.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvitationWithLink'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /v1/tenants/{tid}/invitations/{id}:
+    parameters:
+      - $ref: '#/components/parameters/tid'
+      - $ref: '#/components/parameters/id'
+    delete:
+      operationId: revokeInvitation
+      summary: Revoke an invitation
+      description: Owners and admins; ends a pending invitation.
+      tags: [invitations]
+      responses:
+        '204':
+          description: Revoked.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /v1/invitations:accept:
+    post:
+      operationId: acceptInvitation
+      summary: Accept an invitation
+      description: |
+        Called by the signed-in invitee. 410 when the invitation is accepted, revoked or expired, the tenant is not
+        active or the token is unknown; 403 when the signed-in email is not the invited one.
+      tags: [invitations]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [token]
+              properties:
+                token:
+                  type: string
+      responses:
+        '200':
+          description: The accepted invitation and the membership.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [invitation, membership]
+                properties:
+                  invitation:
+                    $ref: '#/components/schemas/Invitation'
+                  membership:
+                    $ref: '#/components/schemas/Membership'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '410':
+          $ref: '#/components/responses/Gone'
+
+  # --- apps and roles ---------------------------------------------------------------------------------------------
+  /v1/apps:
+    get:
+      operationId: listApps
+      summary: List apps
+      description: Apps registered in this installation.
+      tags: [apps]
+      responses:
+        '200':
+          description: The apps.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /v1/apps/{slug}/roles:
+    parameters:
+      - $ref: '#/components/parameters/slug'
+    get:
+      operationId: listAppRoles
+      summary: List an app's roles
+      tags: [apps]
+      responses:
+        '200':
+          description: The roles.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppRoleList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /admin/v1/apps/{slug}:
+    parameters:
+      - $ref: '#/components/parameters/slug'
+    put:
+      operationId: applyAppManifest
+      summary: Register or update an app from its manifest
+      description: Operators. The manifest's `slug` must match the URL (or be left out).
+      tags: [operator, apps]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Manifest'
+      responses:
+        '200':
+          description: The app and whether anything changed.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [app, changed]
+                properties:
+                  app:
+                    $ref: '#/components/schemas/App'
+                  changed:
+                    type: boolean
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+  /admin/v1/apps/{slug}/roles:
+    parameters:
+      - $ref: '#/components/parameters/slug'
+    post:
+      operationId: createAppRole
+      summary: Create an app role
+      description: Operators. Permissions must be in the app's catalogue.
+      tags: [operator, apps]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [name, permissions]
+              properties:
+                name:
+                  type: string
+                  pattern: '^[a-z][a-z0-9_-]{0,39}$'
+                description:
+                  type: string
+                permissions:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        '201':
+          description: The role.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppRole'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+  /admin/v1/apps/{slug}/roles/{name}:
+    parameters:
+      - $ref: '#/components/parameters/slug'
+      - name: name
+        in: path
+        required: true
+        description: Role name.
+        schema:
+          type: string
+    patch:
+      operationId: updateAppRole
+      summary: Change an app role
+      description: Operators. Marks the role edited, so later manifests leave it alone.
+      tags: [operator, apps]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                name:
+                  type: string
+                description:
+                  type: string
+                permissions:
+                  type: array
+                  items:
+                    type: string
+                is_default:
+                  type: boolean
+      responses:
+        '200':
+          description: The updated role.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppRole'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+    delete:
+      operationId: deleteAppRole
+      summary: Delete an app role
+      description: Operators.
+      tags: [operator, apps]
+      responses:
+        '204':
+          description: Deleted.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+
+  # --- operator: app secrets and webhooks -------------------------------------------------------------------------
+  /admin/v1/apps/{slug}/secrets:
+    parameters:
+      - $ref: '#/components/parameters/slug'
+    get:
+      operationId: listAppSecrets
+      summary: List an app's client secrets
+      description: Operators. Secret values are never listed.
+      tags: [operator, apps]
+      responses:
+        '200':
+          description: The secrets.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppSecretList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      operationId: createAppSecret
+      summary: Create a client secret
+      description: 'Operators. The response carries the secret once (`Cache-Control: no-store`).'
+      tags: [operator, apps]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                label:
+                  type: string
+      responses:
+        '201':
+          description: The secret, with its value.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppSecret'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+  /admin/v1/apps/{slug}/secrets/{id}:
+    parameters:
+      - $ref: '#/components/parameters/slug'
+      - $ref: '#/components/parameters/id'
+    delete:
+      operationId: revokeAppSecret
+      summary: Revoke a client secret
+      description: Operators.
+      tags: [operator, apps]
+      responses:
+        '204':
+          description: Revoked.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /admin/v1/apps/{slug}/webhooks:
+    parameters:
+      - $ref: '#/components/parameters/slug'
+    get:
+      operationId: listWebhooks
+      summary: List an app's webhook endpoints
+      description: Operators. Includes delivery state.
+      tags: [operator, apps]
+      responses:
+        '200':
+          description: The endpoints.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebhookList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      operationId: createWebhook
+      summary: Add a webhook endpoint
+      description: 'Operators. The response carries the signing secret once (`Cache-Control: no-store`).'
+      tags: [operator, apps]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [url]
+              properties:
+                url:
+                  type: string
+                  format: uri
+      responses:
+        '201':
+          description: The endpoint, with its signing secret.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Webhook'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+  /admin/v1/apps/{slug}/webhooks/{id}:
+    parameters:
+      - $ref: '#/components/parameters/slug'
+      - $ref: '#/components/parameters/id'
+    patch:
+      operationId: updateWebhook
+      summary: Change a webhook endpoint
+      description: Operators. Change the URL, or disable and re-enable delivery.
+      tags: [operator, apps]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                url:
+                  type: string
+                  format: uri
+                status:
+                  type: string
+                  enum: [active, failing, disabled]
+      responses:
+        '200':
+          description: The updated endpoint.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Webhook'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+    delete:
+      operationId: deleteWebhook
+      summary: Delete a webhook endpoint
+      description: Operators.
+      tags: [operator, apps]
+      responses:
+        '204':
+          description: Deleted.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /admin/v1/apps/{slug}/webhooks/{id}/test:
+    parameters:
+      - $ref: '#/components/parameters/slug'
+      - $ref: '#/components/parameters/id'
+    post:
+      operationId: testWebhook
+      summary: Send a test event
+      description: Operators. Sends a signed `matura.ping` event now and reports what the receiver answered.
+      tags: [operator, apps]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: The delivery result (also when the receiver failed).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebhookTestResult'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # --- operator: plans, database servers, users -------------------------------------------------------------------
+  /admin/v1/plans:
+    get:
+      operationId: listPlans
+      summary: List plans
+      description: Operators.
+      tags: [operator]
+      responses:
+        '200':
+          description: The plans.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlanList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /admin/v1/plans/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Plan id, such as `free`.
+        schema:
+          type: string
+    put:
+      operationId: putPlan
+      summary: Create or replace a plan
+      description: Operators.
+      tags: [operator]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [name]
+              properties:
+                name:
+                  type: string
+                data_mode_required:
+                  oneOf:
+                    - $ref: '#/components/schemas/DataMode'
+                    - type: 'null'
+                data_mode_default:
+                  $ref: '#/components/schemas/DataMode'
+                limits:
+                  type: object
+                  additionalProperties: true
+      responses:
+        '200':
+          description: The plan.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Plan'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+  /admin/v1/db-servers:
+    get:
+      operationId: listDBServers
+      summary: List database servers
+      description: Operators. Admin passwords are never returned.
+      tags: [operator, placements]
+      responses:
+        '200':
+          description: The servers.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DBServerList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      operationId: createDBServer
+      summary: Register a database server
+      description: Operators. The admin password is stored encrypted.
+      tags: [operator, placements]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [name, host, admin_user, admin_password]
+              properties:
+                name:
+                  type: string
+                host:
+                  type: string
+                port:
+                  type: integer
+                  default: 5432
+                admin_user:
+                  type: string
+                admin_password:
+                  type: string
+                  format: password
+                sslmode:
+                  $ref: '#/components/schemas/SSLMode'
+                region:
+                  type: string
+                dedicated:
+                  type: boolean
+                labels:
+                  type: object
+                  additionalProperties: true
+      responses:
+        '201':
+          description: The server.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DBServer'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+  /admin/v1/db-servers/{id}:
+    parameters:
+      - $ref: '#/components/parameters/id'
+    patch:
+      operationId: updateDBServer
+      summary: Change a database server
+      description: Operators. Drain or disable it, move it, or rotate the admin password.
+      tags: [operator, placements]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                status:
+                  type: string
+                  enum: [active, draining, disabled]
+                region:
+                  type: string
+                dedicated:
+                  type: boolean
+                labels:
+                  type: object
+                  additionalProperties: true
+                admin_password:
+                  type: string
+                  format: password
+      responses:
+        '200':
+          description: The updated server.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DBServer'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+    delete:
+      operationId: deleteDBServer
+      summary: Remove a database server
+      description: Operators. Refused (422) while placements use it; drain it first.
+      tags: [operator, placements]
+      responses:
+        '204':
+          description: Removed.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+  /admin/v1/db-servers/{id}/test:
+    parameters:
+      - $ref: '#/components/parameters/id'
+    post:
+      operationId: testDBServer
+      summary: Test a database server
+      description: Operators. Connects with the stored admin credentials and reports whether provisioning can use it.
+      tags: [operator, placements]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: The check result (also when the connection failed).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DBServerCheck'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /admin/v1/users:
+    get:
+      operationId: listUsers
+      summary: List users
+      description: Operators. Keyset pagination by user id.
+      tags: [operator]
+      parameters:
+        - name: q
+          in: query
+          description: Match email or display name.
+          schema:
+            type: string
+        - name: after
+          in: query
+          description: Return users after this id (the last id of the previous page).
+          schema:
+            type: string
+            format: uuid
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+      responses:
+        '200':
+          description: A page of users.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserList'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /admin/v1/users/{uid}:
+    parameters:
+      - $ref: '#/components/parameters/uid'
+    get:
+      operationId: getUser
+      summary: Get a user
+      description: Operators.
+      tags: [operator]
+      responses:
+        '200':
+          description: The user.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      operationId: updateUser
+      summary: Deactivate or reactivate a user
+      description: Operators. A deactivated user's requests answer 403 within a minute.
+      tags: [operator]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [status]
+              properties:
+                status:
+                  type: string
+                  enum: [active, deactivated]
+      responses:
+        '200':
+          description: The updated user.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+    delete:
+      operationId: deleteUser
+      summary: Delete a user
+      description: Operators.
+      tags: [operator]
+      responses:
+        '204':
+          description: Deleted.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  # --- app backends -----------------------------------------------------------------------------------------------
+  /v1/apps/{app}/changes:
+    parameters:
+      - $ref: '#/components/parameters/app'
+    get:
+      operationId: getAppChanges
+      summary: Read the app's change feed
+      description: |
+        CloudEvents for tenants that enabled the app, in sequence order. Pass `next_cursor` back as `cursor`.
+        410 when the cursor is older than the feed keeps; start again from a snapshot.
+      tags: [app-backend]
+      security:
+        - appBasic: []
+      parameters:
+        - name: cursor
+          in: query
+          description: Read changes after this cursor; omit to start from the beginning.
+          schema:
+            type: string
+            pattern: '^[0-9]+$'
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 500
+      responses:
+        '200':
+          description: A page of changes.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, next_cursor, has_more]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Change'
+                  next_cursor:
+                    type: string
+                  has_more:
+                    type: boolean
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '410':
+          $ref: '#/components/responses/Gone'
+  /v1/apps/{app}/snapshot:
+    parameters:
+      - $ref: '#/components/parameters/app'
+    get:
+      operationId: getAppSnapshot
+      summary: Read a snapshot
+      description: |
+        With `tenant`: that tenant's state as the app sees it. Without: the app's roles and the ids of tenants that
+        enabled it. Continue with the change feed from `cursor`.
+      tags: [app-backend]
+      security:
+        - appBasic: []
+      parameters:
+        - name: tenant
+          in: query
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: The snapshot.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Snapshot'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /v1/apps/{app}/placements/{tid}:
+    parameters:
+      - $ref: '#/components/parameters/app'
+      - $ref: '#/components/parameters/tid'
+    get:
+      operationId: getAppPlacement
+      summary: Get the tenant's placement for this app
+      tags: [app-backend, placements]
+      security:
+        - appBasic: []
+      responses:
+        '200':
+          description: The placement.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Placement'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      operationId: registerAppPlacement
+      summary: Register app-managed storage
+      description: For placements with manager `app`. Records where the app keeps the tenant's data and marks it provisioned.
+      tags: [app-backend, placements]
+      security:
+        - appBasic: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AppStorage'
+      responses:
+        '200':
+          description: The placement.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Placement'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+  /v1/apps/{app}/placements/{tid}:ready:
+    parameters:
+      - $ref: '#/components/parameters/app'
+      - $ref: '#/components/parameters/tid'
+    post:
+      operationId: markAppPlacementReady
+      summary: Confirm migrations ran
+      description: The app has migrated the tenant's storage; the placement becomes `ready`.
+      tags: [app-backend, placements]
+      security:
+        - appBasic: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: The placement.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Placement'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /v1/apps/{app}/placements/{tid}:deleted:
+    parameters:
+      - $ref: '#/components/parameters/app'
+      - $ref: '#/components/parameters/tid'
+    post:
+      operationId: markAppPlacementDeleted
+      summary: Confirm the tenant's data is deleted
+      description: The app has removed the tenant's data from storage it manages.
+      tags: [app-backend, placements]
+      security:
+        - appBasic: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: The placement.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Placement'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /v1/apps/{app}/placements/{tid}/credentials:
+    parameters:
+      - $ref: '#/components/parameters/app'
+      - $ref: '#/components/parameters/tid'
+    post:
+      operationId: getAppPlacementCredentials
+      summary: Get database credentials
+      description: |
+        Short-lived connection details for a platform-managed placement (`Cache-Control: no-store`). `purpose: migrate`
+        returns the role that owns the tables. The body may be empty.
+      tags: [app-backend, placements]
+      security:
+        - appBasic: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                purpose:
+                  type: string
+                  enum: [runtime, migrate]
+                  default: runtime
+      responses:
+        '200':
+          description: The credentials; ask again after `expires_at`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Credentials'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+
+  # --- internal (Keycloak) ----------------------------------------------------------------------------------------
+  /internal/v1/token-context:
+    post:
+      operationId: getTokenContext
+      summary: Token claims for Keycloak's mapper
+      description: |
+        The tenant, workspace, roles and permissions to put in an access token. Records the user's profile.
+        A refusal is 403 with an OAuth error the mapper passes on. Served only when `MATURA_INTERNAL_TOKEN` is set.
+      tags: [internal]
+      security:
+        - internalToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [user_id, client_id]
+              properties:
+                user_id:
+                  type: string
+                  format: uuid
+                email:
+                  type: string
+                email_verified:
+                  type: boolean
+                name:
+                  type: string
+                locale:
+                  type: string
+                client_id:
+                  type: string
+                tenant:
+                  type: string
+                  description: Tenant slug or id; empty means the tenant used last, else the first one.
+                workspace:
+                  type: string
+                  description: Workspace id; empty means the tenant's default workspace.
+      responses:
+        '200':
+          description: The claims.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenContext'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: No token may be issued.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenRefusal'
+
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        OIDC access token from Keycloak. Endpoints under `/admin/v1` need the operator realm role (403 otherwise).
+        A deactivated account answers 403.
+    appBasic:
+      type: http
+      scheme: basic
+      description: An app's client id and secret (see `/admin/v1/apps/{slug}/secrets`).
+    internalToken:
+      type: http
+      scheme: bearer
+      description: The shared `MATURA_INTERNAL_TOKEN`.
+
+  parameters:
+    tid:
+      name: tid
+      in: path
+      required: true
+      description: Tenant id.
+      schema:
+        type: string
+        format: uuid
+    wid:
+      name: wid
+      in: path
+      required: true
+      description: Workspace id.
+      schema:
+        type: string
+        format: uuid
+    uid:
+      name: uid
+      in: path
+      required: true
+      description: User id.
+      schema:
+        type: string
+        format: uuid
+    id:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    app:
+      name: app
+      in: path
+      required: true
+      description: App slug.
+      schema:
+        type: string
+    slug:
+      name: slug
+      in: path
+      required: true
+      description: App slug.
+      schema:
+        type: string
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      description: |
+        Makes the POST safe to retry for 24 hours. A retry with the same key and body gets the stored response with
+        `Idempotency-Replayed: true`; one sent while the first is still running answers 409.
+      schema:
+        type: string
+        maxLength: 255
+    IfMatch:
+      name: If-Match
+      in: header
+      description: The version from the `ETag`; the change is refused with 412 if the resource changed since.
+      schema:
+        type: string
+
+  headers:
+    ETag:
+      description: The resource's version, quoted.
+      schema:
+        type: string
+
+  responses:
+    BadRequest:
+      description: Malformed request (invalid JSON, unknown field, bad query parameter or header).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    Unauthorized:
+      description: Missing or invalid credentials.
+      headers:
+        WWW-Authenticate:
+          schema:
+            type: string
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    Forbidden:
+      description: Authenticated but not allowed (role, operator-only endpoint, or deactivated account).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    NotFound:
+      description: Not found, or in a tenant the caller is not a member of.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    Conflict:
+      description: Conflicts with the current state (duplicate, wrong state, or an idempotent request still running).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    PreconditionFailed:
+      description: The resource changed since the version in `If-Match`; reload and retry.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    Gone:
+      description: No longer available (invitation used, revoked or expired; or change-feed cursor expired).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    Unprocessable:
+      description: Well-formed but invalid.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    NotReady:
+      description: The database is unreachable.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+
+  schemas:
+    Problem:
+      type: object
+      description: RFC 9457 problem details.
+      required: [type, title, status, detail]
+      properties:
+        type:
+          type: string
+          format: uri
+          examples: ['https://matura.dev/problems/not-found']
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+
+    DataMode:
+      type: string
+      enum: [shared, schema, database]
+    TenantRole:
+      type: string
+      enum: [owner, admin, billing, member]
+      default: member
+    SSLMode:
+      type: string
+      enum: [disable, allow, prefer, require, verify-ca, verify-full]
+
+    User:
+      type: object
+      required: [id, email, email_verified, display_name, locale, kind, status, version, updated_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: [string, 'null']
+        email_verified:
+          type: boolean
+        display_name:
+          type: [string, 'null']
+        locale:
+          type: [string, 'null']
+        kind:
+          type: string
+          enum: [human, service, agent]
+        status:
+          type: string
+          enum: [active, deactivated, deleted]
+        version:
+          type: integer
+          format: int64
+        updated_at:
+          type: string
+          format: date-time
+    UserList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/User'
+
+    Tenant:
+      type: object
+      required: [id, slug, name, kind, status, plan, data_mode_default, version, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        slug:
+          type: string
+        name:
+          type: string
+        kind:
+          type: string
+          enum: [company, shared, personal]
+        status:
+          type: string
+          enum: [provisioning, active, suspended, deleting, deleted]
+        plan:
+          type: [string, 'null']
+        data_mode_default:
+          $ref: '#/components/schemas/DataMode'
+        version:
+          type: integer
+          format: int64
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    TenantList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Tenant'
+    MyTenant:
+      description: A tenant with the caller's role in it.
+      allOf:
+        - $ref: '#/components/schemas/Tenant'
+        - type: object
+          required: [tenant_role]
+          properties:
+            tenant_role:
+              $ref: '#/components/schemas/TenantRole'
+    MyTenantList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/MyTenant'
+
+    Workspace:
+      type: object
+      required: [id, tenant_id, name, status, is_default, version, updated_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        status:
+          type: string
+          enum: [active, archived, deleted]
+        is_default:
+          type: boolean
+        version:
+          type: integer
+          format: int64
+        updated_at:
+          type: string
+          format: date-time
+    WorkspaceList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Workspace'
+
+    Membership:
+      type: object
+      required: [tenant_id, user_id, tenant_role, status, joined_at, version, updated_at]
+      properties:
+        tenant_id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        tenant_role:
+          $ref: '#/components/schemas/TenantRole'
+        status:
+          type: string
+          enum: [active, deactivated, removed]
+        joined_at:
+          type: string
+          format: date-time
+        version:
+          type: integer
+          format: int64
+        updated_at:
+          type: string
+          format: date-time
+        email:
+          type: [string, 'null']
+          description: In member lists.
+        display_name:
+          type: [string, 'null']
+          description: In member lists.
+    MembershipList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Membership'
+
+    Manifest:
+      type: object
+      description: The part of an app manifest maturad stores and enforces.
+      required: [name, auth, default_role, tenancy]
+      properties:
+        slug:
+          type: string
+        name:
+          type: string
+        client_id:
+          type: string
+        auth:
+          type: object
+          required: [redirect_uris]
+          properties:
+            redirect_uris:
+              type: array
+              items:
+                type: string
+            post_logout_redirect_uris:
+              type: array
+              items:
+                type: string
+            public_client:
+              type: boolean
+        permissions:
+          type: array
+          description: The permission catalogue; derived from roles when empty.
+          items:
+            type: object
+            required: [name]
+            properties:
+              name:
+                type: string
+              description:
+                type: string
+        roles:
+          type: array
+          description: Starter roles, editable in Matura afterwards.
+          items:
+            type: object
+            required: [name, permissions]
+            properties:
+              name:
+                type: string
+              description:
+                type: string
+              permissions:
+                type: array
+                items:
+                  type: string
+        default_role:
+          type: string
+        owner_role:
+          type: string
+          description: Role tenant owners and admins get implicitly.
+        tenancy:
+          type: object
+          properties:
+            workspace_scoped:
+              type: boolean
+            modes:
+              type: array
+              items:
+                $ref: '#/components/schemas/DataMode'
+            managers:
+              type: array
+              items:
+                type: string
+                enum: [app, platform]
+            default:
+              type: object
+              properties:
+                mode:
+                  $ref: '#/components/schemas/DataMode'
+                manager:
+                  type: string
+                  enum: [app, platform]
+
+    App:
+      type: object
+      required: [id, slug, name, client_id, manifest, status, version]
+      properties:
+        id:
+          type: string
+          format: uuid
+        slug:
+          type: string
+        name:
+          type: string
+        client_id:
+          type: string
+        manifest:
+          $ref: '#/components/schemas/Manifest'
+        status:
+          type: string
+          enum: [active, disabled]
+        version:
+          type: integer
+          format: int64
+    AppList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/App'
+
+    AppRole:
+      type: object
+      required: [app, name, description, permissions, is_default, origin, edited, version]
+      properties:
+        app:
+          type: string
+        name:
+          type: string
+        description:
+          type: [string, 'null']
+        permissions:
+          type: array
+          items:
+            type: string
+        is_default:
+          type: boolean
+        origin:
+          type: string
+          enum: [manifest, platform]
+        edited:
+          type: boolean
+          description: Changed in Matura, so manifests leave it alone.
+        version:
+          type: integer
+          format: int64
+    AppRoleList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AppRole'
+
+    TenantApp:
+      type: object
+      required: [tenant_id, app_id, app, status, version]
+      properties:
+        tenant_id:
+          type: string
+          format: uuid
+        app_id:
+          type: string
+          format: uuid
+        app:
+          type: string
+          description: App slug.
+        status:
+          type: string
+          enum: [enabled, disabled]
+        version:
+          type: integer
+          format: int64
+        placement:
+          $ref: '#/components/schemas/Placement'
+    TenantAppList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/TenantApp'
+
+    Placement:
+      type: object
+      description: Where one app keeps one tenant's data.
+      required: [id, tenant_id, app_id, mode, manager, db_server_id, database_name, schema_name, location_label, state, version]
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        app_id:
+          type: string
+          format: uuid
+        mode:
+          $ref: '#/components/schemas/DataMode'
+        manager:
+          type: string
+          enum: [app, platform]
+        db_server_id:
+          type: [string, 'null']
+          format: uuid
+        database_name:
+          type: [string, 'null']
+        schema_name:
+          type: [string, 'null']
+        location_label:
+          type: [string, 'null']
+        state:
+          type: string
+          enum: [requested, provisioning, provisioned, migrating, ready, moving, retiring, deleted, failed]
+        error:
+          type: string
+        version:
+          type: integer
+          format: int64
+    PlacementList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Placement'
+    AppStorage:
+      type: object
+      additionalProperties: false
+      required: [location_label]
+      properties:
+        location_label:
+          type: string
+          maxLength: 200
+        database_name:
+          type: string
+        schema_name:
+          type: string
+    Credentials:
+      type: object
+      required: [host, port, sslmode, database, user, password, mode, expires_at]
+      properties:
+        host:
+          type: string
+        port:
+          type: integer
+        sslmode:
+          $ref: '#/components/schemas/SSLMode'
+        database:
+          type: string
+        user:
+          type: string
+        password:
+          type: string
+          format: password
+        search_path:
+          type: string
+        mode:
+          $ref: '#/components/schemas/DataMode'
+        expires_at:
+          type: string
+          format: date-time
+
+    Grant:
+      type: object
+      required: [id, tenant_id, app_id, app, workspace_id, subject_type, subject_id, role, status, version]
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        app_id:
+          type: string
+          format: uuid
+        app:
+          type: string
+          description: App slug.
+        workspace_id:
+          type: [string, 'null']
+          format: uuid
+        subject_type:
+          type: string
+          enum: [user, group, service_account]
+        subject_id:
+          type: string
+          format: uuid
+        role:
+          type: string
+        status:
+          type: string
+          enum: [active, revoked]
+        version:
+          type: integer
+          format: int64
+    GrantList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Grant'
+
+    InvitedRole:
+      type: object
+      additionalProperties: false
+      required: [app, role]
+      properties:
+        app:
+          type: string
+          description: App slug.
+        role:
+          type: string
+        workspace_id:
+          type: string
+          format: uuid
+    Invitation:
+      type: object
+      required: [id, tenant_id, email, tenant_role, app_roles, delivery, deliver_to, expires_at, state, invited_by,
+        accepted_by, accepted_at, sent_count, version, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        email:
+          type: string
+        tenant_role:
+          $ref: '#/components/schemas/TenantRole'
+        app_roles:
+          type: [array, 'null']
+          items:
+            $ref: '#/components/schemas/InvitedRole'
+        delivery:
+          type: string
+          enum: [link, temp_password]
+        deliver_to:
+          type: [string, 'null']
+        expires_at:
+          type: string
+          format: date-time
+        state:
+          type: string
+          enum: [pending, accepted, revoked, expired]
+        invited_by:
+          type: [string, 'null']
+          format: uuid
+        accepted_by:
+          type: [string, 'null']
+          format: uuid
+        accepted_at:
+          type: [string, 'null']
+          format: date-time
+        sent_count:
+          type: integer
+        version:
+          type: integer
+          format: int64
+        created_at:
+          type: string
+          format: date-time
+    InvitationWithLink:
+      description: An invitation with the link just made. The link is not stored; pass it on when email is not set up.
+      allOf:
+        - $ref: '#/components/schemas/Invitation'
+        - type: object
+          required: [accept_url]
+          properties:
+            accept_url:
+              type: string
+              format: uri
+    InvitationList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Invitation'
+    InvitationPreview:
+      type: object
+      required: [tenant_name, email, state, expires_at]
+      properties:
+        tenant_name:
+          type: string
+        email:
+          type: string
+        state:
+          type: string
+          enum: [pending, accepted, revoked, expired]
+        expires_at:
+          type: string
+          format: date-time
+
+    Plan:
+      type: object
+      required: [id, name, data_mode_required, data_mode_default, limits]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        data_mode_required:
+          oneOf:
+            - $ref: '#/components/schemas/DataMode'
+            - type: 'null'
+        data_mode_default:
+          $ref: '#/components/schemas/DataMode'
+        limits:
+          type: [object, 'null']
+          additionalProperties: true
+    PlanList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Plan'
+
+    DBServer:
+      type: object
+      required: [id, name, host, port, admin_user, admin_secret_fingerprint, sslmode, region, dedicated, labels, status,
+        version]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        host:
+          type: string
+        port:
+          type: integer
+        admin_user:
+          type: string
+        admin_secret_fingerprint:
+          type: string
+          description: Identifies the stored password; the password itself is never returned.
+        sslmode:
+          $ref: '#/components/schemas/SSLMode'
+        region:
+          type: [string, 'null']
+        dedicated:
+          type: boolean
+        labels:
+          type: [object, 'null']
+          additionalProperties: true
+        status:
+          type: string
+          enum: [active, draining, disabled]
+        version:
+          type: integer
+          format: int64
+    DBServerList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/DBServer'
+    DBServerCheck:
+      type: object
+      required: [ok, can_create_databases, can_create_roles]
+      properties:
+        ok:
+          type: boolean
+        server_version:
+          type: string
+        can_create_databases:
+          type: boolean
+        can_create_roles:
+          type: boolean
+        error:
+          type: string
+
+    AppSecret:
+      type: object
+      required: [id, app, client_id, label, created_at, last_used_at, revoked_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        app:
+          type: string
+        client_id:
+          type: string
+        label:
+          type: string
+        secret:
+          type: string
+          description: Only in the create response.
+        created_at:
+          type: string
+          format: date-time
+        last_used_at:
+          type: [string, 'null']
+          format: date-time
+        revoked_at:
+          type: [string, 'null']
+          format: date-time
+    AppSecretList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AppSecret'
+
+    Webhook:
+      type: object
+      required: [id, app, url, status, cursor, attempts, first_failed_at, next_attempt_at, last_status, last_error,
+        delivered, dropped, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        app:
+          type: string
+        url:
+          type: string
+          format: uri
+        secret:
+          type: string
+          description: Signing secret; only in the create response.
+        status:
+          type: string
+          enum: [active, failing, disabled]
+        cursor:
+          type: integer
+          format: int64
+          description: Last change-feed sequence delivered.
+        attempts:
+          type: integer
+        first_failed_at:
+          type: [string, 'null']
+          format: date-time
+        next_attempt_at:
+          type: string
+          format: date-time
+        last_status:
+          type: [integer, 'null']
+        last_error:
+          type: [string, 'null']
+        delivered:
+          type: integer
+          format: int64
+        dropped:
+          type: integer
+          format: int64
+        created_at:
+          type: string
+          format: date-time
+    WebhookList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Webhook'
+    WebhookTestResult:
+      type: object
+      required: [ok, status]
+      properties:
+        ok:
+          type: boolean
+        status:
+          type: integer
+          description: HTTP status the receiver answered; 0 when it could not be reached.
+        error:
+          type: string
+
+    Change:
+      type: object
+      description: |
+        A change as a CloudEvent (structured JSON). `data` holds the object's name, its version (for the apply
+        rule) and the object itself under that name, e.g. `{"object": "membership", "version": 3, "membership": {…}}`.
+      required: [specversion, id, source, type, time, subject, sequence, datacontenttype, data]
+      properties:
+        specversion:
+          type: string
+          const: '1.0'
+        id:
+          type: string
+        source:
+          type: string
+        type:
+          type: string
+          examples: [matura.membership.added]
+        time:
+          type: string
+          format: date-time
+        subject:
+          type: string
+        tenantid:
+          type: string
+          format: uuid
+        sequence:
+          type: string
+          description: Position in the feed.
+        datacontenttype:
+          type: string
+          const: application/json
+        data:
+          type: object
+          required: [object, version]
+          properties:
+            object:
+              type: string
+            version:
+              type: integer
+              format: int64
+          additionalProperties: true
+
+    Snapshot:
+      type: object
+      required: [cursor, workspaces, users, memberships, grants, roles]
+      properties:
+        cursor:
+          type: string
+          description: Read the change feed from here.
+        tenant:
+          oneOf:
+            - $ref: '#/components/schemas/Tenant'
+            - type: 'null'
+        workspaces:
+          type: array
+          items:
+            $ref: '#/components/schemas/Workspace'
+        users:
+          type: array
+          items:
+            $ref: '#/components/schemas/User'
+        memberships:
+          type: array
+          items:
+            $ref: '#/components/schemas/Membership'
+        grants:
+          type: array
+          items:
+            $ref: '#/components/schemas/Grant'
+        placement:
+          oneOf:
+            - $ref: '#/components/schemas/Placement'
+            - type: 'null'
+        roles:
+          type: array
+          items:
+            $ref: '#/components/schemas/AppRole'
+        tenants:
+          type: [array, 'null']
+          description: Without `tenant`, the ids of tenants that enabled the app.
+          items:
+            type: string
+            format: uuid
+
+    TokenContext:
+      type: object
+      description: The Matura claims of an access token.
+      required: [troles, roles, ver]
+      properties:
+        tid:
+          type: string
+          format: uuid
+        tenant:
+          type: string
+          description: Tenant slug.
+        wid:
+          type: string
+          format: uuid
+        troles:
+          type: [array, 'null']
+          items:
+            type: string
+        roles:
+          type: [array, 'null']
+          items:
+            type: string
+        perms:
+          type: array
+          items:
+            type: string
+        perms_ref:
+          type: string
+          description: Set instead of `perms` when the list is too long for a token.
+        ver:
+          type: [object, 'null']
+          additionalProperties:
+            type: integer
+            format: int64
+        pmode:
+          $ref: '#/components/schemas/DataMode'
+    TokenRefusal:
+      type: object
+      required: [error, error_description, detail]
+      properties:
+        error:
+          type: string
+          const: access_denied
+        error_description:
+          type: string
+          description: Refusal code, passed on as the OAuth error description.
+        detail:
+          type: string

@@ -27,6 +27,7 @@ type Server struct {
 
 	source         string      // CloudEvents source of this installation
 	internalRoutes []route     // /internal/v1 routes for Keycloak (TS5)
+	routes         []string    // patterns registered by the last Handler call, for Routes
 	invites        Invitations // invitation links and accept page (TS6)
 }
 
@@ -49,80 +50,81 @@ func (s *Server) SetSource(src string) {
 }
 
 func (s *Server) Handler() http.Handler {
+	s.routes = nil
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /healthz/live", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) })
-	mux.HandleFunc("GET /healthz/ready", s.ready)
-	mux.HandleFunc("GET /invitations/accept", s.acceptPageHandler)
-	mux.HandleFunc("GET /invitations/preview", s.previewInvitation)
+	s.handle(mux, "GET /healthz/live", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) })
+	s.handle(mux, "GET /healthz/ready", s.ready)
+	s.handle(mux, "GET /invitations/accept", s.acceptPageHandler)
+	s.handle(mux, "GET /invitations/preview", s.previewInvitation)
 
 	api := http.NewServeMux()
-	api.HandleFunc("GET /v1/me", s.getMe)
-	api.HandleFunc("GET /v1/tenants", s.listTenants)
-	api.HandleFunc("POST /v1/tenants", s.createTenant)
-	api.HandleFunc("GET /v1/tenants/{tid}", s.getTenant)
-	api.HandleFunc("PATCH /v1/tenants/{tid}", s.patchTenant)
-	api.HandleFunc("DELETE /v1/tenants/{tid}", s.deleteTenant)
-	api.HandleFunc("GET /v1/tenants/{tid}/workspaces", s.listWorkspaces)
-	api.HandleFunc("POST /v1/tenants/{tid}/workspaces", s.createWorkspace)
-	api.HandleFunc("PATCH /v1/tenants/{tid}/workspaces/{wid}", s.patchWorkspace)
-	api.HandleFunc("GET /v1/tenants/{tid}/members", s.listMembers)
-	api.HandleFunc("POST /v1/tenants/{tid}/members", s.addMember)
-	api.HandleFunc("PATCH /v1/tenants/{tid}/members/{uid}", s.patchMember)
-	api.HandleFunc("DELETE /v1/tenants/{tid}/members/{uid}", s.removeMember)
-	api.HandleFunc("GET /v1/tenants/{tid}/apps", s.listTenantApps)
-	api.HandleFunc("PUT /v1/tenants/{tid}/apps/{app}", s.enableApp)
-	api.HandleFunc("DELETE /v1/tenants/{tid}/apps/{app}", s.disableApp)
-	api.HandleFunc("GET /v1/tenants/{tid}/grants", s.listGrants)
-	api.HandleFunc("POST /v1/tenants/{tid}/grants", s.createGrant)
-	api.HandleFunc("DELETE /v1/tenants/{tid}/grants/{id}", s.revokeGrant)
-	api.HandleFunc("GET /v1/tenants/{tid}/placements", s.listPlacements)
-	api.HandleFunc("GET /v1/tenants/{tid}/invitations", s.listInvitations)
-	api.HandleFunc("POST /v1/tenants/{tid}/invitations", s.createInvitation)
-	api.HandleFunc("POST /v1/tenants/{tid}/invitations/{id}", s.invitationAction) // {id}:resend
-	api.HandleFunc("DELETE /v1/tenants/{tid}/invitations/{id}", s.revokeInvitation)
-	api.HandleFunc("POST /v1/invitations:accept", s.acceptInvitation)
-	api.HandleFunc("GET /v1/apps", s.listApps)
-	api.HandleFunc("PUT /admin/v1/apps/{slug}", s.applyApp)
-	api.HandleFunc("GET /v1/apps/{slug}/roles", s.listRoles)
-	api.HandleFunc("POST /admin/v1/apps/{slug}/roles", s.createRole)
-	api.HandleFunc("PATCH /admin/v1/apps/{slug}/roles/{name}", s.patchRole)
-	api.HandleFunc("DELETE /admin/v1/apps/{slug}/roles/{name}", s.deleteRole)
-	api.HandleFunc("GET /admin/v1/plans", s.listPlans)
-	api.HandleFunc("PUT /admin/v1/plans/{id}", s.putPlan)
-	api.HandleFunc("GET /admin/v1/db-servers", s.listDBServers)
-	api.HandleFunc("POST /admin/v1/db-servers", s.createDBServer)
-	api.HandleFunc("PATCH /admin/v1/db-servers/{id}", s.patchDBServer)
-	api.HandleFunc("DELETE /admin/v1/db-servers/{id}", s.deleteDBServer)
-	api.HandleFunc("POST /admin/v1/db-servers/{id}/test", s.testDBServer)
+	s.handle(api, "GET /v1/me", s.getMe)
+	s.handle(api, "GET /v1/tenants", s.listTenants)
+	s.handle(api, "POST /v1/tenants", s.createTenant)
+	s.handle(api, "GET /v1/tenants/{tid}", s.getTenant)
+	s.handle(api, "PATCH /v1/tenants/{tid}", s.patchTenant)
+	s.handle(api, "DELETE /v1/tenants/{tid}", s.deleteTenant)
+	s.handle(api, "GET /v1/tenants/{tid}/workspaces", s.listWorkspaces)
+	s.handle(api, "POST /v1/tenants/{tid}/workspaces", s.createWorkspace)
+	s.handle(api, "PATCH /v1/tenants/{tid}/workspaces/{wid}", s.patchWorkspace)
+	s.handle(api, "GET /v1/tenants/{tid}/members", s.listMembers)
+	s.handle(api, "POST /v1/tenants/{tid}/members", s.addMember)
+	s.handle(api, "PATCH /v1/tenants/{tid}/members/{uid}", s.patchMember)
+	s.handle(api, "DELETE /v1/tenants/{tid}/members/{uid}", s.removeMember)
+	s.handle(api, "GET /v1/tenants/{tid}/apps", s.listTenantApps)
+	s.handle(api, "PUT /v1/tenants/{tid}/apps/{app}", s.enableApp)
+	s.handle(api, "DELETE /v1/tenants/{tid}/apps/{app}", s.disableApp)
+	s.handle(api, "GET /v1/tenants/{tid}/grants", s.listGrants)
+	s.handle(api, "POST /v1/tenants/{tid}/grants", s.createGrant)
+	s.handle(api, "DELETE /v1/tenants/{tid}/grants/{id}", s.revokeGrant)
+	s.handle(api, "GET /v1/tenants/{tid}/placements", s.listPlacements)
+	s.handle(api, "GET /v1/tenants/{tid}/invitations", s.listInvitations)
+	s.handle(api, "POST /v1/tenants/{tid}/invitations", s.createInvitation)
+	s.handle(api, "POST /v1/tenants/{tid}/invitations/{id}", s.invitationAction) // {id}:resend
+	s.handle(api, "DELETE /v1/tenants/{tid}/invitations/{id}", s.revokeInvitation)
+	s.handle(api, "POST /v1/invitations:accept", s.acceptInvitation)
+	s.handle(api, "GET /v1/apps", s.listApps)
+	s.handle(api, "PUT /admin/v1/apps/{slug}", s.applyApp)
+	s.handle(api, "GET /v1/apps/{slug}/roles", s.listRoles)
+	s.handle(api, "POST /admin/v1/apps/{slug}/roles", s.createRole)
+	s.handle(api, "PATCH /admin/v1/apps/{slug}/roles/{name}", s.patchRole)
+	s.handle(api, "DELETE /admin/v1/apps/{slug}/roles/{name}", s.deleteRole)
+	s.handle(api, "GET /admin/v1/plans", s.listPlans)
+	s.handle(api, "PUT /admin/v1/plans/{id}", s.putPlan)
+	s.handle(api, "GET /admin/v1/db-servers", s.listDBServers)
+	s.handle(api, "POST /admin/v1/db-servers", s.createDBServer)
+	s.handle(api, "PATCH /admin/v1/db-servers/{id}", s.patchDBServer)
+	s.handle(api, "DELETE /admin/v1/db-servers/{id}", s.deleteDBServer)
+	s.handle(api, "POST /admin/v1/db-servers/{id}/test", s.testDBServer)
 
-	api.HandleFunc("GET /v1/me/tenants", s.myTenants)
-	api.HandleFunc("GET /admin/v1/users", s.listUsers)
-	api.HandleFunc("GET /admin/v1/users/{uid}", s.getUser)
-	api.HandleFunc("PATCH /admin/v1/users/{uid}", s.patchUser)
-	api.HandleFunc("DELETE /admin/v1/users/{uid}", s.deleteUser)
-	api.HandleFunc("GET /admin/v1/apps/{slug}/secrets", s.listAppSecrets)
-	api.HandleFunc("POST /admin/v1/apps/{slug}/secrets", s.createAppSecret)
-	api.HandleFunc("DELETE /admin/v1/apps/{slug}/secrets/{id}", s.revokeAppSecret)
-	api.HandleFunc("GET /admin/v1/apps/{slug}/webhooks", s.listWebhooks)
-	api.HandleFunc("POST /admin/v1/apps/{slug}/webhooks", s.createWebhook)
-	api.HandleFunc("PATCH /admin/v1/apps/{slug}/webhooks/{id}", s.patchWebhook)
-	api.HandleFunc("DELETE /admin/v1/apps/{slug}/webhooks/{id}", s.deleteWebhook)
-	api.HandleFunc("POST /admin/v1/apps/{slug}/webhooks/{id}/test", s.testWebhook)
+	s.handle(api, "GET /v1/me/tenants", s.myTenants)
+	s.handle(api, "GET /admin/v1/users", s.listUsers)
+	s.handle(api, "GET /admin/v1/users/{uid}", s.getUser)
+	s.handle(api, "PATCH /admin/v1/users/{uid}", s.patchUser)
+	s.handle(api, "DELETE /admin/v1/users/{uid}", s.deleteUser)
+	s.handle(api, "GET /admin/v1/apps/{slug}/secrets", s.listAppSecrets)
+	s.handle(api, "POST /admin/v1/apps/{slug}/secrets", s.createAppSecret)
+	s.handle(api, "DELETE /admin/v1/apps/{slug}/secrets/{id}", s.revokeAppSecret)
+	s.handle(api, "GET /admin/v1/apps/{slug}/webhooks", s.listWebhooks)
+	s.handle(api, "POST /admin/v1/apps/{slug}/webhooks", s.createWebhook)
+	s.handle(api, "PATCH /admin/v1/apps/{slug}/webhooks/{id}", s.patchWebhook)
+	s.handle(api, "DELETE /admin/v1/apps/{slug}/webhooks/{id}", s.deleteWebhook)
+	s.handle(api, "POST /admin/v1/apps/{slug}/webhooks/{id}/test", s.testWebhook)
 
 	// app backends, authenticated with their client id and secret (contract §7, technical specification §4)
 	appAPI := http.NewServeMux()
-	appAPI.HandleFunc("GET /v1/apps/{app}/changes", s.appChanges)
-	appAPI.HandleFunc("GET /v1/apps/{app}/snapshot", s.appSnapshot)
-	appAPI.HandleFunc("GET /v1/apps/{app}/placements/{tid}", s.appGetPlacement)
-	appAPI.HandleFunc("PUT /v1/apps/{app}/placements/{tid}", s.appPutPlacement)
-	appAPI.HandleFunc("POST /v1/apps/{app}/placements/{tid}", s.appPlacementAction) // {tid}:ready, {tid}:deleted
-	appAPI.HandleFunc("POST /v1/apps/{app}/placements/{tid}/credentials", s.appPlacementCredentials)
+	s.handle(appAPI, "GET /v1/apps/{app}/changes", s.appChanges)
+	s.handle(appAPI, "GET /v1/apps/{app}/snapshot", s.appSnapshot)
+	s.handle(appAPI, "GET /v1/apps/{app}/placements/{tid}", s.appGetPlacement)
+	s.handle(appAPI, "PUT /v1/apps/{app}/placements/{tid}", s.appPutPlacement)
+	s.handle(appAPI, "POST /v1/apps/{app}/placements/{tid}", s.appPlacementAction) // {tid}:ready, {tid}:deleted
+	s.handle(appAPI, "POST /v1/apps/{app}/placements/{tid}/credentials", s.appPlacementCredentials)
 
 	authed := s.authenticate(s.idempotent(api), s.idempotent(appAPI))
 	mux.Handle("/v1/", authed)
 	mux.Handle("/admin/v1/", authed)
 	for _, rt := range s.internalRoutes {
-		mux.HandleFunc(rt.pattern, rt.handler)
+		s.handle(mux, rt.pattern, rt.handler)
 	}
 	return mux
 }
@@ -130,6 +132,25 @@ func (s *Server) Handler() http.Handler {
 type route struct {
 	pattern string
 	handler http.HandlerFunc
+}
+
+// handle registers h on mux and records the pattern for Routes.
+func (s *Server) handle(mux *http.ServeMux, pattern string, h http.HandlerFunc) {
+	s.routes = append(s.routes, pattern)
+	mux.HandleFunc(pattern, h)
+}
+
+// Routes returns every "METHOD /path" pattern maturad serves, as registered with http.ServeMux. The /internal/v1
+// routes are listed even when EnableInternal has not turned them on. It builds the handler to find them.
+func (s *Server) Routes() []string {
+	s.Handler()
+	out := append([]string(nil), s.routes...)
+	if len(s.internalRoutes) == 0 {
+		for _, rt := range s.internalHandlers() {
+			out = append(out, rt.pattern)
+		}
+	}
+	return out
 }
 
 func (s *Server) ready(w http.ResponseWriter, r *http.Request) {

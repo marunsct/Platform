@@ -30,7 +30,14 @@ func (s *Server) EnableInternal(token string) {
 			h(w, r)
 		}
 	}
-	s.internalRoutes = append(s.internalRoutes, route{"POST /internal/v1/token-context", guard(s.tokenContext)})
+	for _, rt := range s.internalHandlers() {
+		s.internalRoutes = append(s.internalRoutes, route{rt.pattern, guard(rt.handler)})
+	}
+}
+
+// internalHandlers lists the /internal/v1 routes, unguarded; EnableInternal serves them behind the token.
+func (s *Server) internalHandlers() []route {
+	return []route{{"POST /internal/v1/token-context", s.tokenContext}}
 }
 
 // tokenContext answers the Keycloak mapper: the tenant, workspace, roles and permissions to put in a token.

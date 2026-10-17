@@ -48,7 +48,7 @@ self-hosted, open standards, nothing phones home).
   (`keycloak/extensions`, `make keycloak-ext`); realm client `agentcanvas` with the mapper on the client (not a realm client scope: listing scopes in the import drops Keycloak's built-in `basic`, `profile`, `email`, `web-origins`); Python SDK
   (`sdk/python`, `uv run pytest` there; Postgres too with `MATURA_TEST_DATABASE_URL`); shared test vectors;
   `scripts/e2e_python_sdk.py` (passes against a local maturad).
-- **Left in TS2:** OpenAPI document (`api/openapi.yaml`).
+- **OpenAPI:** `api/openapi.yaml` covers every route; `TestOpenAPIMatchesRoutes` keeps it in step with the router.
 - **AgentCanvas on Matura (TS9a), 2026-10-17:** draft marunsct/AgentCanvas#49 (v0.27.0, branch
   `claude/project-thread-nhbr1g`): `AGENTCANVAS_AUTH_MODE=matura`, permissions `canvas.read`/`inbox.review`/
   `workflow.build`/`org.admin` mapped onto its four roles, webhooks at `/v1/matura/events`, change feed, vendored SDK,

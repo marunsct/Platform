@@ -40,7 +40,7 @@ Ordered so that each step is testable without the next one.
 
 | # | Slice | Sprint | Builds | Done when |
 |---|---|---|---|---|
-| 1 | Finish the control plane | TS2 | `/v1/me`, `/v1/me/tenants`, operator user endpoints, `api/openapi.yaml` covering every route | OpenAPI lints and every route in the router appears in it (test) |
+| 1 | Finish the control plane (built 2026-10-17) | TS2 | `/v1/me`, `/v1/me/tenants`, operator user endpoints, `api/openapi.yaml` covering every route | OpenAPI lints and every route in the router appears in it (test) |
 | 2 | App credentials and change feed | TS7c | app API clients (client id + secret, hashed), `GET /v1/apps/{app}/changes` and `/snapshot`, per-app event filtering | an app reads only tenants that enabled it, in commit order, from a cursor |
 | 3 | Webhooks | TS7c | webhook endpoints per app, outbox relay with one leader (`pg_try_advisory_lock`), signed delivery (`Matura-Signature`), backoff for 24 h, test endpoint | a receiver that is down for a while gets every event once it is back; signatures verify |
 | 4 | Data placement (built 2026-10-17) | TS7b | placement API (`GET`, app-managed `PUT`, `:ready`, `:deleted`, credentials), provisioner for `shared`, `schema` and `database` on registered servers, deletion | the provisioner creates all three on the test Postgres and one tenant's role cannot read another's schema or database |
