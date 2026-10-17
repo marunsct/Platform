@@ -73,6 +73,9 @@ export function ddl(dialect: Dialect, opts: { rls?: boolean } = {}): string[] {
 
 type Params = Record<string, unknown>;
 
+/** Once a placement is applied, data_mode is the placement's (it has its own version), not the tenant's default. */
+const KEEP_PLACED_MODE = { data_mode: "CASE WHEN t.placement_version > 0 THEN t.data_mode ELSE excluded.data_mode END" };
+
 /** Turn `:name` placeholders into the dialect's positional ones. */
 function compile(pg: boolean, sql: string, named: Params): Statement {
   const params: unknown[] = [];
@@ -148,9 +151,9 @@ export class Contract {
     return compile(this.d.pg, sql, named);
   }
 
-  private upsert(table: string, key: string[], cols: Params): Statement {
+  private upsert(table: string, key: string[], cols: Params, setsOverride: Record<string, string> = {}): Statement {
     const names = Object.keys(cols);
-    const sets = names.filter((c) => !key.includes(c)).map((c) => `${c} = excluded.${c}`).join(", ");
+    const sets = names.filter((c) => !key.includes(c)).map((c) => `${c} = ${setsOverride[c] ?? `excluded.${c}`}`).join(", ");
     return this.q(
       `INSERT INTO ${table} AS t (${names.join(", ")}) VALUES (${names.map((c) => ":" + c).join(", ")}) ` +
         `ON CONFLICT (${key.join(", ")}) DO UPDATE SET ${sets} WHERE t.version < excluded.version`,
@@ -201,7 +204,7 @@ export class Contract {
           id: d.id(r("id")), slug: r("slug"), name: r("name"), kind: p["kind"] ?? "company", status: r("status"),
           plan: opt(p["plan"]), data_mode: p["data_mode"] || p["data_mode_default"] || "shared",
           version, updated_at: d.ts(p["updated_at"]),
-        })];
+        }, KEEP_PLACED_MODE)];
       case "workspace":
         return [this.tenantStub(r("tenant_id")), this.upsert("matura_workspace", ["id"], {
           id: d.id(r("id")), tenant_id: d.id(p["tenant_id"]), name: r("name"), status: r("status"),
@@ -255,10 +258,12 @@ export class Contract {
         }));
         return out;
       }
-      case "placement":
-        return [this.q("UPDATE matura_tenant SET data_mode = :mode WHERE id = :id", {
-          mode: r("mode"), id: d.id(r("tenant_id")),
-        })];
+      case "placement": // versioned on its own: matura_tenant.placement_version
+        return [this.tenantStub(r("tenant_id")), this.q(
+          "UPDATE matura_tenant SET data_mode = :mode, placement_version = :version " +
+            "WHERE id = :id AND placement_version < :version",
+          { mode: r("mode"), version, id: d.id(r("tenant_id")) },
+        )];
       default:
         return []; // tenant_app, app_manifest, ping: hooks only
     }
