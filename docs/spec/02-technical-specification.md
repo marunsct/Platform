@@ -119,13 +119,14 @@ that mode unless `MATURA_ENV=development`.
 | Apps | `PUT /admin/v1/apps/{slug}` (apply manifest), `GET /v1/apps`, `GET /v1/tenants/{tid}/apps`, `PUT/DELETE /v1/tenants/{tid}/apps/{app}` |
 | App roles | `GET /v1/apps/{slug}/roles`; operators: `POST /admin/v1/apps/{slug}/roles`, `PATCH/DELETE /admin/v1/apps/{slug}/roles/{name}` (RL-8 to RL-11) |
 | Grants | `GET/POST /v1/tenants/{tid}/grants`, `DELETE …/{id}` |
-| Users | `GET /v1/me`, `GET /v1/me/tenants`, `GET/PATCH/DELETE /admin/v1/users/{uid}` |
+| Users | `GET /v1/me`, `GET /v1/me/tenants`, `GET /v1/me/export`, `DELETE /v1/me` (§14.2), `GET/PATCH/DELETE /admin/v1/users/{uid}` |
 | Database servers | `POST/GET /admin/v1/db-servers`, `PATCH/DELETE …/{id}`, `POST …/{id}/test` |
 | Placements | `GET /v1/tenants/{tid}/placements`; app: `GET /v1/apps/{app}/placements/{tid}`, `PUT` (app-managed register), `POST …:ready`, `POST …:deleted`; app: `POST /v1/apps/{app}/placements/{tid}/credentials` (short-lived connection) |
 | Sync | `GET /v1/apps/{app}/changes`, `GET /v1/apps/{app}/snapshot?tenant=` |
 | Webhooks | `POST/GET /admin/v1/apps/{app}/webhooks`, `PATCH/DELETE …/{id}`, `POST …/{id}/test` |
 | Audit | `GET /v1/tenants/{tid}/audit`, `GET …/audit/export` (NDJSON), `GET …/audit:verify`, `GET/POST …/audit/sinks`, `PATCH/DELETE …/audit/sinks/{id}`; operators: `GET /admin/v1/audit`, `GET /admin/v1/audit:verify` (§13) |
 | Security policy | `GET/PUT /v1/tenants/{tid}/security-policy` (§13.4) |
+| Privacy | `GET/POST /v1/tenants/{tid}/exports`, `GET …/exports/{id}`, `GET …/exports/{id}/download` (§14.1); `GET/PUT /v1/tenants/{tid}/retention` (§14.4) |
 | Internal (Keycloak) | `POST /internal/v1/token-context` `{user_id, email, email_verified, name, locale, client_id, tenant, workspace}` → claims for the mapper, or `403 {error: access_denied, error_description}`; bearer `MATURA_INTERNAL_TOKEN` |
 | Health | `GET /healthz/live`, `GET /healthz/ready` |
 
@@ -421,6 +422,7 @@ internal/secrets/       KeyManager, AES-GCM envelope
 internal/placement/     provisioner (TS7b)
 internal/events/        outbox relay, webhooks, feed (TS7c)
 internal/audit/         audit streaming to tenant destinations (TS9)
+internal/privacy/       tenant exports and audit retention worker (TS17)
 keycloak/realm/         realm-as-code
 keycloak/extensions/    Java SPIs (TS5)
 internal/portal/        embedded portal build and its handler (TS8)
@@ -471,8 +473,10 @@ api/openapi.yaml
 - **Verify** (`GET …/audit:verify`, operators `GET /admin/v1/audit:verify?tenant=`) walks the chain in `seq` order,
   recomputes each hash, checks `prev_hash` links and that no position is missing, and that the last event matches
   the head (a removed tail). It answers `{ok, events, head_seq, head_hash, first_break: {seq, id, reason} | null}`.
-- Not yet: signed hourly checkpoints anchored to WORM storage or a transparency log (doc 07 §3), retention and
-  legal hold, and pseudonymising a deleted user's email in old events.
+- Verification starts at the chain's **anchor** (`audit_chain.anchor_seq`/`anchor_hash`; the genesis until
+  retention first purges, §14.4) and answers `anchor_seq` and `anchor_hash` too. It reads the stored events, never
+  the pseudonymised view (§14.3).
+- Not yet: signed hourly checkpoints anchored to WORM storage or a transparency log (doc 07 §3).
 
 ### 13.3 Reading, export and streaming
 
@@ -508,3 +512,86 @@ tenant's policy for 5 s (cleared at once on the replica that took the `PUT`). Ch
 
 Session listing and revocation need Keycloak's admin API and come with TS12.
 
+## 14. Privacy: export, erasure, retention (TS17)
+
+The parts of TS17 that need no key service. OpenBao transit keys per tenant, SDK field encryption,
+customer-managed keys and crypto-shredding are not built yet; until they are, erasure in the audit log is a
+pseudonymised view (§14.3), not destruction of the stored bytes.
+
+### 14.1 Tenant data export
+
+- `POST /v1/tenants/{tid}/exports` (owners and operators; admins get 403) queues a `tenant_export` row
+  (forced RLS, one `queued` or `running` export per tenant, 409 otherwise) and records `tenant_export.requested`.
+- The **privacy worker** (`internal/privacy`, one active replica, advisory lock 7351008) claims queued exports
+  (`FOR UPDATE SKIP LOCKED`; one left `running` for 15 minutes is taken again), reads the tenant in a single
+  repeatable-read, read-only transaction in the tenant's scope and stores the bundle in the row (`bytea`, at most
+  `store.MaxExportBytes`, 64 MiB; a larger one fails with a message pointing at the audit NDJSON export).
+  Success and failure are audited (`tenant_export.completed`, `tenant_export.failed`).
+- The bundle (`format: matura.tenant-export/v1`) holds `tenant`, `workspaces` (not deleted), `members` (not
+  removed), `invitations`, active `grants` and the app `roles` they use, `placements` (never credentials),
+  `security_policy`, `retention`, and `audit`: `{anchor_seq, anchor_hash, head_seq, head_hash, events}`, the chain
+  from its anchor, each event with `prev_hash` and `hash`, so the receiver can check it. Each section is the same
+  JSON the API returns for it (`TestTenantExport` compares them).
+- `GET …/exports/{id}` shows `state` (`queued`, `running`, `ready`, `failed`, `expired`), `size_bytes`, `sha256`
+  and `expires_at`. `GET …/exports/{id}/download` serves a ready bundle with `Matura-Export-SHA256`, records
+  `tenant_export.downloaded` each time, and works for `store.ExportTTL` (24 h); then the worker deletes the bundle
+  and the download answers 410 `export-expired`.
+
+### 14.2 A user's own data: export and erasure
+
+- `GET /v1/me/export` (`format: matura.user-export/v1`): the profile, memberships in every tenant in any state
+  (with tenant slug and name), app role grants active and revoked, invitations to the user's address or accepted
+  by them, and the audit events whose actor is the user (newest 50 000, `truncated` beyond). It reads with
+  installation scope because the data spans tenants; every query is filtered to the user. Recorded as
+  `user.exported` in the installation chain.
+- `DELETE /v1/me` and the operator's `DELETE /admin/v1/users/{uid}` run the same erasure (`store.DeleteUser`), in
+  one transaction:
+  1. If the user is the only active owner of any tenant, nothing changes: 409 `last-owner` with `tenants` (ids).
+  2. Each membership ends (`membership.removed`, without email and name) and the user's grants in it are revoked
+     (`grant.revoked`): contract events, so apps remove the user.
+  3. Pending invitations to the address are revoked (`invitation.revoked`); every invitation row to it gets the
+     pseudonym as its address and loses `deliver_to`; mail queued or sent to the address is deleted.
+  4. `audit_redaction` gets a row (§14.3).
+  5. `app_user` keeps its id (apps' foreign keys stay valid) with email, name, avatar and locale cleared and status
+     `deleted` (`user.deleted`). An old token never brings it back.
+- Then maturad deletes the sign-in account through the `api.UserDirectory` interface (`DeleteUser(ctx, id)`),
+  when one is configured with `Server.SetUserDirectory`; nil skips it. A failure is logged and recorded as
+  `user.directory_delete_failed`; the erasure in Matura stands. maturad does not wire a Keycloak implementation yet.
+
+### 14.3 Pseudonymising erased users in the audit log
+
+Audit events are hashed and append-only, so erasure cannot edit them without breaking the chain. Instead:
+
+- `audit_redaction` (installation-wide) keeps per erased user the pseudonym `deleted-user-<first 12 hex of
+  SHA-256 of the user id>` and SHA-256 hashes of the lower-cased email and name, never the values.
+- Every reader except verification applies it: the list, the NDJSON export, streaming to destinations, the tenant
+  export. The actor's email becomes the pseudonym when the actor is the user or the email is theirs; any string in
+  `data` equal to their email is replaced in every event; their name is replaced in events about them (they are the
+  actor, or their id is in the target or the data). Such an event carries `redacted: true`; its `hash` is the
+  stored one, so it no longer recomputes from the fields shown, but the next event's `prev_hash` still links to it.
+  External verifiers check links for redacted events and hashes for the rest.
+- Searching the log by an erased user's old address finds nothing.
+- Verification reads the stored rows, so every chain still verifies after erasure (`TestUserDataRights`).
+- Limit: the stored rows still contain the address and name, readable only by the database owner or a superuser,
+  until retention purges them (§14.4). Removing them sooner needs per-field commitments or crypto-shredding
+  (planned with OpenBao in TS17's key work). This is the Art. 17(3)(b)/(e) record-keeping position; operators
+  should say so in their records of processing.
+
+### 14.4 Audit retention and legal hold
+
+- `audit_retention` (one row per tenant, forced RLS; absent means 400 days, no hold, version 0).
+  `GET /v1/tenants/{tid}/retention` (owners and admins) answers it with the chain's `anchor_seq`;
+  `PUT` (owners and operators, `If-Match` optional) sets `retention_days` (30–3650) and `legal_hold` with a
+  required `legal_hold_reason`; recorded as `audit_retention.updated` with before and after.
+- The privacy worker runs retention hourly for every tenant chain through `matura_audit_purge(tenant)`, a
+  `SECURITY DEFINER` function owned by the migration role (the runtime role has no DELETE on `audit_event`; a
+  DELETE policy exists for the owner only). The function decides what may go: nothing under legal hold;
+  otherwise the longest prefix of the chain older than the retention (it stops before the first event still
+  inside it), never another tenant's (the argument must be the transaction's tenant). It deletes the prefix and
+  sets the chain's anchor to the last purged event's `seq` and `hash`; maturad then records `audit.purged`
+  (`purged`, `anchor_seq`, `anchor_hash`) in the same chain.
+- A trigger on `audit_chain` refuses any change of the anchor except by the owner role, so the runtime role cannot
+  hide events from verification by moving it.
+- Verification and exports start at the anchor: the first remaining event's `prev_hash` must equal `anchor_hash`
+  (`TestAuditRetention`). Installation events (no tenant) are not purged yet; archive tiers (doc 07: 7 years) come
+  with the backup module.

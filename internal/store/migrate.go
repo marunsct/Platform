@@ -73,6 +73,8 @@ func Migrate(ctx context.Context, conn *pgx.Conn, runtimeRole string) error {
 		`REVOKE ALL ON schema_migrations FROM ` + role,
 		// the audit log is append-only (technical specification §13)
 		`REVOKE UPDATE, DELETE, TRUNCATE ON audit_event FROM ` + role,
+		// retention deletes only through this function, which decides what may go (§14.4)
+		`GRANT EXECUTE ON FUNCTION matura_audit_purge(uuid) TO ` + role,
 		`GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO ` + role,
 	} {
 		if _, err := conn.Exec(ctx, stmt); err != nil {

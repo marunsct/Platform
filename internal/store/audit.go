@@ -57,6 +57,10 @@ type AuditEvent struct {
 	Data      json.RawMessage `json:"data"`
 	PrevHash  string          `json:"prev_hash"` // hex
 	Hash      string          `json:"hash"`      // hex
+	// Redacted marks an event shown with an erased user's email or name replaced by their pseudonym (§14.3): its
+	// Hash is the stored event's, so it no longer recomputes from the fields shown, but the next event still links
+	// to it.
+	Redacted bool `json:"redacted,omitempty"`
 }
 
 type AuditActor struct {
@@ -285,12 +289,22 @@ func (s *Store) ListAudit(ctx context.Context, sc Scope, q AuditQuery) ([]AuditE
 	args = append(args, AuditLimit(q.Limit))
 	var out []AuditEvent
 	err := s.tx(ctx, sc, func(tx pgx.Tx) error {
+		red, err := loadRedactor(ctx, tx)
+		if err != nil {
+			return err
+		}
+		if _, ok := red.email(q.Actor); ok { // an erased user cannot be found by their old address
+			return nil
+		}
 		rows, err := tx.Query(ctx, `SELECT `+auditCols+` FROM audit_event WHERE `+where+
 			` ORDER BY id DESC LIMIT $`+strconv.Itoa(len(args)), args...)
 		if err != nil {
 			return err
 		}
 		out, err = pgx.CollectRows(rows, func(r pgx.CollectableRow) (AuditEvent, error) { return scanAudit(r) })
+		for i := range out {
+			red.event(&out[i])
+		}
 		return err
 	})
 	return out, err
@@ -332,30 +346,47 @@ func (q AuditQuery) where() (string, []any) {
 }
 
 // AuditChain returns a tenant's events (uuid.Nil: installation events) with seq after `after`, oldest first, for
-// export, verification and streaming. From and To in q narrow it by time.
+// export and streaming, with erased users pseudonymised. From and To narrow it by time.
 func (s *Store) AuditChain(ctx context.Context, sc Scope, tenantID uuid.UUID, after int64, limit int, from, to *time.Time) ([]AuditEvent, error) {
+	return s.auditChain(ctx, sc, tenantID, after, limit, from, to, true)
+}
+
+func (s *Store) auditChain(ctx context.Context, sc Scope, tenantID uuid.UUID, after int64, limit int, from, to *time.Time, redact bool) ([]AuditEvent, error) {
 	var out []AuditEvent
 	if tenantID != uuid.Nil {
 		sc = sc.InTenant(tenantID)
 	}
-	err := s.tx(ctx, sc, func(tx pgx.Tx) error {
-		rows, err := tx.Query(ctx, `SELECT `+auditCols+` FROM audit_event
-			WHERE coalesce(tenant_id, '00000000-0000-0000-0000-000000000000') = $1 AND seq > $2
-			AND ($4::timestamptz IS NULL OR time >= $4) AND ($5::timestamptz IS NULL OR time < $5)
-			ORDER BY seq LIMIT $3`, tenantID, after, limit, from, to)
-		if err != nil {
+	err := s.tx(ctx, sc, func(tx pgx.Tx) (err error) {
+		out, err = chainPage(ctx, tx, tenantID, after, limit, from, to)
+		if err != nil || !redact {
 			return err
 		}
-		out, err = pgx.CollectRows(rows, func(r pgx.CollectableRow) (AuditEvent, error) { return scanAudit(r) })
+		red, err := loadRedactor(ctx, tx)
+		for i := range out {
+			red.event(&out[i])
+		}
 		return err
 	})
 	return out, err
+}
+
+func chainPage(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, after int64, limit int, from, to *time.Time) ([]AuditEvent, error) {
+	rows, err := tx.Query(ctx, `SELECT `+auditCols+` FROM audit_event
+		WHERE coalesce(tenant_id, '00000000-0000-0000-0000-000000000000') = $1 AND seq > $2
+		AND ($4::timestamptz IS NULL OR time >= $4) AND ($5::timestamptz IS NULL OR time < $5)
+		ORDER BY seq LIMIT $3`, tenantID, after, limit, from, to)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (AuditEvent, error) { return scanAudit(r) })
 }
 
 // AuditVerification is the result of recomputing a chain.
 type AuditVerification struct {
 	OK         bool        `json:"ok"`
 	Events     int64       `json:"events"`
+	AnchorSeq  int64       `json:"anchor_seq"` // events up to here were purged by retention; checking starts after
+	AnchorHash string      `json:"anchor_hash"`
 	HeadSeq    int64       `json:"head_seq"`
 	HeadHash   string      `json:"head_hash"`
 	FirstBreak *AuditBreak `json:"first_break"`
@@ -367,17 +398,19 @@ type AuditBreak struct {
 	Reason string `json:"reason"`
 }
 
-// VerifyAudit recomputes every hash in the chain, checks each event links to the one before, that no position is
-// missing, and that the chain ends at the recorded head. It reports the first break.
+// VerifyAudit recomputes every hash in the chain from its anchor (the genesis, or the last event retention purged),
+// checks each event links to the one before, that no position is missing, and that the chain ends at the recorded
+// head. It reports the first break. It reads the stored events, never the pseudonymised ones.
 func (s *Store) VerifyAudit(ctx context.Context, sc Scope, tenantID uuid.UUID) (AuditVerification, error) {
 	var out AuditVerification
-	var head []byte
+	var head, anchor []byte
 	hsc := sc
 	if tenantID != uuid.Nil {
 		hsc = sc.InTenant(tenantID)
 	}
 	err := s.tx(ctx, hsc, func(tx pgx.Tx) error {
-		err := tx.QueryRow(ctx, `SELECT seq, hash FROM audit_chain WHERE chain = $1`, tenantID).Scan(&out.HeadSeq, &head)
+		err := tx.QueryRow(ctx, `SELECT seq, hash, anchor_seq, anchor_hash FROM audit_chain WHERE chain = $1`, tenantID).
+			Scan(&out.HeadSeq, &head, &out.AnchorSeq, &anchor)
 		if errors.Is(err, pgx.ErrNoRows) {
 			head = genesis
 			return nil
@@ -387,13 +420,16 @@ func (s *Store) VerifyAudit(ctx context.Context, sc Scope, tenantID uuid.UUID) (
 	if err != nil {
 		return out, err
 	}
-	out.HeadHash = hex.EncodeToString(head)
-	prev, last := hex.EncodeToString(genesis), int64(0)
+	if out.AnchorSeq == 0 || len(anchor) == 0 {
+		out.AnchorSeq, anchor = 0, genesis
+	}
+	out.HeadHash, out.AnchorHash = hex.EncodeToString(head), hex.EncodeToString(anchor)
+	prev, last := out.AnchorHash, out.AnchorSeq
 	brk := func(seq, id int64, reason string) {
 		out.FirstBreak = &AuditBreak{Seq: seq, ID: id, Reason: reason}
 	}
 	for out.FirstBreak == nil && last < out.HeadSeq {
-		page, err := s.AuditChain(ctx, sc, tenantID, last, 1000, nil, nil)
+		page, err := s.auditChain(ctx, sc, tenantID, last, 1000, nil, nil, false)
 		if err != nil {
 			return out, err
 		}
