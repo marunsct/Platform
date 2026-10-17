@@ -3,6 +3,9 @@
 ## Unreleased
 
 ### Added
+- TypeScript SDK `@matura/sdk` (sdk/typescript, no runtime dependencies): token verification, `Principal`, webhook
+  signatures, contract tables with the version rule, change feed and placement client, framework-agnostic HTTP
+  helpers and a fake issuer; runs the shared test vectors.
 - `matura-conformance` (`cmd/matura-conformance`, `internal/conformance`): a black-box checker for any app. It runs a
   test issuer, seeds two tenants with signed events, and checks token refusals, permissions, tenant isolation through
   the app's own API (manifest `conformance` section) and webhook signature handling (docs/guide/conformance.md).

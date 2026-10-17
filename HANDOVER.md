@@ -63,7 +63,11 @@ self-hosted, open standards, nothing phones home).
   extension, maturad (OIDC) and Mailpit: owner invites, invitee signs up on the accept page, verifies email, joins
   with the invited AgentCanvas role, and the AgentCanvas token carries `tid`, `roles`, `perms`.
 - **Conformance kit, 2026-10-17:** `matura-conformance` with a sample notes app in its tests (honest passes all 21 checks; each leak fails its check). Not yet checked: feed catch-up, version ordering, `tenant-not-ready`.
-- **Next:** doc 21 §3: any-language kit
+- **TypeScript SDK, 2026-10-17:** `sdk/typescript` (`npm test`: 67 tests incl. all vectors on node:sqlite; Postgres
+  dialect not yet run against a server). Known gap in both SDKs: placement events set `data_mode` without a version
+  check, so a late replay of an older placement could overwrite a newer mode.
+- **Next:** run `matura-conformance` against AgentCanvas (add a `conformance` section to its manifest), Go SDK, then M2.
+- **Was next:** doc 21 §3: any-language kit
   (TS7e: OpenAPI, TypeScript SDK, conformance CLI, contract SQL for other databases).
 - `main` holds LICENSE, SECURITY.md, CONTRIBUTING.md.
 
