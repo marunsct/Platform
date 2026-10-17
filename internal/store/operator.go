@@ -44,6 +44,9 @@ func (s *Store) PutPlan(ctx context.Context, sc Scope, p Plan) (Plan, error) {
 	if len(p.Limits) == 0 {
 		p.Limits = json.RawMessage(`{}`)
 	}
+	if _, err := ParseLimits(p.Limits); err != nil {
+		return Plan{}, err
+	}
 	var out Plan
 	err := s.tx(ctx, sc, func(tx pgx.Tx) error {
 		return mapErr(tx.QueryRow(ctx, `INSERT INTO plan (id, name, data_mode_required, data_mode_default, limits)

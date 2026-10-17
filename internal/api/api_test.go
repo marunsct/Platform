@@ -135,6 +135,8 @@ func TestCrossTenant(t *testing.T) {
 	inv := alice.must(http.StatusCreated, "POST", "/v1/tenants/"+aid+"/invitations",
 		map[string]any{"email": "carol@example.test"})
 	iid := inv["id"].(string)
+	sid := op.must(http.StatusCreated, "POST", "/admin/v1/tenants/"+aid+"/support-access",
+		map[string]any{"reason": "ticket", "duration_minutes": 10})["id"].(string)
 
 	routes := []struct {
 		method, path string
@@ -160,6 +162,11 @@ func TestCrossTenant(t *testing.T) {
 		{"POST", "/v1/tenants/" + aid + "/invitations", map[string]any{"email": "x@example.test"}},
 		{"POST", "/v1/tenants/" + aid + "/invitations/" + iid + ":resend", nil},
 		{"DELETE", "/v1/tenants/" + aid + "/invitations/" + iid, nil},
+		{"POST", "/v1/tenants/" + aid + ":restore", nil},
+		{"GET", "/v1/tenants/" + aid + "/entitlements", nil},
+		{"GET", "/v1/tenants/" + aid + "/support-access", nil},
+		{"POST", "/v1/tenants/" + aid + "/support-access/" + sid + ":approve", nil},
+		{"POST", "/v1/tenants/" + aid + "/support-access/" + sid + ":revoke", nil},
 	}
 	for _, rt := range routes {
 		if got, out := bob.do(rt.method, rt.path, rt.body); got != http.StatusNotFound {

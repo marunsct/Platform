@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 )
 
 type Config struct {
@@ -28,6 +29,7 @@ type Config struct {
 	SMTPFrom           string
 	SMTPUser           string
 	SMTPPassword       string
+	DeleteGrace        time.Duration // how long a deleted tenant can be restored; default 30 days
 }
 
 func getenv(key, def string) string {
@@ -59,6 +61,12 @@ func FromEnv() (Config, error) {
 		SMTPUser:           os.Getenv("MATURA_SMTP_USER"),
 		SMTPPassword:       os.Getenv("MATURA_SMTP_PASSWORD"),
 	}
+	grace := getenv("MATURA_TENANT_DELETE_GRACE", "720h")
+	d, err := time.ParseDuration(grace)
+	if err != nil || d < 0 {
+		return c, fmt.Errorf("MATURA_TENANT_DELETE_GRACE must be a duration such as 720h (30 days), got %q", grace)
+	}
+	c.DeleteGrace = d
 	return c, c.Validate()
 }
 

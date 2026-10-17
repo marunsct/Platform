@@ -21,6 +21,7 @@ import (
 	"github.com/marunsct/Platform/internal/api"
 	"github.com/marunsct/Platform/internal/config"
 	"github.com/marunsct/Platform/internal/events"
+	"github.com/marunsct/Platform/internal/lifecycle"
 	"github.com/marunsct/Platform/internal/mail"
 	"github.com/marunsct/Platform/internal/placement"
 	"github.com/marunsct/Platform/internal/secrets"
@@ -100,10 +101,13 @@ func run(log *slog.Logger) error {
 	go relay.Run(ctx)
 	provisioner := &placement.Provisioner{Store: st, Keys: keys, Log: log}
 	go provisioner.Run(ctx)
+	purger := &lifecycle.Purger{Store: st, Log: log}
+	go purger.Run(ctx)
 
 	server := api.New(st, auth, keys, log)
 	server.SetSource(cfg.EventSource)
 	server.EnableInternal(cfg.InternalToken)
+	server.SetDeletionGrace(cfg.DeleteGrace)
 	server.SetInvitations(api.Invitations{AcceptURL: cfg.InviteAcceptURL, PublicURL: cfg.PublicURL,
 		Issuer: cfg.Issuer, ClientID: cfg.PortalClientID})
 	if cfg.SMTPAddr != "" {

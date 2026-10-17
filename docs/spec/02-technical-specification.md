@@ -49,7 +49,8 @@ with it, and `FORCE ROW LEVEL SECURITY` with the policy below. `maturad` connect
 migrations run as `matura_owner`.
 
 ```
-tenant(id, slug UNIQUE, name, kind, status, plan, data_mode_default, home_region, version, created_at, updated_at)
+tenant(id, slug UNIQUE, name, kind, status, plan, data_mode_default, home_region, status_reason, purge_after,
+       restore_status, entitlement_overrides jsonb, support_access approval|allowed|off, version, created_at, updated_at)
 workspace(id, tenant_id → tenant, name, status, is_default, version, …)          UNIQUE(tenant_id, id)
 app_user(id = keycloak id, email UNIQUE (citext), email_verified, display_name, avatar_url, locale,
          kind, status, version, …)
@@ -73,6 +74,8 @@ webhook_delivery(endpoint_id, outbox_id, attempts, next_attempt_at, last_status,
 job(id, kind, payload jsonb, run_after, attempts, locked_by, locked_until, last_error, done_at)
 idempotency_key(key, principal, request_hash, response jsonb, created_at)          pruned after 24 h
 deletion_confirmation(tenant_id, app_id, confirmed_by, confirmed_at, note)
+support_access(id, tenant_id → tenant, operator_id → app_user, reason, duration_minutes ≤ 480, state, auto_approved,
+               requested_at, decided_by, decided_at, starts_at, expires_at, ended_by, ended_at, last_used_at, uses)
 ```
 
 RLS policy on tenant-owned tables:
@@ -107,7 +110,9 @@ that mode unless `MATURA_ENV=development`.
 
 | Area | Endpoints |
 |---|---|
-| Tenants | `POST/GET /v1/tenants`, `GET/PATCH/DELETE /v1/tenants/{tid}` (planned: `POST /v1/tenants/{tid}:restore`) |
+| Tenants | `POST/GET /v1/tenants`, `GET/PATCH/DELETE /v1/tenants/{tid}`, `POST /v1/tenants/{tid}:restore`; operators: `GET /admin/v1/tenants`, `POST /admin/v1/tenants/{tid}:suspend`, `:resume`, `:restore`, `DELETE /admin/v1/tenants/{tid}`, `GET /admin/v1/stats` (§5.2) |
+| Entitlements | `GET /v1/tenants/{tid}/entitlements`; operators: `PUT /admin/v1/tenants/{tid}/plan`, `GET/PUT /admin/v1/plans…` (§5.2) |
+| Support access | operators: `POST/GET /admin/v1/tenants/{tid}/support-access`, `POST …/{id}:end`; tenant: `GET /v1/tenants/{tid}/support-access`, `POST …/{id}:approve`, `:deny`, `:revoke` (§5.2) |
 | Workspaces | `GET/POST /v1/tenants/{tid}/workspaces`, `PATCH …/{wid}` (archive by status) |
 | Members | `GET/POST /v1/tenants/{tid}/members`, `PATCH/DELETE …/{uid}` |
 | Invitations | `POST/GET /v1/tenants/{tid}/invitations`, `POST …/{id}:resend`, `DELETE …/{id}`, `POST /v1/invitations:accept`; unauthenticated: `GET /invitations/accept` (page), `GET /invitations/preview?token=` (§5.1) |
@@ -153,6 +158,53 @@ The OpenAPI 3.1 document lives in `api/openapi.yaml` and is the source for gener
   (STARTTLS when offered; credentials only over TLS or to localhost) and retries with backoff (1, 2, 4 … 64 minutes)
   up to 8 attempts, then marks the row `failed`. Without `MATURA_SMTP_ADDR` mail is queued but not sent.
 
+### 5.2 Operator console: tenant lifecycle, entitlements and support access (TS10)
+
+- **Lifecycle.** `active ⇄ suspended` (`:suspend` with a `reason`, `:resume`; also `PATCH status`), operators only.
+  `DELETE` (owners and operators) makes the tenant `pending_deletion` with `purge_after = now + grace` (default 30
+  days, `MATURA_TENANT_DELETE_GRACE`; operators may pass `?grace_days=0…365` and `?reason=`); repeating it changes
+  nothing. `:restore` (owners and operators) returns it to the status it had before (`restore_status`), so a
+  suspended tenant stays suspended. The **purger** (`internal/lifecycle`, one active replica, advisory lock 7351007,
+  every minute) moves due tenants to `deleting` — `tenant.deleting` to every app, placements `retiring` (§7.3 step
+  5), pending invitations revoked, support access ended — and marks a `deleting` tenant `deleted` (`tenant.deleted`)
+  once none of its placements holds data. Events: `tenant.suspended`, `tenant.reactivated`, `tenant.updated` (plan,
+  name, settings, restore to suspended), `tenant.deleting`, `tenant.deleted`; every payload is the tenant with its
+  status. In events and snapshots a `pending_deletion` tenant appears as `suspended` (contract statuses are
+  unchanged) with `purge_after`, and the operator's `status_reason` is left out; `GET /v1/me/tenants` and member
+  reads leave it out too.
+- **Refusals.** The token mapper refuses a suspended tenant (`tenant_suspended`) and one pending deletion
+  (`tenant_pending_deletion`) to everyone, owners included; without a named tenant it picks an active one first.
+  Tokens already issued expire within their lifetime (5 min). The API answers members of a suspended tenant 403
+  `tenant-suspended` on every tenant route, and members of a tenant pending deletion 403 `tenant-pending-deletion`
+  except `GET /v1/tenants/{tid}`, `DELETE` and `:restore`. A `deleting` or `deleted` tenant is 404 to members.
+- **Operators inside tenants.** Operators keep operator scope on the tenant record (`GET/PATCH/DELETE
+  /v1/tenants/{tid}`, `:restore`), its placements and its entitlements. Every other tenant route (members,
+  workspaces, apps, grants, invitations, support access) needs active support access (403
+  `support-access-required`), runs in the tenant's own scope (not operator scope) and is read-only (403
+  `support-access-read-only` for anything but GET). An operator who is a member of the tenant acts as that member.
+- **Entitlements.** `plan.limits` and `tenant.entitlement_overrides` share one shape: `max_members`,
+  `max_workspaces` (integers; missing or negative: no limit), `apps` (slugs; missing or containing `"*"`: every
+  app), `features` (`{name: bool}`); other keys are kept for apps. Overrides replace the plan's values key by key,
+  features flag by flag; `PUT /admin/v1/tenants/{tid}/plan {plan, overrides}` sets both (overrides left out: kept;
+  null: cleared). Checks run in the writing transaction after `SELECT … FOR UPDATE` on the tenant row, so racing
+  requests are counted one after another: adding a member and accepting an invitation (members not `removed`, so
+  deactivated ones hold a seat), creating a workspace (workspaces not `deleted`), enabling an app. Over the limit:
+  **402** `plan-limit` with `limit`, `max`, `used`. Lowering a limit keeps existing usage. `GET
+  /v1/tenants/{tid}/entitlements` returns `plan`, effective `limits`, `plan_limits`, `overrides` and `usage`
+  (members, workspaces, enabled apps).
+- **Support access.** `POST /admin/v1/tenants/{tid}/support-access {reason, duration_minutes ≤ 480}`. The tenant's
+  `support_access` setting (owners set it with `PATCH /v1/tenants/{tid}`): `approval` (default) — the request is
+  `pending` until an owner approves (`:approve`; the window starts then) or denies it, and lapses after 24 hours;
+  `allowed` — it starts at once (`auto_approved`); `off` — 403 `support-access-off`. Owners `:revoke`, the operator
+  who asked `:end`s; it expires at `expires_at`. Listed states: `pending`, `active`, `expired`, `denied`,
+  `revoked`, `ended`. Each request made with it increments `uses` and sets `last_used_at`, so the tenant (owners and
+  admins: `GET /v1/tenants/{tid}/support-access`) sees what was asked, who decided and when it was used. The rows
+  are tenant-owned under RLS and never deleted. No token is issued and nobody is impersonated: the operator keeps
+  their own identity, and the access only opens the GET routes above.
+- **Operator lists.** `GET /admin/v1/tenants?q=&status=a,b&cursor=&limit=` (by slug; `next_cursor` while more
+  remain; default every status but `deleted`) with `member_count`; `GET /admin/v1/stats` (tenants and users by
+  status with `total`, apps with the number of tenants that enabled each).
+
 ## 6. Token mapper (TS5)
 
 Besides `roles`, the mapper adds `perms`: the union of the permissions of the user's active roles for the calling
@@ -166,7 +218,7 @@ and adds the claims in contract §2. It fails closed: if `maturad` cannot be rea
 choice comes from the authorisation request parameter `matura_tenant=<slug|id>`, else the user's last-used tenant;
 `matura_workspace=<id>` picks a workspace, else the tenant's default. A user without a
 membership in the requested tenant gets `access_denied`. A tenant that has not enabled the app gets
-`access_denied` with `error_description=app_not_enabled`.
+`access_denied` with `error_description=app_not_enabled`. A suspended tenant gets `tenant_suspended`, one pending deletion `tenant_pending_deletion` (§5.2).
 
 ### 6.1 Roles in the manifest and in Matura (ADR 0008)
 
@@ -308,6 +360,7 @@ and reports `ready`. Expand-and-contract migrations are required, since tenants 
 | `MATURA_PORTAL_CLIENT_ID` | public Keycloak client the accept page signs in with (default `matura-console`) |
 | `MATURA_SMTP_ADDR` | `host:port` of the mail relay; unset: emails are queued, not sent |
 | `MATURA_SMTP_FROM`, `MATURA_SMTP_USER`, `MATURA_SMTP_PASSWORD` | sender address (default `no-reply@matura.local`) and optional login |
+| `MATURA_TENANT_DELETE_GRACE` | how long a deleted tenant can be restored before it is purged (Go duration, default `720h`) |
 
 ## 11. Testing
 

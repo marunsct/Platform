@@ -294,7 +294,7 @@ func (s *Store) AcceptInvitation(ctx context.Context, userID uuid.UUID, email, t
 		if err := lockTenant(ctx, tx, tenantID); err != nil {
 			return err
 		}
-		m, err = addMember(ctx, tx, tenantID, userID, inv.TenantRole)
+		m, err = addMember(ctx, tx, tenantID, userID, inv.TenantRole, true)
 		if errors.Is(err, ErrConflict) { // already a member: keep the role they have
 			err = nil
 		}

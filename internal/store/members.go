@@ -32,8 +32,9 @@ func getMember(ctx context.Context, tx pgx.Tx, tenantID, userID uuid.UUID, lock 
 	return scanMember(tx.QueryRow(ctx, q, tenantID, userID))
 }
 
-// addMember adds a user, or brings back a removed one with the new role.
-func addMember(ctx context.Context, tx pgx.Tx, tenantID, userID uuid.UUID, role string) (Membership, error) {
+// addMember adds a user, or brings back a removed one with the new role. With enforce, the plan's member limit
+// applies (not when a tenant is created with its owner).
+func addMember(ctx context.Context, tx pgx.Tx, tenantID, userID uuid.UUID, role string, enforce bool) (Membership, error) {
 	if !tenantRoles[role] {
 		return Membership{}, invalid("tenant role must be owner, admin, billing or member")
 	}
@@ -43,6 +44,11 @@ func addMember(ctx context.Context, tx pgx.Tx, tenantID, userID uuid.UUID, role 
 		return cur, ErrConflict
 	case err != nil && err != ErrNotFound:
 		return cur, err
+	}
+	if enforce {
+		if err := checkMemberLimit(ctx, tx, tenantID); err != nil {
+			return Membership{}, err
+		}
 	}
 	v, err := nextVersion(ctx, tx)
 	if err != nil {
@@ -67,7 +73,7 @@ func (s *Store) AddMember(ctx context.Context, sc Scope, tenantID, userID uuid.U
 	var out Membership
 	err := s.tx(ctx, sc.InTenant(tenantID), func(tx pgx.Tx) error {
 		var err error
-		if out, err = addMember(ctx, tx, tenantID, userID, role); err != nil {
+		if out, err = addMember(ctx, tx, tenantID, userID, role, true); err != nil {
 			return err
 		}
 		return grantDefaults(ctx, tx, tenantID, userID, nil)
