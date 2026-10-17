@@ -67,3 +67,28 @@ async def test_expired_cursor_takes_a_snapshot(db):
     sync.api._client = client
     await sync.catch_up()
     assert sum("snapshot" in c and "tenant=" not in c for c in calls) == 2
+
+
+async def test_placement_calls():
+    seen: list[tuple[str, str, bytes]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append((request.method, request.url.path, request.content))
+        if request.url.path.endswith("/credentials"):
+            return httpx.Response(200, json={"user": "app_t_1", "password": "pw", "database": "app_t_acme"})
+        return httpx.Response(200, json={"state": "ready"})
+
+    api = MaturaAPI("https://m.test", "notes", "notes", "mts_x", client=httpx.AsyncClient(transport=httpx.MockTransport(handler)))
+    assert (await api.placement("t1"))["state"] == "ready"
+    await api.register_placement("t1", "eu-1 / db", schema_name="t_acme")
+    assert (await api.credentials("t1", migrate=True))["user"] == "app_t_1"
+    await api.placement_ready("t1")
+    await api.placement_deleted("t1")
+    assert [(m, p) for m, p, _ in seen] == [
+        ("GET", "/v1/apps/notes/placements/t1"), ("PUT", "/v1/apps/notes/placements/t1"),
+        ("POST", "/v1/apps/notes/placements/t1/credentials"), ("POST", "/v1/apps/notes/placements/t1:ready"),
+        ("POST", "/v1/apps/notes/placements/t1:deleted"),
+    ]
+    assert b'"schema_name": "t_acme"' in seen[1][2] or b'"schema_name":"t_acme"' in seen[1][2]
+    assert b"migrate" in seen[2][2]
+    await api.aclose()

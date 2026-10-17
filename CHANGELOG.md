@@ -3,6 +3,13 @@
 ## Unreleased
 
 ### Added
+- Data placement (TS7b): a provisioner creates platform-managed storage on registered database servers (shared:
+  `<app>_shared` with owner and runtime roles; schema: `t_<tenant>` in `<app>_bridge`, owned by the tenant's role;
+  database: `<app>_t_<tenant>`, CONNECT revoked from PUBLIC), retries failed steps, and drops a deleted tenant's
+  schema or database once the app confirms its data is gone. App endpoints: `GET`/`PUT /v1/apps/{app}/placements/{tid}`,
+  `POST …/{tid}:ready`, `…/{tid}:deleted`, `…/{tid}/credentials` (runtime or migrate); tenants read
+  `GET /v1/tenants/{tid}/placements`. Deleting a tenant moves its placements to `retiring`. Python SDK:
+  `MaturaAPI.placement`, `register_placement`, `credentials`, `placement_ready`, `placement_deleted`.
 - End-to-end delivery plan (docs/plan/20), functional and technical specifications and the app integration contract
   (docs/spec), ADR 0006 (data placement modes) and ADR 0007 (contract tables).
 - `maturad` control plane: tenants, workspaces, members, apps from manifests, app roles and grants, tenant apps with

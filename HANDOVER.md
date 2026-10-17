@@ -53,7 +53,10 @@ self-hosted, open standards, nothing phones home).
   `claude/project-thread-nhbr1g`): `AGENTCANVAS_AUTH_MODE=matura`, permissions `canvas.read`/`inbox.review`/
   `workflow.build`/`org.admin` mapped onto its four roles, webhooks at `/v1/matura/events`, change feed, vendored SDK,
   `matura/manifest.json`. Ask the owner before merging it (not covered by AgentCanvas's sprint merge grant).
-- **Next:** doc 21 §3: data placement (TS7b), invitations (TS6), sign-up and brokering (TS4-lite), any-language kit
+- **Data placement (TS7b), 2026-10-17:** `internal/placement` provisioner (run by maturad), placement endpoints, migration
+  0006; `TestPlatformManagedPlacements` provisions all three modes on the test server and checks tenants cannot
+  reach each other's schema or database.
+- **Next:** doc 21 §3: invitations (TS6), sign-up and brokering (TS4-lite), any-language kit
   (TS7e: OpenAPI, TypeScript SDK, conformance CLI, contract SQL for other databases).
 - `main` holds LICENSE, SECURITY.md, CONTRIBUTING.md.
 

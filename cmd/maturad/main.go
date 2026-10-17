@@ -21,6 +21,7 @@ import (
 	"github.com/marunsct/Platform/internal/api"
 	"github.com/marunsct/Platform/internal/config"
 	"github.com/marunsct/Platform/internal/events"
+	"github.com/marunsct/Platform/internal/placement"
 	"github.com/marunsct/Platform/internal/secrets"
 	"github.com/marunsct/Platform/internal/store"
 )
@@ -96,6 +97,8 @@ func run(log *slog.Logger) error {
 	store.AllowHTTPWebhooks = cfg.Env == "development"
 	relay := &events.Relay{Store: st, Keys: keys, Log: log, Source: cfg.EventSource}
 	go relay.Run(ctx)
+	provisioner := &placement.Provisioner{Store: st, Keys: keys, Log: log}
+	go provisioner.Run(ctx)
 
 	server := api.New(st, auth, keys, log)
 	server.SetSource(cfg.EventSource)

@@ -150,7 +150,13 @@ func (s *Store) UpdateTenant(ctx context.Context, sc Scope, id uuid.UUID, p Tena
 		if err != nil {
 			return err
 		}
-		return emit(ctx, tx, v, id, typ, "tenants/"+id.String(), out)
+		if err := emit(ctx, tx, v, id, typ, "tenants/"+id.String(), out); err != nil {
+			return err
+		}
+		if typ == "tenant.deleting" { // each app deletes its data, then its storage is dropped (§7.3 step 5)
+			return retirePlacements(ctx, tx, id)
+		}
+		return nil
 	})
 	return out, err
 }

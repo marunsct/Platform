@@ -73,14 +73,18 @@ type TenantApp struct {
 }
 
 type Placement struct {
-	ID            uuid.UUID `json:"id"`
-	TenantID      uuid.UUID `json:"tenant_id"`
-	AppID         uuid.UUID `json:"app_id"`
-	Mode          string    `json:"mode"`
-	Manager       string    `json:"manager"`
-	LocationLabel *string   `json:"location_label"`
-	State         string    `json:"state"`
-	Version       int64     `json:"version"`
+	ID            uuid.UUID  `json:"id"`
+	TenantID      uuid.UUID  `json:"tenant_id"`
+	AppID         uuid.UUID  `json:"app_id"`
+	Mode          string     `json:"mode"`
+	Manager       string     `json:"manager"`
+	DBServerID    *uuid.UUID `json:"db_server_id"`
+	DatabaseName  *string    `json:"database_name"`
+	SchemaName    *string    `json:"schema_name"`
+	LocationLabel *string    `json:"location_label"`
+	State         string     `json:"state"`
+	Error         *string    `json:"error,omitempty"`
+	Version       int64      `json:"version"`
 }
 
 type Grant struct {

@@ -26,7 +26,6 @@ type Server struct {
 	seen  sync.Map // user id -> seenProfile, so unchanged profiles skip the database
 
 	source         string  // CloudEvents source of this installation
-	appRoutes      []route // extra routes for app backends (placements)
 	internalRoutes []route // /internal/v1 routes for Keycloak (TS5)
 }
 
@@ -73,6 +72,7 @@ func (s *Server) Handler() http.Handler {
 	api.HandleFunc("GET /v1/tenants/{tid}/grants", s.listGrants)
 	api.HandleFunc("POST /v1/tenants/{tid}/grants", s.createGrant)
 	api.HandleFunc("DELETE /v1/tenants/{tid}/grants/{id}", s.revokeGrant)
+	api.HandleFunc("GET /v1/tenants/{tid}/placements", s.listPlacements)
 	api.HandleFunc("GET /v1/apps", s.listApps)
 	api.HandleFunc("PUT /admin/v1/apps/{slug}", s.applyApp)
 	api.HandleFunc("GET /v1/apps/{slug}/roles", s.listRoles)
@@ -105,9 +105,10 @@ func (s *Server) Handler() http.Handler {
 	appAPI := http.NewServeMux()
 	appAPI.HandleFunc("GET /v1/apps/{app}/changes", s.appChanges)
 	appAPI.HandleFunc("GET /v1/apps/{app}/snapshot", s.appSnapshot)
-	for _, rt := range s.appRoutes {
-		appAPI.HandleFunc(rt.pattern, rt.handler)
-	}
+	appAPI.HandleFunc("GET /v1/apps/{app}/placements/{tid}", s.appGetPlacement)
+	appAPI.HandleFunc("PUT /v1/apps/{app}/placements/{tid}", s.appPutPlacement)
+	appAPI.HandleFunc("POST /v1/apps/{app}/placements/{tid}", s.appPlacementAction) // {tid}:ready, {tid}:deleted
+	appAPI.HandleFunc("POST /v1/apps/{app}/placements/{tid}/credentials", s.appPlacementCredentials)
 
 	authed := s.authenticate(s.idempotent(api), s.idempotent(appAPI))
 	mux.Handle("/v1/", authed)

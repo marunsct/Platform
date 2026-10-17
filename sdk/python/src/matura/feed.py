@@ -39,6 +39,42 @@ class MaturaAPI:
     async def snapshot(self, tenant: str | None = None) -> dict[str, Any]:
         return await self._get(f"/v1/apps/{self.app}/snapshot", {"tenant": tenant} if tenant else None)
 
+    async def _send(self, method: str, path: str, body: dict[str, Any] | None = None) -> dict[str, Any]:
+        r = await self._client.request(method, self.base + path, json=body, auth=self._auth)
+        r.raise_for_status()
+        return r.json()
+
+    # --- data placement (technical specification §7, level 3) ---
+
+    async def placement(self, tenant: str) -> dict[str, Any]:
+        """Where the tenant's data lives: mode, manager, state (requested, provisioned, ready, retiring, deleted)."""
+        return await self._get(f"/v1/apps/{self.app}/placements/{tenant}")
+
+    async def register_placement(self, tenant: str, location_label: str, *, database_name: str | None = None,
+                                 schema_name: str | None = None) -> dict[str, Any]:
+        """Record storage the app created itself (manager ``app``); the placement becomes ``provisioned``."""
+        body: dict[str, Any] = {"location_label": location_label}
+        if database_name:
+            body["database_name"] = database_name
+        if schema_name:
+            body["schema_name"] = schema_name
+        return await self._send("PUT", f"/v1/apps/{self.app}/placements/{tenant}", body)
+
+    async def credentials(self, tenant: str, *, migrate: bool = False) -> dict[str, Any]:
+        """Connection for platform-managed storage: host, port, database, user, password, search_path, expires_at.
+        ``migrate`` returns the role that owns the tables (different from the runtime role in shared mode).
+        Keep it in memory only and ask again after ``expires_at``."""
+        return await self._send("POST", f"/v1/apps/{self.app}/placements/{tenant}/credentials",
+                                {"purpose": "migrate" if migrate else "runtime"})
+
+    async def placement_ready(self, tenant: str) -> dict[str, Any]:
+        """The app migrated the tenant's storage and serves it."""
+        return await self._send("POST", f"/v1/apps/{self.app}/placements/{tenant}:ready")
+
+    async def placement_deleted(self, tenant: str) -> dict[str, Any]:
+        """The app deleted a retiring tenant's data; Matura then drops platform-managed storage."""
+        return await self._send("POST", f"/v1/apps/{self.app}/placements/{tenant}:deleted")
+
     async def aclose(self) -> None:
         await self._client.aclose()
 

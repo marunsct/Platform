@@ -96,11 +96,13 @@ func (s *Store) GetApp(ctx context.Context, slug string) (App, error) {
 	return out, err
 }
 
-const placementCols = `id, tenant_id, app_id, mode, manager, location_label, state, version`
+const placementCols = `id, tenant_id, app_id, mode, manager, db_server_id, database_name, schema_name,
+	location_label, state, error, version`
 
 func scanPlacement(row pgx.Row) (Placement, error) {
 	var p Placement
-	err := row.Scan(&p.ID, &p.TenantID, &p.AppID, &p.Mode, &p.Manager, &p.LocationLabel, &p.State, &p.Version)
+	err := row.Scan(&p.ID, &p.TenantID, &p.AppID, &p.Mode, &p.Manager, &p.DBServerID, &p.DatabaseName, &p.SchemaName,
+		&p.LocationLabel, &p.State, &p.Error, &p.Version)
 	return p, mapErr(err)
 }
 

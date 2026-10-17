@@ -171,6 +171,12 @@ next apply unless the manifest drops it too.
 Names are lower-case, at most 63 bytes, built only from slugs and ids that `maturad` validates, and always quoted
 with `pgx.Identifier` when used in DDL.
 
+As built (TS7b, `internal/placement`): database mode names the database `<app>_t_<tenant-slug>` (so a tenant slug can
+never collide with `<app>_shared` or `<app>_bridge`). A new placement goes to the active, non-dedicated server with
+the fewest placements; shared mode reuses the server that already holds the app's shared database. Dedicated servers
+are assigned by operators (M5 moves). A failed step records `error`, sets `failed` and is retried after 1 minute,
+doubling to 1 hour. One `maturad` replica provisions at a time (advisory lock 7351004).
+
 ### 7.2 Manifest section
 
 ```yaml
@@ -208,8 +214,10 @@ requested ─► provisioning ─► provisioned ─► migrating ─► ready �
 
 ### 7.4 Credentials
 
-`POST /v1/apps/{app}/placements/{tid}/credentials` returns `{host, port, database, user, password, search_path,
-expires_at}` for the runtime role. In M1 the password is the placement's stored one and `expires_at` is when the
+`POST /v1/apps/{app}/placements/{tid}/credentials` returns `{host, port, sslmode, database, user, password,
+search_path, mode, expires_at}` for the runtime role; `{"purpose": "migrate"}` returns the role that owns the tables
+(`<app>_owner` in shared mode; in schema and database mode the tenant's role owns its schema or database, so it is the
+same role). In M1 the password is the placement's stored one and `expires_at` is when the
 SDK should ask again (1 h); in M5 OpenBao's database secrets engine issues per-request dynamic roles. The SDK keeps
 credentials in memory only.
 
