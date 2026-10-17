@@ -16,9 +16,11 @@ services:
       retries: 30
 
   keycloak:
-    image: quay.io/keycloak/keycloak:26.4
+    build: { context: ../.., dockerfile: deploy/compose/keycloak.Dockerfile }
     command: ["start-dev", "--import-realm"]
     environment:
+      MATURA_URL: http://maturad:8080
+      MATURA_INTERNAL_TOKEN: &internal-token matura-internal-development-token-0001  # development only
       KC_BOOTSTRAP_ADMIN_USERNAME: admin
       KC_BOOTSTRAP_ADMIN_PASSWORD: admin
       KC_DB: postgres
@@ -47,6 +49,7 @@ services:
       MATURA_DATABASE_URL: postgres://matura_app:matura-app-dev@postgres:5432/matura?sslmode=disable
       MATURA_MIGRATE_DATABASE_URL: postgres://matura_owner:matura-owner-dev@postgres:5432/matura?sslmode=disable
       MATURA_KEK: bWF0dXJhLWRldmVsb3BtZW50LW9ubHkta2V5LTAwMDE=  # development only; production: openssl rand -base64 32
+      MATURA_INTERNAL_TOKEN: *internal-token
     ports: ["8080:8080"]
     depends_on:
       postgres: { condition: service_healthy }

@@ -94,12 +94,15 @@ func run(log *slog.Logger) error {
 
 	st := store.New(pool)
 	store.AllowHTTPWebhooks = cfg.Env == "development"
-	relay := &events.Relay{Store: st, Keys: keys, Log: log}
+	relay := &events.Relay{Store: st, Keys: keys, Log: log, Source: cfg.EventSource}
 	go relay.Run(ctx)
 
+	server := api.New(st, auth, keys, log)
+	server.SetSource(cfg.EventSource)
+	server.EnableInternal(cfg.InternalToken)
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           api.New(st, auth, keys, log).Handler(),
+		Handler:           server.Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      30 * time.Second,

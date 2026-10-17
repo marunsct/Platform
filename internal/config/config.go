@@ -18,6 +18,8 @@ type Config struct {
 	OperatorRole       string // realm role that grants operator scope
 	Auth               string // oidc or dev
 	KEK                string // base64 key-encryption key for stored secrets
+	InternalToken      string // shared with Keycloak's Matura extension for /internal/v1
+	EventSource        string // CloudEvents source of this installation
 }
 
 func getenv(key, def string) string {
@@ -39,6 +41,8 @@ func FromEnv() (Config, error) {
 		OperatorRole:       getenv("MATURA_OPERATOR_ROLE", "matura-operator"),
 		Auth:               getenv("MATURA_AUTH", "oidc"),
 		KEK:                os.Getenv("MATURA_KEK"),
+		InternalToken:      os.Getenv("MATURA_INTERNAL_TOKEN"),
+		EventSource:        getenv("MATURA_EVENT_SOURCE", "matura://installation/main"),
 	}
 	return c, c.Validate()
 }
@@ -50,6 +54,9 @@ func (c Config) Validate() error {
 	}
 	if c.KEK == "" && c.Env != "development" {
 		return errors.New("MATURA_KEK is required outside development: 32 random bytes, base64 (openssl rand -base64 32)")
+	}
+	if c.InternalToken != "" && len(c.InternalToken) < 32 {
+		return errors.New("MATURA_INTERNAL_TOKEN must be at least 32 characters (openssl rand -hex 32)")
 	}
 	switch c.Auth {
 	case "dev":

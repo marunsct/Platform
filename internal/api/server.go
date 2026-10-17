@@ -41,6 +41,13 @@ func New(st *store.Store, auth Authenticator, keys secrets.KeyManager, log *slog
 	return &Server{store: st, auth: auth, keys: keys, log: log, source: "matura://installation/main"}
 }
 
+// SetSource sets the CloudEvents source this installation puts on events.
+func (s *Server) SetSource(src string) {
+	if src != "" {
+		s.source = src
+	}
+}
+
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz/live", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) })

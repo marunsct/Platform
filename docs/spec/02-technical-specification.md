@@ -119,7 +119,7 @@ that mode unless `MATURA_ENV=development`.
 | Placements | `GET /v1/tenants/{tid}/placements`; app: `GET /v1/apps/{app}/placements/{tid}`, `PUT` (app-managed register), `POST …:ready`, `POST …:deleted`; app: `POST /v1/apps/{app}/placements/{tid}/credentials` (short-lived connection) |
 | Sync | `GET /v1/apps/{app}/changes`, `GET /v1/apps/{app}/snapshot?tenant=` |
 | Webhooks | `POST/GET /admin/v1/apps/{app}/webhooks`, `POST …/{id}:test` |
-| Internal (Keycloak) | `GET /internal/v1/token-context?user=&client=&tenant=` → claims for the mapper; `POST /internal/v1/events` |
+| Internal (Keycloak) | `POST /internal/v1/token-context` `{user_id, email, email_verified, name, locale, client_id, tenant, workspace}` → claims for the mapper, or `403 {error: access_denied, error_description}`; bearer `MATURA_INTERNAL_TOKEN` |
 | Health | `GET /healthz/live`, `GET /healthz/ready` |
 
 The OpenAPI 3.1 document lives in `api/openapi.yaml` and is the source for generated clients.
@@ -130,9 +130,11 @@ Besides `roles`, the mapper adds `perms`: the union of the permissions of the us
 app in the token's tenant and workspace, sorted, `["*"]` if any role has `*`. Above 40 entries it adds
 `perms_ref: "matura_app_role"` instead (contract §2).
 
-The Java mapper calls `/internal/v1/token-context` once per token issue (cached in Infinispan for 30 s, invalidated
-by `maturad` through the internal event endpoint) and adds the claims in contract §2. Tenant choice comes from the
-authorisation request parameter `matura_tenant=<slug|id>`, else the user's last-used tenant. A user without a
+The Java mapper (`keycloak/extensions`, provider id `matura-token-mapper`, attached to apps through the
+`matura-tenant` client scope) calls `POST /internal/v1/token-context` once per token issue (5-second in-memory cache)
+and adds the claims in contract §2. It fails closed: if `maturad` cannot be reached, no token is issued. Tenant
+choice comes from the authorisation request parameter `matura_tenant=<slug|id>`, else the user's last-used tenant;
+`matura_workspace=<id>` picks a workspace, else the tenant's default. A user without a
 membership in the requested tenant gets `access_denied`. A tenant that has not enabled the app gets
 `access_denied` with `error_description=app_not_enabled`.
 

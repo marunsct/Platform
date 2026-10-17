@@ -62,6 +62,8 @@ func (c client) must(want int, method, path string, body any) map[string]any {
 	return out
 }
 
+const internalToken = "internal-test-token-0123456789abcdef"
+
 func setup(t *testing.T) *httptest.Server {
 	srv, _, _ := setupFull(t)
 	return srv
@@ -79,8 +81,9 @@ func setupFull(t *testing.T) (*httptest.Server, *store.Store, secrets.KeyManager
 	if os.Getenv("MATURA_TEST_LOG") != "" {
 		logs = os.Stderr
 	}
-	srv := httptest.NewServer(api.New(st, api.DevAuthenticator{}, keys,
-		slog.New(slog.NewTextHandler(logs, nil))).Handler())
+	server := api.New(st, api.DevAuthenticator{}, keys, slog.New(slog.NewTextHandler(logs, nil)))
+	server.EnableInternal(internalToken)
+	srv := httptest.NewServer(server.Handler())
 	t.Cleanup(srv.Close)
 	return srv, st, keys
 }

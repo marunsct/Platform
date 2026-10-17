@@ -23,5 +23,10 @@
   the app.
 - Signed webhooks (`/admin/v1/apps/{app}/webhooks`): CloudEvents delivered in order per endpoint with
   `Matura-Signature`, retried with backoff for 24 hours, plus a test delivery.
+- Token claims for apps: `POST /internal/v1/token-context` (tenant, workspace, tenant role, app roles, permissions
+  or `perms_ref`, versions, placement mode; refusals for non-members, disabled apps and inactive users) and the
+  Keycloak extension `matura-token-mapper` that puts them in access tokens (keycloak/extensions, Java 21).
+- Realm: `matura-tenant` client scope, an `agentcanvas` client, Google and GitHub brokers (disabled until keys are set);
+  Compose builds Keycloak with the extension.
 - Build plan to 1.0 (docs/plan/21) and a guide for designing apps on Matura (docs/guide).
 - Docker Compose stack with Postgres, Keycloak (realm `matura`), Mailpit and `maturad`; CI with Postgres-backed tests.

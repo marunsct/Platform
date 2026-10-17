@@ -13,23 +13,51 @@
   "revokeRefreshToken": true,
   "refreshTokenMaxReuse": 0,
   "passwordPolicy": "length(12) and notUsername and notEmail",
-  "smtpServer": { "host": "mailpit", "port": "1025", "from": "no-reply@matura.local" },
+  "smtpServer": {
+    "host": "mailpit",
+    "port": "1025",
+    "from": "no-reply@matura.local"
+  },
   "roles": {
     "realm": [
-      { "name": "matura-operator", "description": "Runs this Matura installation (operator console and /admin API)" }
+      {
+        "name": "matura-operator",
+        "description": "Runs this Matura installation (operator console and /admin API)"
+      }
     ]
   },
   "clientScopes": [
     {
       "name": "matura-api-audience",
       "protocol": "openid-connect",
-      "attributes": { "include.in.token.scope": "false" },
+      "attributes": {
+        "include.in.token.scope": "false"
+      },
       "protocolMappers": [
         {
           "name": "audience matura-api",
           "protocol": "openid-connect",
           "protocolMapper": "oidc-audience-mapper",
-          "config": { "included.client.audience": "matura-api", "access.token.claim": "true" }
+          "config": {
+            "included.client.audience": "matura-api",
+            "access.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "name": "matura-tenant",
+      "protocol": "openid-connect",
+      "description": "Matura tenant, workspace, roles and permissions for the app (contract \u00a72)",
+      "attributes": {
+        "include.in.token.scope": "false"
+      },
+      "protocolMappers": [
+        {
+          "name": "matura tenant and permissions",
+          "protocol": "openid-connect",
+          "protocolMapper": "matura-token-mapper",
+          "config": {}
         }
       ]
     }
@@ -48,10 +76,84 @@
       "publicClient": true,
       "standardFlowEnabled": true,
       "directAccessGrantsEnabled": false,
-      "redirectUris": ["http://localhost:5173/*"],
-      "webOrigins": ["http://localhost:5173"],
-      "attributes": { "pkce.code.challenge.method": "S256", "post.logout.redirect.uris": "http://localhost:5173/*" },
-      "defaultClientScopes": ["profile", "email", "roles", "matura-api-audience"]
+      "redirectUris": [
+        "http://localhost:5173/*"
+      ],
+      "webOrigins": [
+        "http://localhost:5173"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost:5173/*"
+      },
+      "defaultClientScopes": [
+        "profile",
+        "email",
+        "roles",
+        "matura-api-audience"
+      ]
+    },
+    {
+      "clientId": "agentcanvas",
+      "name": "AgentCanvas",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "redirectUris": [
+        "http://localhost:7777/*",
+        "http://localhost:5173/*"
+      ],
+      "webOrigins": [
+        "http://localhost:7777",
+        "http://localhost:5173"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost:7777/*##http://localhost:5173/*"
+      },
+      "protocolMappers": [
+        {
+          "name": "audience agentcanvas",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.client.audience": "agentcanvas",
+            "access.token.claim": "true"
+          }
+        }
+      ],
+      "defaultClientScopes": [
+        "profile",
+        "email",
+        "matura-tenant"
+      ]
+    }
+  ],
+  "identityProviders": [
+    {
+      "alias": "google",
+      "providerId": "google",
+      "enabled": false,
+      "trustEmail": true,
+      "firstBrokerLoginFlowAlias": "first broker login",
+      "config": {
+        "clientId": "${env.MATURA_GOOGLE_CLIENT_ID:set-me}",
+        "clientSecret": "${env.MATURA_GOOGLE_CLIENT_SECRET:set-me}",
+        "syncMode": "IMPORT"
+      }
+    },
+    {
+      "alias": "github",
+      "providerId": "github",
+      "enabled": false,
+      "trustEmail": false,
+      "firstBrokerLoginFlowAlias": "first broker login",
+      "config": {
+        "clientId": "${env.MATURA_GITHUB_CLIENT_ID:set-me}",
+        "clientSecret": "${env.MATURA_GITHUB_CLIENT_SECRET:set-me}",
+        "syncMode": "IMPORT"
+      }
     }
   ]
 }

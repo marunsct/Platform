@@ -1,4 +1,4 @@
-.PHONY: build test test-db vet up down
+.PHONY: build test test-db vet up down keycloak-ext
 
 build:
 	go build ./...
@@ -18,3 +18,7 @@ up:
 
 down:
 	docker compose -f deploy/compose/compose.yaml down
+
+# Keycloak extension (token mapper): Java 21 and Maven
+keycloak-ext:
+	cd keycloak/extensions && mvn -q -B package
