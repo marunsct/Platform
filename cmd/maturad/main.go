@@ -28,6 +28,8 @@ import (
 	"github.com/marunsct/Platform/internal/metrics"
 	"github.com/marunsct/Platform/internal/placement"
 	"github.com/marunsct/Platform/internal/portal"
+	"github.com/marunsct/Platform/internal/privacy"
+	"github.com/marunsct/Platform/internal/readiness"
 	"github.com/marunsct/Platform/internal/secrets"
 	"github.com/marunsct/Platform/internal/store"
 )
@@ -109,6 +111,8 @@ func run(log *slog.Logger) error {
 	go purger.Run(ctx)
 	streamer := &audit.Streamer{Store: st, Keys: keys, Log: log}
 	go streamer.Run(ctx)
+	privacyWorker := &privacy.Worker{Store: st, Log: log}
+	go privacyWorker.Run(ctx)
 
 	server := api.New(st, auth, keys, log)
 	server.SetSource(cfg.EventSource)
@@ -128,6 +132,7 @@ func run(log *slog.Logger) error {
 			return err
 		}
 		server.SetKeycloak(kc, cfg.Issuer)
+		server.SetUserDirectory(kc) // erasure deletes the Keycloak account too
 	} else {
 		log.Warn("MATURA_KEYCLOAK_CLIENT_SECRET is not set: session, MFA and SSO endpoints answer 503")
 	}
@@ -136,6 +141,9 @@ func run(log *slog.Logger) error {
 	server.SetInvitations(api.Invitations{AcceptURL: cfg.InviteAcceptURL, PublicURL: cfg.PublicURL,
 		Issuer: cfg.Issuer, ClientID: cfg.PortalClientID})
 	server.SetPortal(portal.Config{Auth: cfg.Auth, Issuer: cfg.Issuer, ClientID: cfg.PortalClientID})
+	server.SetReadiness(readiness.Install{Product: cfg.ProductName, Env: cfg.Env, Auth: cfg.Auth,
+		KEKConfigured: cfg.KEK != "", SMTPConfigured: cfg.SMTPAddr != "", MetricsEnabled: cfg.MetricsAddr != "",
+		PublicURL: cfg.PublicURL, TrustPage: cfg.TrustPage, SecurityContact: cfg.SecurityContact})
 	if cfg.SMTPAddr != "" {
 		mailer := &mail.Mailer{Store: st, Log: log, Sender: mail.SMTP{Addr: cfg.SMTPAddr, From: cfg.SMTPFrom,
 			User: cfg.SMTPUser, Password: cfg.SMTPPassword}}

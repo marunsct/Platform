@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/marunsct/Platform/internal/keycloak"
 	"github.com/marunsct/Platform/internal/keycloak/keycloaktest"
 )
@@ -159,5 +161,18 @@ func TestPutIdentityProviderReplaces(t *testing.T) {
 	}
 	if err := c.DeleteIdentityProvider(ctx, "t-acme"); err != nil {
 		t.Fatalf("deleting a missing provider is fine: %v", err)
+	}
+}
+
+func TestDeleteUser(t *testing.T) {
+	f := keycloaktest.New(t)
+	c := newClient(t, f)
+	id := uuid.New()
+	f.AddSession(id.String(), "198.51.100.1")
+	if err := c.DeleteUser(context.Background(), id); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.Deleted) != 1 || f.Deleted[0] != id.String() || len(f.Sessions[id.String()]) != 0 {
+		t.Fatalf("deleted %v", f.Deleted)
 	}
 }

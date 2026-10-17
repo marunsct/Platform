@@ -57,19 +57,23 @@ func uuidSetting(id uuid.UUID) string {
 }
 
 func (s *Store) tx(ctx context.Context, sc Scope, fn func(pgx.Tx) error) error {
-	scope := "tenant"
-	if sc.Operator {
-		scope = "operator"
-	}
 	return pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
-		if _, err := tx.Exec(ctx,
-			`SELECT set_config('matura.tenant_id', $1, true), set_config('matura.user_id', $2, true),
-			        set_config('matura.scope', $3, true)`,
-			uuidSetting(sc.TenantID), uuidSetting(sc.UserID), scope); err != nil {
+		if err := setScope(ctx, tx, sc); err != nil {
 			return err
 		}
 		return fn(tx)
 	})
+}
+
+// setScope is the first statement of tx, so row-level security sees who acts.
+func setScope(ctx context.Context, tx pgx.Tx, sc Scope) error {
+	scope := "tenant"
+	if sc.Operator {
+		scope = "operator"
+	}
+	_, err := tx.Exec(ctx, `SELECT set_config('matura.tenant_id', $1, true), set_config('matura.user_id', $2, true),
+		set_config('matura.scope', $3, true)`, uuidSetting(sc.TenantID), uuidSetting(sc.UserID), scope)
+	return err
 }
 
 // setTenant switches the tenant setting inside a transaction, used when the tenant is created in it.

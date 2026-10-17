@@ -275,7 +275,7 @@ func TestUsersAdminAndMyTenants(t *testing.T) {
 	bob.must(http.StatusOK, "GET", "/v1/me", nil)
 
 	// a sole owner cannot be deleted; a member can, and comes back anonymised
-	op.must(http.StatusUnprocessableEntity, "DELETE", "/admin/v1/users/"+alice.user.String(), nil)
+	op.must(http.StatusConflict, "DELETE", "/admin/v1/users/"+alice.user.String(), nil)
 	op.must(http.StatusNoContent, "DELETE", "/admin/v1/users/"+bob.user.String(), nil)
 	u := op.must(http.StatusOK, "GET", "/admin/v1/users/"+bob.user.String(), nil)
 	if u["status"] != "deleted" || u["email"] != nil {

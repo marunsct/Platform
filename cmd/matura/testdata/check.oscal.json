@@ -1,0 +1,1092 @@
+{
+  "assessment-results": {
+    "import-ap": {
+      "href": "https://github.com/marunsct/Platform/blob/main/docs/guide/readiness.md"
+    },
+    "metadata": {
+      "last-modified": "2026-10-17T09:30:00Z",
+      "oscal-version": "1.1.2",
+      "remarks": "Readiness shows which controls are in place on this installation and the evidence for them. It is not an audit and does not certify compliance with any framework; mappings are indicative and an auditor decides.",
+      "title": "Acme Cloud readiness assessment results",
+      "version": "2026-10-17T09:30:00Z"
+    },
+    "results": [
+      {
+        "description": "11 of 18 applicable controls pass (61.1%). Readiness shows which controls are in place on this installation and the evidence for them. It is not an audit and does not certify compliance with any framework; mappings are indicative and an auditor decides.",
+        "end": "2026-10-17T09:30:00Z",
+        "findings": [
+          {
+            "description": "MATURA_KEK is set; secrets are sealed with AES-256-GCM envelope encryption. Fix: Set MATURA_KEK to 32 random bytes, base64 (openssl rand -base64 32), and back it up apart from the database.",
+            "related-observations": [
+              {
+                "observation-uuid": "3b632cbd-a04c-51e9-9deb-aef5274a3aa8"
+              }
+            ],
+            "target": {
+              "status": {
+                "state": "satisfied"
+              },
+              "target-id": "install-kek",
+              "type": "objective-id"
+            },
+            "title": "Stored secrets are encrypted under an operator-held key",
+            "uuid": "d1d42efb-d315-52c6-bf1f-322535ada442"
+          },
+          {
+            "description": "MATURA_AUTH=oidc: bearer tokens are verified against the issuer's keys. Fix: Set MATURA_AUTH=oidc and MATURA_ISSUER to the Keycloak realm URL.",
+            "related-observations": [
+              {
+                "observation-uuid": "70f01c43-c6ea-5727-97ae-5587ccc0326e"
+              }
+            ],
+            "target": {
+              "status": {
+                "state": "satisfied"
+              },
+              "target-id": "install-oidc",
+              "type": "objective-id"
+            },
+            "title": "People sign in through OpenID Connect",
+            "uuid": "0804a541-55ff-52a2-a359-824f606cd5c2"
+          },
+          {
+            "description": "MATURA_ENV=production. Fix: Set MATURA_ENV=production (or staging for a test installation).",
+            "related-observations": [
+              {
+                "observation-uuid": "28b91f85-4b7f-5c48-b0ee-83f51a000b63"
+              }
+            ],
+            "target": {
+              "status": {
+                "state": "satisfied"
+              },
+              "target-id": "install-production",
+              "type": "objective-id"
+            },
+            "title": "Development mode is off",
+            "uuid": "0a4a7ec0-77aa-512f-ac03-4e44e651ecfa"
+          },
+          {
+            "description": "MATURA_PUBLIC_URL is https://id.acme.example. Fix: Put maturad behind a TLS-terminating proxy and set MATURA_PUBLIC_URL to its https:// address.",
+            "related-observations": [
+              {
+                "observation-uuid": "6cafd7ce-724c-5ec0-bca5-1bcdf8071988"
+              }
+            ],
+            "target": {
+              "status": {
+                "state": "satisfied"
+              },
+              "target-id": "install-tls",
+              "type": "objective-id"
+            },
+            "title": "The public address uses HTTPS",
+            "uuid": "e1281db9-26e6-523f-a932-558cfcae3400"
+          },
+          {
+            "description": "MATURA_SMTP_ADDR is set; invitation emails are sent. Fix: Set MATURA_SMTP_ADDR (and MATURA_SMTP_FROM, MATURA_SMTP_USER, MATURA_SMTP_PASSWORD) to your mail relay.",
+            "related-observations": [
+              {
+                "observation-uuid": "5514ca70-c5e0-544a-8dae-74d88c31767a"
+              }
+            ],
+            "target": {
+              "status": {
+                "state": "satisfied"
+              },
+              "target-id": "install-smtp",
+              "type": "objective-id"
+            },
+            "title": "Outgoing email is configured",
+            "uuid": "5129602f-cc7a-556a-8995-cbc187fe8642"
+          },
+          {
+            "description": "MATURA_METRICS_ADDR is set: /metrics is served on its own listener. Fix: Set MATURA_METRICS_ADDR (default :9090) and scrape /metrics with Prometheus; alert on webhook and email backlogs.",
+            "related-observations": [
+              {
+                "observation-uuid": "3a1a52c7-0030-53c9-82a7-60d2c80e790e"
+              }
+            ],
+            "target": {
+              "status": {
+                "state": "satisfied"
+              },
+              "target-id": "install-metrics",
+              "type": "objective-id"
+            },
+            "title": "Metrics are exported for monitoring",
+            "uuid": "32d9b7b6-3770-59e2-826e-af3ac14d9ef2"
+          },
+          {
+            "description": "212 events, every hash and link recomputed. Fix: Investigate the first break reported by GET /admin/v1/audit:verify; history was changed outside maturad.",
+            "related-observations": [
+              {
+                "observation-uuid": "cf52538a-6b02-5e47-8e15-a43840143330"
+              }
+            ],
+            "target": {
+              "status": {
+                "state": "satisfied"
+              },
+              "target-id": "install-audit-chain",
+              "type": "objective-id"
+            },
+            "title": "The installation audit log verifies",
+            "uuid": "def2cdb5-fb0e-5fb9-b90b-04db89488326"
+          },
+          {
+            "description": "2 active endpoints, 1 failing, 3 events dropped after 24 h in total. Fix: Check the failing endpoints (GET /admin/v1/apps/{slug}/webhooks): fix the receiver or its URL, then send a test event.",
+            "related-observations": [
+              {
+                "observation-uuid": "97cc078c-fe01-5381-89c0-2ca30452e14e"
+              }
+            ],
+            "target": {
+              "status": {
+                "state": "not-satisfied"
+              },
+              "target-id": "install-webhooks",
+              "type": "objective-id"
+            },
+            "title": "Webhook deliveries to apps are healthy",
+            "uuid": "986dd8f2-0882-5be6-b2ac-5bed3dfb4cdb"
+          },
+          {
+            "description": "restore test passed on 2026-10-09 (2 in the last 90 days). Fix: Run scripts/backup.sh restore-test <dir> --report <maturad URL> weekly (MATURA_TOKEN set to an operator token).",
+            "related-observations": [
+              {
+                "observation-uuid": "30c84f77-b292-54a6-8828-ad23a28bf211"
+              }
+            ],
+            "target": {
+              "status": {
+                "state": "satisfied"
+              },
+              "target-id": "install-restore-test",
+              "type": "objective-id"
+            },
+            "title": "Backups are restored and checked regularly",
+            "uuid": "d579d437-cf71-534b-aeef-3e64e1949f4d"
+          },
+          {
+            "description": "no access review recorded. Fix: Review operators, tenant owners and admins, then record it: POST /admin/v1/evidence {\"kind\":\"access-review\",\"passed\":true,\"details\":{...}}.",
+            "related-observations": [
+              {
+                "observation-uuid": "7b42875a-1757-50c1-af78-9ecd3cc82a44"
+              }
+            ],
+            "target": {
+              "status": {
+                "state": "not-satisfied"
+              },
+              "target-id": "install-access-review",
+              "type": "objective-id"
+            },
+            "title": "Access is reviewed at least quarterly",
+            "uuid": "ed559366-b875-5ac5-8302-2c001b131fdc"
+          },
+          {
+            "description": "vulnerability scan passed on 2026-10-15 (1 in the last 90 days). Fix: Scan the deployed images (e.g. Trivy or Grype) monthly or on release, then record it: POST /admin/v1/evidence {\"kind\":\"vulnerability-scan\",...}.",
+            "related-observations": [
+              {
+                "observation-uuid": "7e71a645-ddd3-5732-9984-5a61bb6cb56a"
+              }
+            ],
+            "target": {
+              "status": {
+                "state": "satisfied"
+              },
+              "target-id": "install-vulnerability-scan",
+              "type": "objective-id"
+            },
+            "title": "Images and dependencies are scanned for vulnerabilities",
+            "uuid": "090b4557-c796-52e2-b9bc-330710ceda8c"
+          },
+          {
+            "description": "2 of 2 tenants. Fix: Investigate the first break reported by GET /v1/tenants/{tid}/audit:verify; history was changed outside maturad.",
+            "related-observations": [
+              {
+                "observation-uuid": "4c5964ea-f00b-5f72-9b37-cc8a2d302c36"
+              }
+            ],
+            "target": {
+              "status": {
+                "state": "satisfied"
+              },
+              "target-id": "tenant-audit-chain",
+              "type": "objective-id"
+            },
+            "title": "Every tenant's audit log verifies",
+            "uuid": "7521e49f-a703-5dea-9785-6d2c8b57ed16"
+          },
+          {
+            "description": "1 of 2 tenants fail: globex. Fix: Owners or admins set one in the portal (Security) or with PUT /v1/tenants/{tid}/security-policy.",
+            "related-observations": [
+              {
+                "observation-uuid": "601a489f-f61f-51d1-9ab8-5ee456fee57e"
+              }
+            ],
+            "target": {
+              "status": {
+                "state": "not-satisfied"
+              },
+              "target-id": "tenant-security-policy",
+              "type": "objective-id"
+            },
+            "title": "Each organisation has a security policy",
+            "uuid": "2a898c3c-6a68-58ca-af3e-31a3b087222a"
+          },
+          {
+            "description": "1 of 2 tenants fail: globex. Fix: Set require_mfa: true in the tenant's security policy.",
+            "related-observations": [
+              {
+                "observation-uuid": "b7751a3a-34eb-5199-a07b-6e17a31f841f"
+              }
+            ],
+            "target": {
+              "status": {
+                "state": "not-satisfied"
+              },
+              "target-id": "tenant-mfa",
+              "type": "objective-id"
+            },
+            "title": "Organisations require multi-factor authentication",
+            "uuid": "22ee7970-df2e-563e-bc56-929694420747"
+          },
+          {
+            "description": "1 of 2 tenants fail: globex. Fix: Set session_max_age and idle_timeout in the tenant's security policy.",
+            "related-observations": [
+              {
+                "observation-uuid": "695b7d58-fc85-5316-9104-b0553a492b7c"
+              }
+            ],
+            "target": {
+              "status": {
+                "state": "not-satisfied"
+              },
+              "target-id": "tenant-session-limits",
+              "type": "objective-id"
+            },
+            "title": "Organisations limit session length and idle time",
+            "uuid": "e3ee0d82-6418-52f5-8261-cfd862b0ef36"
+          },
+          {
+            "description": "1 of 2 tenants fail: globex. Fix: Set allowed_email_domains in the tenant's security policy.",
+            "related-observations": [
+              {
+                "observation-uuid": "621b4f39-b7fc-5a2c-8a75-2b8cd2d3225c"
+              }
+            ],
+            "target": {
+              "status": {
+                "state": "not-satisfied"
+              },
+              "target-id": "tenant-invite-domains",
+              "type": "objective-id"
+            },
+            "title": "Company invitations are limited to the company's domains",
+            "uuid": "29767605-9c9f-5094-8c2d-9a5c3445e2bf"
+          },
+          {
+            "description": "1 of 2 tenants fail: acme. Fix: Add an audit destination in the portal (Audit) or with POST /v1/tenants/{tid}/audit/sinks, and keep it delivering.",
+            "related-observations": [
+              {
+                "observation-uuid": "81d94849-ec7e-5dd5-85b2-e46417d257d7"
+              }
+            ],
+            "target": {
+              "status": {
+                "state": "not-satisfied"
+              },
+              "target-id": "tenant-audit-streaming",
+              "type": "objective-id"
+            },
+            "title": "Company audit logs stream to the company's own systems",
+            "uuid": "972792ed-9d76-52c3-92ce-be3d195b6275"
+          },
+          {
+            "description": "1 of 1 tenants. Fix: Optional: set ip_allowlist in the tenant's security policy to its office or VPN ranges.",
+            "related-observations": [
+              {
+                "observation-uuid": "6e1f7a29-9ab7-5a6d-8880-92347464a4a0"
+              }
+            ],
+            "target": {
+              "status": {
+                "state": "satisfied"
+              },
+              "target-id": "tenant-ip-allowlist",
+              "type": "objective-id"
+            },
+            "title": "Organisations restrict API access by network (optional)",
+            "uuid": "fbe94c89-f1f7-536a-a1dd-ad89a8a88047"
+          }
+        ],
+        "observations": [
+          {
+            "collected": "2026-10-17T09:30:00Z",
+            "description": "MATURA_KEK is set; secrets are sealed with AES-256-GCM envelope encryption",
+            "links": [
+              {
+                "href": "https://github.com/marunsct/Platform/blob/main/docs/guide/readiness.md#install-kek",
+                "rel": "reference"
+              }
+            ],
+            "methods": [
+              "TEST"
+            ],
+            "props": [
+              {
+                "name": "matura-status",
+                "ns": "https://matura.dev/ns/oscal",
+                "value": "pass"
+              },
+              {
+                "name": "framework-reference",
+                "ns": "https://matura.dev/ns/oscal",
+                "value": "SOC 2 CC6.1"
+              },
+              {
+                "name": "framework-reference",
+                "ns": "https://matura.dev/ns/oscal",
+                "value": "ISO/IEC 27001:2022 A.8.24"
+              },
+              {
+                "name": "framework-reference",
+                "ns": "https://matura.dev/ns/oscal",
+                "value": "GDPR Art. 32(1)(a)"
+              }
+            ],
+            "subjects": [
+              {
+                "subject-uuid": "169313e3-1e15-5a04-a747-ef1d7e5a5c55",
+                "title": "Acme Cloud",
+                "type": "component"
+              }
+            ],
+            "title": "Stored secrets are encrypted under an operator-held key",
+            "types": [
+              "control-objective"
+            ],
+            "uuid": "3b632cbd-a04c-51e9-9deb-aef5274a3aa8"
+          },
+          {
+            "collected": "2026-10-17T09:30:00Z",
+            "description": "MATURA_AUTH=oidc: bearer tokens are verified against the issuer's keys",
+            "links": [
+              {
+                "href": "https://github.com/marunsct/Platform/blob/main/docs/guide/readiness.md#install-oidc",
+                "rel": "reference"
+              }
+            ],
+            "methods": [
+              "TEST"
+            ],
+            "props": [
+              {
+                "name": "matura-status",
+                "ns": "https://matura.dev/ns/oscal",
+                "value": "pass"
+              },
+              {
+                "name": "framework-reference",
+                "ns": "https://matura.dev/ns/oscal",
+                "value": "SOC 2 CC6.1"
+              },
+              {
+                "name": "framework-reference",
+                "ns": "https://matura.dev/ns/oscal",
+                "value": "ISO/IEC 27001:2022 A.8.5"
+              }
+            ],
+            "subjects": [
+              {
+                "subject-uuid": "169313e3-1e15-5a04-a747-ef1d7e5a5c55",
+                "title": "Acme Cloud",
+                "type": "component"
+              }
+            ],
+            "title": "People sign in through OpenID Connect",
+            "types": [
+              "control-objective"
+            ],
+            "uuid": "70f01c43-c6ea-5727-97ae-5587ccc0326e"
+          },
+          {
+            "collected": "2026-10-17T09:30:00Z",
+            "description": "MATURA_ENV=production",
+            "links": [
+              {
+                "href": "https://github.com/marunsct/Platform/blob/main/docs/guide/readiness.md#install-production",
+                "rel": "reference"
+              }
+            ],
+            "methods": [
+              "TEST"
+            ],
+            "props": [
+              {
+                "name": "matura-status",
+                "ns": "https://matura.dev/ns/oscal",
+                "value": "pass"
+              },
+              {
+                "name": "framework-reference",
+                "ns": "https://matura.dev/ns/oscal",
+                "value": "ISO/IEC 27001:2022 A.8.31"
+              }
+            ],
+            "subjects": [
+              {
+                "subject-uuid": "169313e3-1e15-5a04-a747-ef1d7e5a5c55",
+                "title": "Acme Cloud",
+                "type": "component"
+              }
+            ],
+            "title": "Development mode is off",
+            "types": [
+              "control-objective"
+            ],
+            "uuid": "28b91f85-4b7f-5c48-b0ee-83f51a000b63"
+          },
+          {
+            "collected": "2026-10-17T09:30:00Z",
+            "description": "MATURA_PUBLIC_URL is https://id.acme.example",
+            "links": [
+              {
+                "href": "https://github.com/marunsct/Platform/blob/main/docs/guide/readiness.md#install-tls",
+                "rel": "reference"
+              }
+            ],
+            "methods": [
+              "TEST"
+            ],
+            "props": [
+              {
+                "name": "matura-status",
+                "ns": "https://matura.dev/ns/oscal",
+                "value": "pass"
+              },
+              {
+                "name": "framework-reference",
+                "ns": "https://matura.dev/ns/oscal",
+                "value": "SOC 2 CC6.7"
+              },
+              {
+                "name": "framework-reference",
+                "ns": "https://matura.dev/ns/oscal",
+                "value": "ISO/IEC 27001:2022 A.8.24"
+              },
+              {
+                "name": "framework-reference",
+                "ns": "https://matura.dev/ns/oscal",
+                "value": "GDPR Art. 32(1)(a)"
+              }
+            ],
+            "subjects": [
+              {
+                "subject-uuid": "169313e3-1e15-5a04-a747-ef1d7e5a5c55",
+                "title": "Acme Cloud",
+                "type": "component"
+              }
+            ],
+            "title": "The public address uses HTTPS",
+            "types": [
+              "control-objective"
+            ],
+            "uuid": "6cafd7ce-724c-5ec0-bca5-1bcdf8071988"
+          },
+          {
+            "collected": "2026-10-17T09:30:00Z",
+            "description": "MATURA_SMTP_ADDR is set; invitation emails are sent",
+            "links": [
+              {
+                "href": "https://github.com/marunsct/Platform/blob/main/docs/guide/readiness.md#install-smtp",
+                "rel": "reference"
+              }
+            ],
+            "methods": [
+              "TEST"
+            ],
+            "props": [
+              {
+                "name": "matura-status",
+                "ns": "https://matura.dev/ns/oscal",
+                "value": "pass"
+              }
+            ],
+            "subjects": [
+              {
+                "subject-uuid": "169313e3-1e15-5a04-a747-ef1d7e5a5c55",
+                "title": "Acme Cloud",
+                "type": "component"
+              }
+            ],
+            "title": "Outgoing email is configured",
+            "types": [
+              "control-objective"
+            ],
+            "uuid": "5514ca70-c5e0-544a-8dae-74d88c31767a"
+          },
+          {
+            "collected": "2026-10-17T09:30:00Z",
+            "description": "MATURA_METRICS_ADDR is set: /metrics is served on its own listener",
+            "links": [
+              {
+                "href": "https://github.com/marunsct/Platform/blob/main/docs/guide/readiness.md#install-metrics",
+                "rel": "reference"
+              }
+            ],
+            "methods": [
+              "TEST"
+            ],
+            "props": [
+              {
+                "name": "matura-status",
+                "ns": "https://matura.dev/ns/oscal",
+                "value": "pass"
+              },
+              {
+                "name": "framework-reference",
+                "ns": "https://matura.dev/ns/oscal",
+                "value": "SOC 2 CC7.2"
+              },
+              {
+                "name": "framework-reference",
+                "ns": "https://matura.dev/ns/oscal",
+                "value": "ISO/IEC 27001:2022 A.8.16"
+              }
+            ],
+            "subjects": [
+              {
+                "subject-uuid": "169313e3-1e15-5a04-a747-ef1d7e5a5c55",
+                "title": "Acme Cloud",
+                "type": "component"
+              }
+            ],
+            "title": "Metrics are exported for monitoring",
+            "types": [
+              "control-objective"
+            ],
+            "uuid": "3a1a52c7-0030-53c9-82a7-60d2c80e790e"
+          },
+          {
+            "collected": "2026-10-17T09:30:00Z",
+            "description": "212 events, every hash and link recomputed",
+            "links": [
+              {
+                "href": "https://github.com/marunsct/Platform/blob/main/docs/guide/readiness.md#install-audit-chain",
+                "rel": "reference"
+              }
+            ],
+            "methods": [
+              "TEST"
+            ],
+            "props": [
+              {
+                "name": "matura-status",
+                "ns": "https://matura.dev/ns/oscal",
+                "value": "pass"
+              },
+              {
+                "name": "framework-reference",
+                "ns": "https://matura.dev/ns/oscal",
+                "value": "SOC 2 CC7.2"
+              },
+              {
+                "name": "framework-reference",
+                "ns": "https://matura.dev/ns/oscal",
+                "value": "ISO/IEC 27001:2022 A.8.15"
+              }
+            ],
+            "subjects": [
+              {
+                "subject-uuid": "169313e3-1e15-5a04-a747-ef1d7e5a5c55",
+                "title": "Acme Cloud",
+                "type": "component"
+              }
+            ],
+            "title": "The installation audit log verifies",
+            "types": [
+              "control-objective"
+            ],
+            "uuid": "cf52538a-6b02-5e47-8e15-a43840143330"
+          },
+          {
+            "collected": "2026-10-17T09:30:00Z",
+            "description": "2 active endpoints, 1 failing, 3 events dropped after 24 h in total",
+            "links": [
+              {
+                "href": "https://github.com/marunsct/Platform/blob/main/docs/guide/readiness.md#install-webhooks",
+                "rel": "reference"
+              }
+            ],
+            "methods": [
+              "TEST"
+            ],
+            "props": [
+              {
+                "name": "matura-status",
+                "ns": "https://matura.dev/ns/oscal",
+                "value": "fail"
+              }
+            ],
+            "subjects": [
+              {
+                "subject-uuid": "169313e3-1e15-5a04-a747-ef1d7e5a5c55",
+                "title": "Acme Cloud",
+                "type": "component"
+              }
+            ],
+            "title": "Webhook deliveries to apps are healthy",
+            "types": [
+              "control-objective"
+            ],
+            "uuid": "97cc078c-fe01-5381-89c0-2ca30452e14e"
+          },
+          {
+            "collected": "2026-10-17T09:30:00Z",
+            "description": "restore test passed on 2026-10-09 (2 in the last 90 days)",
+            "links": [
+              {
+                "href": "https://github.com/marunsct/Platform/blob/main/docs/guide/readiness.md#install-restore-test",
+                "rel": "reference"
+              }
+            ],
+            "methods": [
+              "TEST"
+            ],
+            "props": [
+              {
+                "name": "matura-status",
+                "ns": "https://matura.dev/ns/oscal",
+                "value": "pass"
+              },
+              {
+                "name": "framework-reference",
+                "ns": "https://matura.dev/ns/oscal",
+                "value": "SOC 2 A1.3"
+              },
+              {
+                "name": "framework-reference",
+                "ns": "https://matura.dev/ns/oscal",
+                "value": "ISO/IEC 27001:2022 A.8.13"
+              },
+              {
+                "name": "framework-reference",
+                "ns": "https://matura.dev/ns/oscal",
+                "value": "GDPR Art. 32(1)(c)"
+              },
+              {
+                "name": "framework-reference",
+                "ns": "https://matura.dev/ns/oscal",
+                "value": "GDPR Art. 32(1)(d)"
+              }
+            ],
+            "subjects": [
+              {
+                "subject-uuid": "169313e3-1e15-5a04-a747-ef1d7e5a5c55",
+                "title": "Acme Cloud",
+                "type": "component"
+              }
+            ],
+            "title": "Backups are restored and checked regularly",
+            "types": [
+              "control-objective"
+            ],
+            "uuid": "30c84f77-b292-54a6-8828-ad23a28bf211"
+          },
+          {
+            "collected": "2026-10-17T09:30:00Z",
+            "description": "no access review recorded",
+            "links": [
+              {
+                "href": "https://github.com/marunsct/Platform/blob/main/docs/guide/readiness.md#install-access-review",
+                "rel": "reference"
+              }
+            ],
+            "methods": [
+              "TEST"
+            ],
+            "props": [
+              {
+                "name": "matura-status",
+                "ns": "https://matura.dev/ns/oscal",
+                "value": "fail"
+              },
+              {
+                "name": "framework-reference",
+                "ns": "https://matura.dev/ns/oscal",
+                "value": "SOC 2 CC6.2"
+              },
+              {
+                "name": "framework-reference",
+                "ns": "https://matura.dev/ns/oscal",
+                "value": "SOC 2 CC6.3"
+              },
+              {
+                "name": "framework-reference",
+                "ns": "https://matura.dev/ns/oscal",
+                "value": "ISO/IEC 27001:2022 A.5.18"
+              }
+            ],
+            "subjects": [
+              {
+                "subject-uuid": "169313e3-1e15-5a04-a747-ef1d7e5a5c55",
+                "title": "Acme Cloud",
+                "type": "component"
+              }
+            ],
+            "title": "Access is reviewed at least quarterly",
+            "types": [
+              "control-objective"
+            ],
+            "uuid": "7b42875a-1757-50c1-af78-9ecd3cc82a44"
+          },
+          {
+            "collected": "2026-10-17T09:30:00Z",
+            "description": "vulnerability scan passed on 2026-10-15 (1 in the last 90 days)",
+            "links": [
+              {
+                "href": "https://github.com/marunsct/Platform/blob/main/docs/guide/readiness.md#install-vulnerability-scan",
+                "rel": "reference"
+              }
+            ],
+            "methods": [
+              "TEST"
+            ],
+            "props": [
+              {
+                "name": "matura-status",
+                "ns": "https://matura.dev/ns/oscal",
+                "value": "pass"
+              },
+              {
+                "name": "framework-reference",
+                "ns": "https://matura.dev/ns/oscal",
+                "value": "SOC 2 CC7.1"
+              },
+              {
+                "name": "framework-reference",
+                "ns": "https://matura.dev/ns/oscal",
+                "value": "ISO/IEC 27001:2022 A.8.8"
+              }
+            ],
+            "subjects": [
+              {
+                "subject-uuid": "169313e3-1e15-5a04-a747-ef1d7e5a5c55",
+                "title": "Acme Cloud",
+                "type": "component"
+              }
+            ],
+            "title": "Images and dependencies are scanned for vulnerabilities",
+            "types": [
+              "control-objective"
+            ],
+            "uuid": "7e71a645-ddd3-5732-9984-5a61bb6cb56a"
+          },
+          {
+            "collected": "2026-10-17T09:30:00Z",
+            "description": "2 of 2 tenants",
+            "links": [
+              {
+                "href": "https://github.com/marunsct/Platform/blob/main/docs/guide/readiness.md#tenant-audit-chain",
+                "rel": "reference"
+              }
+            ],
+            "methods": [
+              "TEST"
+            ],
+            "props": [
+              {
+                "name": "matura-status",
+                "ns": "https://matura.dev/ns/oscal",
+                "value": "pass"
+              },
+              {
+                "name": "framework-reference",
+                "ns": "https://matura.dev/ns/oscal",
+                "value": "SOC 2 CC7.2"
+              },
+              {
+                "name": "framework-reference",
+                "ns": "https://matura.dev/ns/oscal",
+                "value": "ISO/IEC 27001:2022 A.8.15"
+              }
+            ],
+            "subjects": [
+              {
+                "subject-uuid": "169313e3-1e15-5a04-a747-ef1d7e5a5c55",
+                "title": "Acme Cloud",
+                "type": "component"
+              }
+            ],
+            "title": "Every tenant's audit log verifies",
+            "types": [
+              "control-objective"
+            ],
+            "uuid": "4c5964ea-f00b-5f72-9b37-cc8a2d302c36"
+          },
+          {
+            "collected": "2026-10-17T09:30:00Z",
+            "description": "1 of 2 tenants fail: globex",
+            "links": [
+              {
+                "href": "https://github.com/marunsct/Platform/blob/main/docs/guide/readiness.md#tenant-security-policy",
+                "rel": "reference"
+              }
+            ],
+            "methods": [
+              "TEST"
+            ],
+            "props": [
+              {
+                "name": "matura-status",
+                "ns": "https://matura.dev/ns/oscal",
+                "value": "fail"
+              },
+              {
+                "name": "framework-reference",
+                "ns": "https://matura.dev/ns/oscal",
+                "value": "SOC 2 CC6.1"
+              }
+            ],
+            "subjects": [
+              {
+                "subject-uuid": "169313e3-1e15-5a04-a747-ef1d7e5a5c55",
+                "title": "Acme Cloud",
+                "type": "component"
+              }
+            ],
+            "title": "Each organisation has a security policy",
+            "types": [
+              "control-objective"
+            ],
+            "uuid": "601a489f-f61f-51d1-9ab8-5ee456fee57e"
+          },
+          {
+            "collected": "2026-10-17T09:30:00Z",
+            "description": "1 of 2 tenants fail: globex",
+            "links": [
+              {
+                "href": "https://github.com/marunsct/Platform/blob/main/docs/guide/readiness.md#tenant-mfa",
+                "rel": "reference"
+              }
+            ],
+            "methods": [
+              "TEST"
+            ],
+            "props": [
+              {
+                "name": "matura-status",
+                "ns": "https://matura.dev/ns/oscal",
+                "value": "fail"
+              },
+              {
+                "name": "framework-reference",
+                "ns": "https://matura.dev/ns/oscal",
+                "value": "SOC 2 CC6.1"
+              },
+              {
+                "name": "framework-reference",
+                "ns": "https://matura.dev/ns/oscal",
+                "value": "ISO/IEC 27001:2022 A.8.5"
+              }
+            ],
+            "subjects": [
+              {
+                "subject-uuid": "169313e3-1e15-5a04-a747-ef1d7e5a5c55",
+                "title": "Acme Cloud",
+                "type": "component"
+              }
+            ],
+            "title": "Organisations require multi-factor authentication",
+            "types": [
+              "control-objective"
+            ],
+            "uuid": "b7751a3a-34eb-5199-a07b-6e17a31f841f"
+          },
+          {
+            "collected": "2026-10-17T09:30:00Z",
+            "description": "1 of 2 tenants fail: globex",
+            "links": [
+              {
+                "href": "https://github.com/marunsct/Platform/blob/main/docs/guide/readiness.md#tenant-session-limits",
+                "rel": "reference"
+              }
+            ],
+            "methods": [
+              "TEST"
+            ],
+            "props": [
+              {
+                "name": "matura-status",
+                "ns": "https://matura.dev/ns/oscal",
+                "value": "fail"
+              },
+              {
+                "name": "framework-reference",
+                "ns": "https://matura.dev/ns/oscal",
+                "value": "SOC 2 CC6.1"
+              },
+              {
+                "name": "framework-reference",
+                "ns": "https://matura.dev/ns/oscal",
+                "value": "ISO/IEC 27001:2022 A.8.5"
+              }
+            ],
+            "subjects": [
+              {
+                "subject-uuid": "169313e3-1e15-5a04-a747-ef1d7e5a5c55",
+                "title": "Acme Cloud",
+                "type": "component"
+              }
+            ],
+            "title": "Organisations limit session length and idle time",
+            "types": [
+              "control-objective"
+            ],
+            "uuid": "695b7d58-fc85-5316-9104-b0553a492b7c"
+          },
+          {
+            "collected": "2026-10-17T09:30:00Z",
+            "description": "1 of 2 tenants fail: globex",
+            "links": [
+              {
+                "href": "https://github.com/marunsct/Platform/blob/main/docs/guide/readiness.md#tenant-invite-domains",
+                "rel": "reference"
+              }
+            ],
+            "methods": [
+              "TEST"
+            ],
+            "props": [
+              {
+                "name": "matura-status",
+                "ns": "https://matura.dev/ns/oscal",
+                "value": "fail"
+              },
+              {
+                "name": "framework-reference",
+                "ns": "https://matura.dev/ns/oscal",
+                "value": "SOC 2 CC6.2"
+              },
+              {
+                "name": "framework-reference",
+                "ns": "https://matura.dev/ns/oscal",
+                "value": "ISO/IEC 27001:2022 A.5.16"
+              }
+            ],
+            "subjects": [
+              {
+                "subject-uuid": "169313e3-1e15-5a04-a747-ef1d7e5a5c55",
+                "title": "Acme Cloud",
+                "type": "component"
+              }
+            ],
+            "title": "Company invitations are limited to the company's domains",
+            "types": [
+              "control-objective"
+            ],
+            "uuid": "621b4f39-b7fc-5a2c-8a75-2b8cd2d3225c"
+          },
+          {
+            "collected": "2026-10-17T09:30:00Z",
+            "description": "1 of 2 tenants fail: acme",
+            "links": [
+              {
+                "href": "https://github.com/marunsct/Platform/blob/main/docs/guide/readiness.md#tenant-audit-streaming",
+                "rel": "reference"
+              }
+            ],
+            "methods": [
+              "TEST"
+            ],
+            "props": [
+              {
+                "name": "matura-status",
+                "ns": "https://matura.dev/ns/oscal",
+                "value": "fail"
+              },
+              {
+                "name": "framework-reference",
+                "ns": "https://matura.dev/ns/oscal",
+                "value": "SOC 2 CC7.2"
+              },
+              {
+                "name": "framework-reference",
+                "ns": "https://matura.dev/ns/oscal",
+                "value": "ISO/IEC 27001:2022 A.8.15"
+              }
+            ],
+            "subjects": [
+              {
+                "subject-uuid": "169313e3-1e15-5a04-a747-ef1d7e5a5c55",
+                "title": "Acme Cloud",
+                "type": "component"
+              }
+            ],
+            "title": "Company audit logs stream to the company's own systems",
+            "types": [
+              "control-objective"
+            ],
+            "uuid": "81d94849-ec7e-5dd5-85b2-e46417d257d7"
+          },
+          {
+            "collected": "2026-10-17T09:30:00Z",
+            "description": "1 of 1 tenants",
+            "links": [
+              {
+                "href": "https://github.com/marunsct/Platform/blob/main/docs/guide/readiness.md#tenant-ip-allowlist",
+                "rel": "reference"
+              }
+            ],
+            "methods": [
+              "TEST"
+            ],
+            "props": [
+              {
+                "name": "matura-status",
+                "ns": "https://matura.dev/ns/oscal",
+                "value": "pass"
+              },
+              {
+                "name": "framework-reference",
+                "ns": "https://matura.dev/ns/oscal",
+                "value": "SOC 2 CC6.6"
+              },
+              {
+                "name": "framework-reference",
+                "ns": "https://matura.dev/ns/oscal",
+                "value": "ISO/IEC 27001:2022 A.8.20"
+              }
+            ],
+            "subjects": [
+              {
+                "subject-uuid": "169313e3-1e15-5a04-a747-ef1d7e5a5c55",
+                "title": "Acme Cloud",
+                "type": "component"
+              }
+            ],
+            "title": "Organisations restrict API access by network (optional)",
+            "types": [
+              "control-objective"
+            ],
+            "uuid": "6e1f7a29-9ab7-5a6d-8880-92347464a4a0"
+          }
+        ],
+        "reviewed-controls": {
+          "control-selections": [
+            {
+              "include-all": {}
+            }
+          ]
+        },
+        "start": "2026-10-17T09:30:00Z",
+        "title": "Matura readiness check",
+        "uuid": "840c37a5-7fbd-5da2-b09b-460950e25473"
+      }
+    ],
+    "uuid": "00cd923f-6832-516c-b696-da266e4f4fa0"
+  }
+}

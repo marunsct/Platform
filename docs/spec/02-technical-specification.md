@@ -119,15 +119,17 @@ that mode unless `MATURA_ENV=development`.
 | Apps | `PUT /admin/v1/apps/{slug}` (apply manifest), `GET /v1/apps`, `GET /v1/tenants/{tid}/apps`, `PUT/DELETE /v1/tenants/{tid}/apps/{app}` |
 | App roles | `GET /v1/apps/{slug}/roles`; operators: `POST /admin/v1/apps/{slug}/roles`, `PATCH/DELETE /admin/v1/apps/{slug}/roles/{name}` (RL-8 to RL-11) |
 | Grants | `GET/POST /v1/tenants/{tid}/grants`, `DELETE …/{id}` |
-| Users | `GET /v1/me`, `GET /v1/me/tenants`, `GET/PATCH/DELETE /admin/v1/users/{uid}` |
+| Users | `GET /v1/me`, `GET /v1/me/tenants`, `GET /v1/me/export`, `DELETE /v1/me` (§14.2), `GET/PATCH/DELETE /admin/v1/users/{uid}` |
 | Database servers | `POST/GET /admin/v1/db-servers`, `PATCH/DELETE …/{id}`, `POST …/{id}/test` |
 | Placements | `GET /v1/tenants/{tid}/placements`; app: `GET /v1/apps/{app}/placements/{tid}`, `PUT` (app-managed register), `POST …:ready`, `POST …:deleted`; app: `POST /v1/apps/{app}/placements/{tid}/credentials` (short-lived connection) |
 | Sync | `GET /v1/apps/{app}/changes`, `GET /v1/apps/{app}/snapshot?tenant=` |
 | Webhooks | `POST/GET /admin/v1/apps/{app}/webhooks`, `PATCH/DELETE …/{id}`, `POST …/{id}/test` |
 | Audit | `GET /v1/tenants/{tid}/audit`, `GET …/audit/export` (NDJSON), `GET …/audit:verify`, `GET/POST …/audit/sinks`, `PATCH/DELETE …/audit/sinks/{id}`; operators: `GET /admin/v1/audit`, `GET /admin/v1/audit:verify` (§13) |
 | Security policy | `GET/PUT /v1/tenants/{tid}/security-policy` (§13.4) |
-| Sessions and MFA | `GET /v1/me/sessions`, `DELETE /v1/me/sessions[?keep_current=true]`, `DELETE /v1/me/sessions/{id}`, `GET /v1/me/mfa`; owners and admins: `GET /v1/tenants/{tid}/members/{uid}/sessions`, `POST …/members/{uid}:sign-out`, `POST …/members/{uid}:reset-mfa` (§14) |
-| Enterprise SSO | `GET/POST /v1/tenants/{tid}/domains`, `POST …/domains/{domain}:verify`, `DELETE …/domains/{domain}`, `GET/POST/DELETE /v1/tenants/{tid}/sso`; public: `GET /v1/sso/discover?email=` (§15) |
+| Sessions and MFA | `GET /v1/me/sessions`, `DELETE /v1/me/sessions[?keep_current=true]`, `DELETE /v1/me/sessions/{id}`, `GET /v1/me/mfa`; owners and admins: `GET /v1/tenants/{tid}/members/{uid}/sessions`, `POST …/members/{uid}:sign-out`, `POST …/members/{uid}:reset-mfa` (§16) |
+| Enterprise SSO | `GET/POST /v1/tenants/{tid}/domains`, `POST …/domains/{domain}:verify`, `DELETE …/domains/{domain}`, `GET/POST/DELETE /v1/tenants/{tid}/sso`; public: `GET /v1/sso/discover?email=` (§17) |
+| Privacy | `GET/POST /v1/tenants/{tid}/exports`, `GET …/exports/{id}`, `GET …/exports/{id}/download` (§14.1); `GET/PUT /v1/tenants/{tid}/retention` (§14.4) |
+| Readiness | operators: `GET /admin/v1/readiness`, `GET/POST /admin/v1/evidence`; unauthenticated, off by default: `GET /trust`, `GET /trust.json` (§15) |
 | Internal (Keycloak) | `POST /internal/v1/token-context` `{user_id, email, email_verified, name, locale, client_id, tenant, workspace, session_started, session_last_use}` → claims for the mapper, or `403 {error: access_denied, error_description}`; `POST /internal/v1/mfa-policy {user_id}` → `{required, tenants}`; `POST /internal/v1/sso-login {alias, email, user_id?, name}` → `{tid, tenant, joined}` or 403; bearer `MATURA_INTERNAL_TOKEN` |
 | Health | `GET /healthz/live`, `GET /healthz/ready` |
 
@@ -399,11 +401,14 @@ and reports `ready`. Expand-and-contract migrations are required, since tenants 
 | `MATURA_PORTAL_CLIENT_ID` | public Keycloak client the portal and the accept page sign in with (default `matura-console`) |
 | `MATURA_SMTP_ADDR` | `host:port` of the mail relay; unset: emails are queued, not sent |
 | `MATURA_SMTP_FROM`, `MATURA_SMTP_USER`, `MATURA_SMTP_PASSWORD` | sender address (default `no-reply@matura.local`) and optional login |
-| `MATURA_KEYCLOAK_CLIENT_SECRET` | secret of the realm's `matura-admin` client; unset: the session, MFA and SSO endpoints answer 503 |
+| `MATURA_KEYCLOAK_CLIENT_SECRET` | secret of the realm's `matura-admin` client; unset: the session, MFA and SSO endpoints answer 503 and erasure does not delete Keycloak accounts |
 | `MATURA_KEYCLOAK_CLIENT_ID` | default `matura-admin` |
 | `MATURA_KEYCLOAK_URL` | Keycloak base URL maturad calls (default: from `MATURA_ISSUER`; the realm is always the issuer's) |
 | `MATURA_TENANT_DELETE_GRACE` | how long a deleted tenant can be restored before it is purged (Go duration, default `720h`) |
 | `MATURA_TRUSTED_PROXIES` | comma-separated addresses or CIDR ranges of reverse proxies whose `X-Forwarded-For` is believed; unset: the connection's address is the client's |
+| `MATURA_PRODUCT_NAME` | name on the trust page and in readiness reports (default `Matura`) |
+| `MATURA_TRUST_PAGE` | `on` serves the public trust page at `/trust` and `/trust.json`; `off` (default) answers 404 |
+| `MATURA_SECURITY_CONTACT` | optional address the trust page gives for security reports |
 
 ## 11. Testing
 
@@ -430,6 +435,9 @@ internal/secrets/       KeyManager, AES-GCM envelope
 internal/placement/     provisioner (TS7b)
 internal/events/        outbox relay, webhooks, feed (TS7c)
 internal/audit/         audit streaming to tenant destinations (TS9)
+internal/privacy/       tenant exports and audit retention worker (TS17)
+internal/readiness/     control catalogue, evaluation, OSCAL and trust-page view (TS24, TS25)
+cmd/matura/             operator CLI: `matura check` (TS24)
 keycloak/realm/         realm-as-code
 keycloak/extensions/    Java SPIs (TS5)
 internal/portal/        embedded portal build and its handler (TS8)
@@ -437,6 +445,7 @@ web/portal/             customer portal source: React, Vite, Tailwind (TS3, TS8)
 sdk/python/             matura SDK (TS7)
 sdk/typescript/         @matura/sdk (TS7e)
 sdk/go/                 Go SDK, its own module (TS7e)
+docs/templates/         policy templates filled by `matura check --policies` (TS25)
 deploy/compose/         docker compose
 api/openapi.yaml
 ```
@@ -480,8 +489,10 @@ api/openapi.yaml
 - **Verify** (`GET …/audit:verify`, operators `GET /admin/v1/audit:verify?tenant=`) walks the chain in `seq` order,
   recomputes each hash, checks `prev_hash` links and that no position is missing, and that the last event matches
   the head (a removed tail). It answers `{ok, events, head_seq, head_hash, first_break: {seq, id, reason} | null}`.
-- Not yet: signed hourly checkpoints anchored to WORM storage or a transparency log (doc 07 §3), retention and
-  legal hold, and pseudonymising a deleted user's email in old events.
+- Verification starts at the chain's **anchor** (`audit_chain.anchor_seq`/`anchor_hash`; the genesis until
+  retention first purges, §14.4) and answers `anchor_seq` and `anchor_hash` too. It reads the stored events, never
+  the pseudonymised view (§14.3).
+- Not yet: signed hourly checkpoints anchored to WORM storage or a transparency log (doc 07 §3).
 
 ### 13.3 Reading, export and streaming
 
@@ -515,11 +526,150 @@ and ranges (masked), and refuses an allow-list that excludes the caller's own ad
 tenant's policy for 5 s (cleared at once on the replica that took the `PUT`). Changes are audited
 (`security_policy.updated` with before and after); they are not contract events.
 
-Keycloak enforces `require_mfa` through the extension (§14.2) and the session limits through the token mapper (§6).
+Keycloak enforces `require_mfa` through the extension (§16.2) and the session limits through the token mapper (§6).
 
-## 14. Sessions and MFA (TS12)
+## 14. Privacy: export, erasure, retention (TS17)
 
-### 14.1 Keycloak admin API
+The parts of TS17 that need no key service. OpenBao transit keys per tenant, SDK field encryption,
+customer-managed keys and crypto-shredding are not built yet; until they are, erasure in the audit log is a
+pseudonymised view (§14.3), not destruction of the stored bytes.
+
+### 14.1 Tenant data export
+
+- `POST /v1/tenants/{tid}/exports` (owners and operators; admins get 403) queues a `tenant_export` row
+  (forced RLS, one `queued` or `running` export per tenant, 409 otherwise) and records `tenant_export.requested`.
+- The **privacy worker** (`internal/privacy`, one active replica, advisory lock 7351008) claims queued exports
+  (`FOR UPDATE SKIP LOCKED`; one left `running` for 15 minutes is taken again), reads the tenant in a single
+  repeatable-read, read-only transaction in the tenant's scope and stores the bundle in the row (`bytea`, at most
+  `store.MaxExportBytes`, 64 MiB; a larger one fails with a message pointing at the audit NDJSON export).
+  Success and failure are audited (`tenant_export.completed`, `tenant_export.failed`).
+- The bundle (`format: matura.tenant-export/v1`) holds `tenant`, `workspaces` (not deleted), `members` (not
+  removed), `invitations`, active `grants` and the app `roles` they use, `placements` (never credentials),
+  `security_policy`, `retention`, and `audit`: `{anchor_seq, anchor_hash, head_seq, head_hash, events}`, the chain
+  from its anchor, each event with `prev_hash` and `hash`, so the receiver can check it. Each section is the same
+  JSON the API returns for it (`TestTenantExport` compares them).
+- `GET …/exports/{id}` shows `state` (`queued`, `running`, `ready`, `failed`, `expired`), `size_bytes`, `sha256`
+  and `expires_at`. `GET …/exports/{id}/download` serves a ready bundle with `Matura-Export-SHA256`, records
+  `tenant_export.downloaded` each time, and works for `store.ExportTTL` (24 h); then the worker deletes the bundle
+  and the download answers 410 `export-expired`.
+
+### 14.2 A user's own data: export and erasure
+
+- `GET /v1/me/export` (`format: matura.user-export/v1`): the profile, memberships in every tenant in any state
+  (with tenant slug and name), app role grants active and revoked, invitations to the user's address or accepted
+  by them, and the audit events whose actor is the user (newest 50 000, `truncated` beyond). It reads with
+  installation scope because the data spans tenants; every query is filtered to the user. Recorded as
+  `user.exported` in the installation chain.
+- `DELETE /v1/me` and the operator's `DELETE /admin/v1/users/{uid}` run the same erasure (`store.DeleteUser`), in
+  one transaction:
+  1. If the user is the only active owner of any tenant, nothing changes: 409 `last-owner` with `tenants` (ids).
+  2. Each membership ends (`membership.removed`, without email and name) and the user's grants in it are revoked
+     (`grant.revoked`): contract events, so apps remove the user.
+  3. Pending invitations to the address are revoked (`invitation.revoked`); every invitation row to it gets the
+     pseudonym as its address and loses `deliver_to`; mail queued or sent to the address is deleted.
+  4. `audit_redaction` gets a row (§14.3).
+  5. `app_user` keeps its id (apps' foreign keys stay valid) with email, name, avatar and locale cleared and status
+     `deleted` (`user.deleted`). An old token never brings it back.
+- Then maturad deletes the sign-in account through the `api.UserDirectory` interface (`DeleteUser(ctx, id)`),
+  when one is configured with `Server.SetUserDirectory`; nil skips it. A failure is logged and recorded as
+  `user.directory_delete_failed`; the erasure in Matura stands. maturad does not wire a Keycloak implementation yet.
+
+### 14.3 Pseudonymising erased users in the audit log
+
+Audit events are hashed and append-only, so erasure cannot edit them without breaking the chain. Instead:
+
+- `audit_redaction` (installation-wide) keeps per erased user the pseudonym `deleted-user-<first 12 hex of
+  SHA-256 of the user id>` and SHA-256 hashes of the lower-cased email and name, never the values.
+- Every reader except verification applies it: the list, the NDJSON export, streaming to destinations, the tenant
+  export. The actor's email becomes the pseudonym when the actor is the user or the email is theirs; any string in
+  `data` equal to their email is replaced in every event; their name is replaced in events about them (they are the
+  actor, or their id is in the target or the data). Such an event carries `redacted: true`; its `hash` is the
+  stored one, so it no longer recomputes from the fields shown, but the next event's `prev_hash` still links to it.
+  External verifiers check links for redacted events and hashes for the rest.
+- Searching the log by an erased user's old address finds nothing.
+- Verification reads the stored rows, so every chain still verifies after erasure (`TestUserDataRights`).
+- Limit: the stored rows still contain the address and name, readable only by the database owner or a superuser,
+  until retention purges them (§14.4). Removing them sooner needs per-field commitments or crypto-shredding
+  (planned with OpenBao in TS17's key work). This is the Art. 17(3)(b)/(e) record-keeping position; operators
+  should say so in their records of processing.
+
+### 14.4 Audit retention and legal hold
+
+- `audit_retention` (one row per tenant, forced RLS; absent means 400 days, no hold, version 0).
+  `GET /v1/tenants/{tid}/retention` (owners and admins) answers it with the chain's `anchor_seq`;
+  `PUT` (owners and operators, `If-Match` optional) sets `retention_days` (30–3650) and `legal_hold` with a
+  required `legal_hold_reason`; recorded as `audit_retention.updated` with before and after.
+- The privacy worker runs retention hourly for every tenant chain through `matura_audit_purge(tenant)`, a
+  `SECURITY DEFINER` function owned by the migration role (the runtime role has no DELETE on `audit_event`; a
+  DELETE policy exists for the owner only). The function decides what may go: nothing under legal hold;
+  otherwise the longest prefix of the chain older than the retention (it stops before the first event still
+  inside it), never another tenant's (the argument must be the transaction's tenant). It deletes the prefix and
+  sets the chain's anchor to the last purged event's `seq` and `hash`; maturad then records `audit.purged`
+  (`purged`, `anchor_seq`, `anchor_hash`) in the same chain.
+- A trigger on `audit_chain` refuses any change of the anchor except by the owner role, so the runtime role cannot
+  hide events from verification by moving it.
+- Verification and exports start at the anchor: the first remaining event's `prev_hash` must equal `anchor_hash`
+  (`TestAuditRetention`). Installation events (no tenant) are not purged yet; archive tiers (doc 07: 7 years) come
+  with the backup module.
+## 15. Readiness (TS24, TS25)
+
+Readiness evaluates controls against the installation's real state and reports gaps; it never claims compliance
+(every report and the trust page carry `readiness.Notice`). Operator guide: `docs/guide/readiness.md`.
+
+### 15.1 Controls and the report
+
+- **Catalogue.** `readiness.Catalogue` (`internal/readiness/controls.go`) lists each control: id, title, scope
+  (`installation` or `tenant`), `public` (shown on the trust page), `optional` (counted only once configured), fix
+  text, and framework references (SOC 2 Trust Services Criteria, ISO/IEC 27001:2022 Annex A, GDPR articles) kept
+  conservative: a clause is listed only where the control is a direct technical contribution to it. Operational
+  controls (SMTP, webhooks) have none. The docs link is `docs/guide/readiness.md#<id>`.
+- **Facts.** `GET /admin/v1/readiness` gathers `readiness.Facts` in operator scope: the installation's configuration
+  (`Server.SetReadiness`, from `MATURA_ENV`, `MATURA_AUTH`, `MATURA_KEK` set, `MATURA_SMTP_ADDR` set,
+  `MATURA_METRICS_ADDR` set, `MATURA_PUBLIC_URL`); `store.TenantPostures` (every tenant that is not deleted with its
+  security policy and counts of active and failing audit destinations, one query); `store.VerifyAudit` of the
+  installation chain and of each active tenant's chain; `store.WebhookHealth`; and per evidence kind the newest
+  record and the count in the last 90 days.
+- **Evaluation.** Installation controls return `pass`, `fail` or `not-applicable` with an evidence string. Tenant
+  controls run per active tenant (returning `not-applicable` for kinds they do not cover, e.g. personal tenants) and
+  pass only when every applicable tenant passes; the result lists each tenant. `score` = passed ÷ (passed + failed)
+  × 100, one decimal; 0 when nothing applies. `summary` holds the counts and dates policy templates are filled from.
+- **Cost.** Verification recomputes every chain, so the report is O(audit events). Fine at M3 volumes; signed
+  checkpoints (§13.2, not yet) will let it start from the last checkpoint.
+
+### 15.2 Evidence
+
+`POST /admin/v1/evidence {kind, passed, details?}` (operators): `kind` ∈ `restore-test` (current for 35 days),
+`vulnerability-scan` (35 days), `access-review` (92 days); `details` a JSON object ≤ 16 KiB. No table of its own:
+the record is an event in the installation audit chain with action `evidence.<kind>`, target `evidence/<kind>` and
+data `{kind, passed, details}`, so it is hash-chained, append-only and exported with the chain. The response and
+`GET /admin/v1/evidence?kind=&limit=` give `{id, kind, passed, details, recorded_at, recorded_by, seq, hash}`.
+`scripts/backup.sh restore-test <dir> --report <url>` posts its result with `MATURA_TOKEN` (passed or not, with each
+database's outcome, the backup directory and its `created_at`).
+
+### 15.3 `matura check`
+
+`cmd/matura` reads the report with `MATURA_TOKEN` (or `X-Matura-Dev-*` headers from `MATURA_DEV_USER` on development
+installs) from `MATURA_URL`/`--url`. Output: a table and the gaps with fix, docs link and references (default),
+`--json` (the report), or `--oscal`: OSCAL 1.1.2 assessment results with one result, an observation per control and a
+finding per applicable control (`satisfied` / `not-satisfied`), UUIDv5 derived from `generated_at` and the control
+id so the same report gives the same document. `--min-score N` exits 1 below N; usage and connection errors exit 2.
+`--policies DIR --out DIR --set k=v` fills `{{placeholder}}`s in every `*.md` template except `README.md` from the
+report's summary and `--set`, and lists the ones left. Golden files in `cmd/matura/testdata` pin the three outputs.
+
+### 15.4 Trust page
+
+`GET /trust` and `GET /trust.json` (no authentication) serve `readiness.Public(report)`: public controls only, each
+`in-place`, `not-in-place` or `not-applicable` with its references, plus the product name, totals, optional security
+contact and the notice; never evidence text or tenant data. Off unless `MATURA_TRUST_PAGE=on` (404). Each replica
+renders on request and caches both forms for 5 minutes (`Cache-Control: public, max-age=300`); recording evidence
+clears the cache on that replica. The HTML has no scripts, one inline stylesheet, and
+`Content-Security-Policy: default-src 'none'; style-src 'sha256-<hash of the stylesheet>'; img-src 'none';
+script-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`, plus `X-Content-Type-Options:
+nosniff` and `Referrer-Policy: no-referrer`. `/trust.json` allows any origin.
+
+## 16. Sessions and MFA (TS12)
+
+### 16.1 Keycloak admin API
 
 `internal/keycloak` is maturad's client for one realm's admin REST API. It signs in with the client-credentials grant
 of the confidential client `matura-admin` (realm export), whose service account holds only the realm-management
@@ -528,7 +678,7 @@ until 30 s before it expires and fetched again once on a 401. Every call has a t
 (`ErrNotFound`, `ErrConflict`, `ErrForbidden`, `ErrUnavailable`, `*Error` with status and Keycloak's message). The API
 answers 503 `keycloak-unavailable` when Keycloak does not answer and 502 `keycloak-error` when it refuses.
 
-### 14.2 MFA enforcement
+### 16.2 MFA enforcement
 
 The realm's browser flow is `matura browser`: cookie, identity-provider redirector (`kc_idp_hint`), then password
 form, a conditional second-factor step (OTP, WebAuthn security key, passkey or recovery code, for users who have
@@ -541,19 +691,19 @@ flow `matura post broker login`. Tenant SSO sign-ins are not challenged by Keycl
 responsible for MFA. Known gaps: a session started before the policy changed keeps working until it ends (sign
 members out to force it); step-up (`acr`) and recovery-code enrolment prompts are not built.
 
-### 14.3 Sessions and resets
+### 16.3 Sessions and resets
 
 People list their sessions (`current` marks the one whose `sid` the token carries) and end one, all, or all but the
 current. Owners and admins list a member's sessions, sign them out everywhere and reset their second factors
 (removes OTP, WebAuthn, passkey and recovery-code credentials, then signs them out; not on oneself). Keycloak
 sessions and credentials belong to the person, not to a tenant, so a tenant acts only on people it **governs**: an
-active member of a company tenant whose email domain that tenant verified (§15), or who belongs to no other
+active member of a company tenant whose email domain that tenant verified (§17), or who belongs to no other
 organisation (personal tenants do not count). Otherwise 403 `not-governed`. Admins cannot act on owners; operators
 need approved support access like for any tenant admin view and are then not limited by this rule. Each action is audited in the tenant's log (`member.signed_out`, `member.mfa_reset`) or, for
 one's own sessions, the installation's (`session.revoked`, `session.revoked_all`). Refresh tokens stop at once;
 access tokens already issued run out within their lifetime (5 min).
 
-## 15. Enterprise SSO (TS13)
+## 17. Enterprise SSO (TS13)
 
 ```
 tenant_domain(tenant_id, domain, challenge, verified_at, last_checked_at, last_error, version, created_at)

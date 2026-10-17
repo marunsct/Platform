@@ -2,6 +2,8 @@ package store
 
 import (
 	"context"
+	"errors"
+	"fmt"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -192,8 +194,20 @@ func (s *Store) SetUserStatus(ctx context.Context, sc Scope, id uuid.UUID, statu
 	return out, err
 }
 
-// DeleteUser removes a person (operators, GDPR erasure): memberships end, grants are revoked, and the row stays with
-// email and name cleared so apps' foreign keys remain valid (contract §3). A sole owner must be replaced first.
+// LastOwnerError refuses to erase a user who is the only active owner of tenants: each needs another owner, or
+// to be deleted, first (UM-4).
+type LastOwnerError struct{ Tenants []uuid.UUID }
+
+func (e *LastOwnerError) Error() string {
+	return fmt.Sprintf("the user is the only owner of %d tenant(s); make someone else owner of each, or delete it, first",
+		len(e.Tenants))
+}
+
+// DeleteUser erases a person (operators, or the user themselves; GDPR Art. 17): memberships end and grants are
+// revoked (contract events, so apps delete or anonymise the user), pending invitations to their address are
+// revoked, invitations to their address carry the pseudonym instead and mail queued or sent to it is deleted, their email and name are pseudonymised in the audit log as it is read (audit_redaction), and the row
+// stays with email and name cleared so apps' foreign keys remain valid (contract §3). Nothing changes when the user
+// is the only owner of a tenant. sc must be operator scope: the erasure spans tenants.
 func (s *Store) DeleteUser(ctx context.Context, sc Scope, id uuid.UUID) error {
 	return s.tx(ctx, sc, func(tx pgx.Tx) error {
 		cur, err := scanUser(tx.QueryRow(ctx, `SELECT `+userCols+` FROM app_user WHERE id = $1 FOR UPDATE`, id))
@@ -212,17 +226,25 @@ func (s *Store) DeleteUser(ctx context.Context, sc Scope, id uuid.UUID) error {
 		if err != nil {
 			return err
 		}
-		for _, tid := range tenants {
+		members := make([]Membership, len(tenants))
+		var sole []uuid.UUID
+		for i, tid := range tenants {
 			if err := lockTenant(ctx, tx, tid); err != nil {
 				return err
 			}
-			m, err := getMember(ctx, tx, tid, id, true)
-			if err != nil {
+			if members[i], err = getMember(ctx, tx, tid, id, true); err != nil {
 				return err
 			}
-			if err := checkNotLastOwner(ctx, tx, tid, m); err != nil {
-				return invalid("the user is the only owner of tenant %s; make someone else owner first", tid)
+			if err := checkNotLastOwner(ctx, tx, tid, members[i]); errors.Is(err, errLastOwner) {
+				sole = append(sole, tid)
+			} else if err != nil {
+				return err
 			}
+		}
+		if len(sole) > 0 {
+			return &LastOwnerError{Tenants: sole}
+		}
+		for i, tid := range tenants {
 			if err := revokeGrantsOf(ctx, tx, tid, id); err != nil {
 				return err
 			}
@@ -234,10 +256,27 @@ func (s *Store) DeleteUser(ctx context.Context, sc Scope, id uuid.UUID) error {
 				WHERE tenant_id = $1 AND user_id = $2`, tid, id, v); err != nil {
 				return mapErr(err)
 			}
+			m := members[i]
 			m.Status, m.Version, m.Email, m.DisplayName = "removed", v, nil, nil
 			if err := emit(ctx, tx, v, tid, "membership.removed", memberSubject(tid, id), m); err != nil {
 				return err
 			}
+		}
+		if cur.Email != nil && *cur.Email != "" {
+			if err := revokeInvitationsTo(ctx, tx, *cur.Email); err != nil {
+				return err
+			}
+			// invitation rows are not hashed, so the address itself is replaced
+			if _, err := tx.Exec(ctx, `UPDATE invitation SET email = $2, deliver_to = NULL WHERE lower(email) = lower($1)`,
+				*cur.Email, Pseudonym(id)); err != nil {
+				return err
+			}
+			if _, err := tx.Exec(ctx, `DELETE FROM email_outbox WHERE lower(to_address) = lower($1)`, *cur.Email); err != nil {
+				return err
+			}
+		}
+		if err := recordErasure(ctx, tx, cur); err != nil {
+			return err
 		}
 		v, err := nextVersion(ctx, tx)
 		if err != nil {
@@ -250,4 +289,31 @@ func (s *Store) DeleteUser(ctx context.Context, sc Scope, id uuid.UUID) error {
 		}
 		return emit(ctx, tx, v, uuid.Nil, "user.deleted", "users/"+id.String(), out)
 	})
+}
+
+func revokeInvitationsTo(ctx context.Context, tx pgx.Tx, email string) error {
+	rows, err := tx.Query(ctx, `SELECT `+invitationCols+` FROM invitation
+		WHERE lower(email) = lower($1) AND state = 'pending' FOR UPDATE`, email)
+	if err != nil {
+		return err
+	}
+	pending, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (Invitation, error) { return scanInvitation(r) })
+	if err != nil {
+		return err
+	}
+	for _, inv := range pending {
+		v, err := nextVersion(ctx, tx)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `UPDATE invitation SET state = 'revoked', version = $3 WHERE tenant_id = $1 AND id = $2`,
+			inv.TenantID, inv.ID, v); err != nil {
+			return err
+		}
+		inv.State, inv.Version = "revoked", v
+		if err := auditInvitation(ctx, tx, "invitation.revoked", inv); err != nil {
+			return err
+		}
+	}
+	return nil
 }

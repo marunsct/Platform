@@ -31,6 +31,9 @@ func (c client) raw(method, path string, header map[string]string) (int, http.He
 	req, _ := http.NewRequest(method, c.srv.URL+path, nil)
 	req.Header.Set("X-Matura-Dev-User", c.user.String())
 	req.Header.Set("X-Matura-Dev-Email", emailOf(c))
+	if c.name != "" {
+		req.Header.Set("X-Matura-Dev-Name", c.name)
+	}
 	if c.op {
 		req.Header.Set("X-Matura-Dev-Operator", "true")
 	}

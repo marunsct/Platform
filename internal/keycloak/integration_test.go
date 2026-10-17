@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/marunsct/Platform/internal/keycloak"
 )
 
@@ -129,6 +131,14 @@ func TestAgainstKeycloak(t *testing.T) {
 	}
 	if _, err := c.IdentityProvider(ctx, "t-acme"); !errors.Is(err, keycloak.ErrNotFound) {
 		t.Fatalf("after delete: %v", err)
+	}
+
+	// erasure deletes the account (api.UserDirectory)
+	if err := c.DeleteUser(ctx, uuid.MustParse(uid)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Credentials(ctx, uid); !errors.Is(err, keycloak.ErrNotFound) {
+		t.Fatalf("after deleting the user: %v", err)
 	}
 }
 

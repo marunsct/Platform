@@ -7,6 +7,7 @@
 | [Backups](backup.md) | operators backing up and test-restoring Matura's databases |
 | [Enterprise SSO](sso.md) | tenant admins connecting an OIDC or SAML identity provider (domain verification, setup, sign-in rules) and developers adding home-realm discovery; sessions and MFA reset |
 | [Customer portal](portal.md) | anyone running, using or developing the customer admin portal served at `/portal/` |
+| [Readiness](readiness.md) | operators checking which security controls are in place (`matura check`), recording evidence, exporting OSCAL, turning on the trust page and filling the policy templates |
 | [Conformance kit](conformance.md) | anyone checking that an app, in any language, refuses bad tokens and missing permissions, keeps tenants apart and verifies signed events |
 
 SDKs (same features in each: token verification, permission checks, webhook receiver, contract tables with the

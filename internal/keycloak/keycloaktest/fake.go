@@ -51,6 +51,7 @@ type Server struct {
 	Imports     map[string]map[string]string // import-config answers by fromUrl
 	TokenCalls  int
 	Logouts     []string // user ids signed out everywhere
+	Deleted     []string // user ids whose accounts were deleted
 	tokens      map[string]bool
 }
 
@@ -154,6 +155,11 @@ func (f *Server) serve(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "Sesssion not found"})
+	case "DELETE users/*":
+		f.Deleted = append(f.Deleted, parts[1])
+		delete(f.Sessions, parts[1])
+		delete(f.Credentials, parts[1])
+		w.WriteHeader(http.StatusNoContent)
 	case "GET users/*/credentials":
 		writeJSON(w, http.StatusOK, orEmpty(f.Credentials[parts[1]]))
 	case "DELETE users/*/credentials/*":

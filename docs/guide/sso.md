@@ -1,7 +1,7 @@
 # Enterprise single sign-on
 
 This guide is for tenant administrators connecting their company's identity provider (IdP), and for app developers
-who want "Sign in with your company account" to work. Reference: [technical specification §14–15](../spec/02-technical-specification.md#15-enterprise-sso-ts13).
+who want "Sign in with your company account" to work. Reference: [technical specification §16–17](../spec/02-technical-specification.md#17-enterprise-sso-ts13).
 
 ## 1. Prove you own your email domain
 

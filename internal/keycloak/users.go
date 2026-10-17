@@ -6,6 +6,8 @@ import (
 	"net/url"
 	"sort"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // Session is one of a user's Keycloak SSO sessions (a browser or device that signed in).
@@ -128,4 +130,13 @@ func (c *Client) ResetSecondFactors(ctx context.Context, userID string) (int, er
 		n++
 	}
 	return n, c.LogoutUser(ctx, userID)
+}
+
+// DeleteUser removes the user's Keycloak account (credentials, sessions, identity-provider links). A user that is
+// already gone is not an error. It implements api.UserDirectory for erasure (TS17).
+func (c *Client) DeleteUser(ctx context.Context, id uuid.UUID) error {
+	if err := c.do(ctx, http.MethodDelete, "users/"+url.PathEscape(id.String()), nil, nil); err != nil && !isNotFound(err) {
+		return err
+	}
+	return nil
 }
