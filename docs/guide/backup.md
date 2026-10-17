@@ -16,7 +16,14 @@ scripts/backup.sh restore-test /backups/2026-10-17          # restores into thro
 ```
 
 Run `backup` daily and `restore-test` weekly from cron or a systemd timer, and copy the directory to object storage
-with object lock. A restore that passes `restore-test` is a backup you can rely on; one that has never been restored is not.
+with object lock. Add `--report <maturad URL>` (with `MATURA_TOKEN` set to an operator's access token) and the
+result, passed or failed, is recorded as evidence in the installation audit log, where the readiness control
+`install-restore-test` reads it ([readiness](readiness.md)):
+
+```sh
+MATURA_TOKEN=... scripts/backup.sh restore-test /backups/2026-10-17 --report https://matura.example.com
+```
+ A restore that passes `restore-test` is a backup you can rely on; one that has never been restored is not.
 
 To restore for real: stop maturad and Keycloak, recreate the empty databases with their owners
 (`deploy/compose/init-db.sql`), then `scripts/backup.sh restore <dir> matura matura` and the same for `keycloak`.

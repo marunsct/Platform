@@ -31,6 +31,9 @@ type Config struct {
 	SMTPUser           string
 	SMTPPassword       string
 	TrustedProxies     []netip.Prefix // reverse proxies whose X-Forwarded-For is believed (IP allow-lists, audit)
+	ProductName        string         // name shown on the trust page and in readiness reports
+	TrustPage          bool           // serve the public trust page at /trust (MATURA_TRUST_PAGE=on)
+	SecurityContact    string         // optional address the trust page gives for security reports
 }
 
 func getenv(key, def string) string {
@@ -62,6 +65,15 @@ func FromEnv() (Config, error) {
 		SMTPFrom:           getenv("MATURA_SMTP_FROM", "no-reply@matura.local"),
 		SMTPUser:           os.Getenv("MATURA_SMTP_USER"),
 		SMTPPassword:       os.Getenv("MATURA_SMTP_PASSWORD"),
+		ProductName:        getenv("MATURA_PRODUCT_NAME", "Matura"),
+		SecurityContact:    os.Getenv("MATURA_SECURITY_CONTACT"),
+	}
+	switch v := strings.ToLower(getenv("MATURA_TRUST_PAGE", "off")); v {
+	case "on", "true", "1":
+		c.TrustPage = true
+	case "off", "false", "0":
+	default:
+		return c, fmt.Errorf("MATURA_TRUST_PAGE must be on or off, got %q", v)
 	}
 	for _, raw := range strings.Split(os.Getenv("MATURA_TRUSTED_PROXIES"), ",") {
 		if raw = strings.TrimSpace(raw); raw == "" {

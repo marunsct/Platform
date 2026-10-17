@@ -16,6 +16,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/marunsct/Platform/internal/portal"
+	"github.com/marunsct/Platform/internal/readiness"
 	"github.com/marunsct/Platform/internal/secrets"
 	"github.com/marunsct/Platform/internal/store"
 )
@@ -34,6 +35,8 @@ type Server struct {
 	trustedProxies []netip.Prefix
 	policies       sync.Map // tenant id -> cachedPolicy, for the IP allow-list
 	portal         *portal.Portal
+	install        readiness.Install // this installation's configuration, for readiness (TS24)
+	trust          trustCache        // rendered trust page (TS25)
 }
 
 // seenProfile remembers a profile already written; it is re-checked after a minute so a deactivated account stops
@@ -44,7 +47,8 @@ type seenProfile struct {
 }
 
 func New(st *store.Store, auth Authenticator, keys secrets.KeyManager, log *slog.Logger) *Server {
-	return &Server{store: st, auth: auth, keys: keys, log: log, source: "matura://installation/main"}
+	return &Server{store: st, auth: auth, keys: keys, log: log, source: "matura://installation/main",
+		install: readiness.Install{Product: "Matura"}}
 }
 
 // SetSource sets the CloudEvents source this installation puts on events.
@@ -71,6 +75,8 @@ func (s *Server) Handler() http.Handler {
 	s.handle(mux, "GET /invitations/preview", s.previewInvitation)
 	s.handle(mux, "GET /portal/config.json", s.portal.ConfigJSON)
 	s.handle(mux, "GET /portal/", s.portal.Files)
+	s.handle(mux, "GET /trust", s.trustPage(false))
+	s.handle(mux, "GET /trust.json", s.trustPage(true))
 
 	api := http.NewServeMux()
 	s.handle(api, "GET /v1/me", s.getMe)
@@ -136,6 +142,9 @@ func (s *Server) Handler() http.Handler {
 	s.handle(api, "PATCH /admin/v1/apps/{slug}/webhooks/{id}", s.patchWebhook)
 	s.handle(api, "DELETE /admin/v1/apps/{slug}/webhooks/{id}", s.deleteWebhook)
 	s.handle(api, "POST /admin/v1/apps/{slug}/webhooks/{id}/test", s.testWebhook)
+	s.handle(api, "GET /admin/v1/readiness", s.getReadiness)
+	s.handle(api, "GET /admin/v1/evidence", s.listEvidence)
+	s.handle(api, "POST /admin/v1/evidence", s.recordEvidence)
 
 	// app backends, authenticated with their client id and secret (contract §7, technical specification §4)
 	appAPI := http.NewServeMux()

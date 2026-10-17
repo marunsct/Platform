@@ -43,3 +43,22 @@ func TestTrustedProxies(t *testing.T) {
 		t.Fatal("a host name was accepted as a trusted proxy")
 	}
 }
+
+func TestTrustPageDefaultsOff(t *testing.T) {
+	t.Setenv("MATURA_DATABASE_URL", "postgres://x")
+	t.Setenv("MATURA_ENV", "development")
+	t.Setenv("MATURA_AUTH", "dev")
+	c, err := FromEnv()
+	if err != nil || c.TrustPage || c.ProductName != "Matura" {
+		t.Fatalf("defaults: trust page %v, product %q, %v", c.TrustPage, c.ProductName, err)
+	}
+	t.Setenv("MATURA_TRUST_PAGE", "on")
+	t.Setenv("MATURA_PRODUCT_NAME", "Acme Cloud")
+	if c, err = FromEnv(); err != nil || !c.TrustPage || c.ProductName != "Acme Cloud" {
+		t.Fatalf("on: %v %q %v", c.TrustPage, c.ProductName, err)
+	}
+	t.Setenv("MATURA_TRUST_PAGE", "maybe")
+	if _, err = FromEnv(); err == nil {
+		t.Fatal("MATURA_TRUST_PAGE=maybe accepted")
+	}
+}

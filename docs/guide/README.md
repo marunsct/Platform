@@ -6,6 +6,7 @@
 | [Kubernetes](kubernetes.md) | operators installing Matura with the Helm chart, including drop-in mode with an existing Keycloak |
 | [Backups](backup.md) | operators backing up and test-restoring Matura's databases |
 | [Customer portal](portal.md) | anyone running, using or developing the customer admin portal served at `/portal/` |
+| [Readiness](readiness.md) | operators checking which security controls are in place (`matura check`), recording evidence, exporting OSCAL, turning on the trust page and filling the policy templates |
 | [Conformance kit](conformance.md) | anyone checking that an app, in any language, refuses bad tokens and missing permissions, keeps tenants apart and verifies signed events |
 
 SDKs (same features in each: token verification, permission checks, webhook receiver, contract tables with the
