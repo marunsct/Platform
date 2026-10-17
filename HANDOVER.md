@@ -37,9 +37,16 @@ self-hosted, open standards, nothing phones home).
   It adds operator endpoints for plans and database servers (`/admin/v1/plans`, `/admin/v1/db-servers`, with a
   connection test), envelope-encrypted secrets (`internal/secrets`, AES-256-GCM under `MATURA_KEK`; the admin
   password is never returned, only a fingerprint), and `Idempotency-Key` on every POST (migration 0003).
-- **Left in TS2:** OpenAPI document (`api/openapi.yaml`), operator endpoints for users; outbox relay moves to TS7c.
-- **Next:** TS4-lite sign-in on Keycloak, TS5 token mapper, TS6 invitations, TS7 Python SDK, TS7b provisioning,
-  TS7c contract sync, TS7d DevFlow (doc 20 §3).
+- 2026-10-17: the owner asked to plan and build the rest of the product and for an app design guide. Added
+  `docs/plan/21` (what finished means and the M1 build sequence) and `docs/guide/designing-apps-for-matura.md`.
+  Owner decision: **AgentCanvas is the first app (TS9a in M1); DevFlow moves to M2.**
+- **Built 2026-10-17:** `/v1/me/tenants`; operator users (search, deactivate, delete with anonymisation); app
+  secrets (HTTP Basic for app backends); outbox sequencer (`seq` in commit order), change feed and snapshot per app
+  with per-app filtering; webhook endpoints with an in-order, signed relay (one leader, backoff, give-up after 24 h);
+  migration 0004; `internal/events` (CloudEvents envelope, `Matura-Signature`).
+- **Left in TS2:** OpenAPI document (`api/openapi.yaml`).
+- **Next:** doc 21 §3: data placement (TS7b), invitations (TS6), token mapper (TS5), realm (TS4-lite), Python SDK
+  (TS7), any-language kit (TS7e), then AgentCanvas on Matura (TS9a).
 - `main` holds LICENSE, SECURITY.md, CONTRIBUTING.md.
 
 ## 3. Where to read

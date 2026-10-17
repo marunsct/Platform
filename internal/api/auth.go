@@ -10,6 +10,8 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
+
+	"github.com/marunsct/Platform/internal/store"
 )
 
 // Principal is the verified caller (technical specification §4).
@@ -20,6 +22,7 @@ type Principal struct {
 	Name          string
 	Locale        string
 	Operator      bool
+	AppID         uuid.UUID // set for app backends; UserID is then empty
 }
 
 // Authenticator turns a request into a Principal or an error that becomes 401.
@@ -98,6 +101,16 @@ func (a JWTAuthenticator) Authenticate(r *http.Request) (Principal, error) {
 }
 
 type ctxKey struct{}
+type appKey struct{}
+
+func withApp(ctx context.Context, a store.App) context.Context {
+	return context.WithValue(ctx, appKey{}, a)
+}
+
+func appFrom(ctx context.Context) store.App {
+	a, _ := ctx.Value(appKey{}).(store.App)
+	return a
+}
 
 func withPrincipal(ctx context.Context, p Principal) context.Context {
 	return context.WithValue(ctx, ctxKey{}, p)

@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
@@ -62,15 +63,26 @@ func (c client) must(want int, method, path string, body any) map[string]any {
 }
 
 func setup(t *testing.T) *httptest.Server {
+	srv, _, _ := setupFull(t)
+	return srv
+}
+
+// setupFull also returns the store and keys, for tests that run the relay or the provisioner.
+func setupFull(t *testing.T) (*httptest.Server, *store.Store, secrets.KeyManager) {
 	pool := testdb.New(t)
 	keys, err := secrets.NewLocal(base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{7}, 32)))
 	if err != nil {
 		t.Fatal(err)
 	}
-	srv := httptest.NewServer(api.New(store.New(pool), api.DevAuthenticator{}, keys,
-		slog.New(slog.NewTextHandler(io.Discard, nil))).Handler())
+	st := store.New(pool)
+	var logs io.Writer = io.Discard
+	if os.Getenv("MATURA_TEST_LOG") != "" {
+		logs = os.Stderr
+	}
+	srv := httptest.NewServer(api.New(st, api.DevAuthenticator{}, keys,
+		slog.New(slog.NewTextHandler(logs, nil))).Handler())
 	t.Cleanup(srv.Close)
-	return srv
+	return srv, st, keys
 }
 
 var manifest = map[string]any{

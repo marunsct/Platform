@@ -24,6 +24,10 @@ type Server struct {
 	keys  secrets.KeyManager
 	log   *slog.Logger
 	seen  sync.Map // user id -> seenProfile, so unchanged profiles skip the database
+
+	source         string  // CloudEvents source of this installation
+	appRoutes      []route // extra routes for app backends (placements)
+	internalRoutes []route // /internal/v1 routes for Keycloak (TS5)
 }
 
 // seenProfile remembers a profile already written; it is re-checked after a minute so a deactivated account stops
@@ -34,7 +38,7 @@ type seenProfile struct {
 }
 
 func New(st *store.Store, auth Authenticator, keys secrets.KeyManager, log *slog.Logger) *Server {
-	return &Server{store: st, auth: auth, keys: keys, log: log}
+	return &Server{store: st, auth: auth, keys: keys, log: log, source: "matura://installation/main"}
 }
 
 func (s *Server) Handler() http.Handler {
@@ -76,10 +80,40 @@ func (s *Server) Handler() http.Handler {
 	api.HandleFunc("DELETE /admin/v1/db-servers/{id}", s.deleteDBServer)
 	api.HandleFunc("POST /admin/v1/db-servers/{id}/test", s.testDBServer)
 
-	authed := s.authenticate(s.idempotent(api))
+	api.HandleFunc("GET /v1/me/tenants", s.myTenants)
+	api.HandleFunc("GET /admin/v1/users", s.listUsers)
+	api.HandleFunc("GET /admin/v1/users/{uid}", s.getUser)
+	api.HandleFunc("PATCH /admin/v1/users/{uid}", s.patchUser)
+	api.HandleFunc("DELETE /admin/v1/users/{uid}", s.deleteUser)
+	api.HandleFunc("GET /admin/v1/apps/{slug}/secrets", s.listAppSecrets)
+	api.HandleFunc("POST /admin/v1/apps/{slug}/secrets", s.createAppSecret)
+	api.HandleFunc("DELETE /admin/v1/apps/{slug}/secrets/{id}", s.revokeAppSecret)
+	api.HandleFunc("GET /admin/v1/apps/{slug}/webhooks", s.listWebhooks)
+	api.HandleFunc("POST /admin/v1/apps/{slug}/webhooks", s.createWebhook)
+	api.HandleFunc("PATCH /admin/v1/apps/{slug}/webhooks/{id}", s.patchWebhook)
+	api.HandleFunc("DELETE /admin/v1/apps/{slug}/webhooks/{id}", s.deleteWebhook)
+	api.HandleFunc("POST /admin/v1/apps/{slug}/webhooks/{id}/test", s.testWebhook)
+
+	// app backends, authenticated with their client id and secret (contract §7, technical specification §4)
+	appAPI := http.NewServeMux()
+	appAPI.HandleFunc("GET /v1/apps/{app}/changes", s.appChanges)
+	appAPI.HandleFunc("GET /v1/apps/{app}/snapshot", s.appSnapshot)
+	for _, rt := range s.appRoutes {
+		appAPI.HandleFunc(rt.pattern, rt.handler)
+	}
+
+	authed := s.authenticate(s.idempotent(api), s.idempotent(appAPI))
 	mux.Handle("/v1/", authed)
 	mux.Handle("/admin/v1/", authed)
+	for _, rt := range s.internalRoutes {
+		mux.HandleFunc(rt.pattern, rt.handler)
+	}
 	return mux
+}
+
+type route struct {
+	pattern string
+	handler http.HandlerFunc
 }
 
 func (s *Server) ready(w http.ResponseWriter, r *http.Request) {
@@ -90,9 +124,21 @@ func (s *Server) ready(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// authenticate verifies the caller and records their profile (first sight, or when the token shows a change).
-func (s *Server) authenticate(next http.Handler) http.Handler {
+// authenticate verifies the caller. App backends (HTTP Basic with client id and secret) go to appNext; users and
+// operators (bearer tokens) go to next, after their profile is recorded on first sight or when it changed.
+func (s *Server) authenticate(next, appNext http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if id, secret, ok := r.BasicAuth(); ok {
+			app, err := s.store.AuthenticateApp(r.Context(), id, secret)
+			if err != nil {
+				w.Header().Set("WWW-Authenticate", `Basic realm="matura-apps"`)
+				problem(w, http.StatusUnauthorized, "unauthenticated", "unknown client id or secret")
+				return
+			}
+			ctx := withPrincipal(r.Context(), Principal{AppID: app.ID})
+			appNext.ServeHTTP(w, r.WithContext(withApp(ctx, app)))
+			return
+		}
 		p, err := s.auth.Authenticate(r)
 		if err != nil {
 			w.Header().Set("WWW-Authenticate", `Bearer realm="matura"`)

@@ -8,6 +8,8 @@ import (
 	"io"
 	"net/http"
 
+	"github.com/google/uuid"
+
 	"github.com/marunsct/Platform/internal/store"
 )
 
@@ -55,8 +57,12 @@ func (s *Server) idempotent(next http.Handler) http.Handler {
 		h.Write([]byte(r.Method + " " + r.URL.Path + "\n"))
 		h.Write(body)
 		p := principalFrom(r.Context())
+		principal := p.UserID
+		if principal == uuid.Nil {
+			principal = p.AppID
+		}
 
-		stored, err := s.store.ClaimIdempotencyKey(r.Context(), p.UserID, key, h.Sum(nil))
+		stored, err := s.store.ClaimIdempotencyKey(r.Context(), principal, key, h.Sum(nil))
 		switch {
 		case errors.Is(err, store.ErrIdempotencyInFlight):
 			problem(w, http.StatusConflict, "idempotency-in-flight", err.Error())
@@ -78,10 +84,10 @@ func (s *Server) idempotent(next http.Handler) http.Handler {
 		next.ServeHTTP(rec, r)
 		ctx := context.WithoutCancel(r.Context())
 		if rec.status >= 500 || rec.status == 0 {
-			_ = s.store.ReleaseIdempotencyKey(ctx, p.UserID, key)
+			_ = s.store.ReleaseIdempotencyKey(ctx, principal, key)
 			return
 		}
-		if err := s.store.CompleteIdempotencyKey(ctx, p.UserID, key, store.StoredResponse{
+		if err := s.store.CompleteIdempotencyKey(ctx, principal, key, store.StoredResponse{
 			Status: rec.status, Body: rec.body.Bytes(), ContentType: rec.Header().Get("Content-Type"),
 		}); err != nil {
 			s.log.ErrorContext(ctx, "storing idempotent response", "err", err)

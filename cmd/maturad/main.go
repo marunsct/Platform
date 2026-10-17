@@ -20,6 +20,7 @@ import (
 
 	"github.com/marunsct/Platform/internal/api"
 	"github.com/marunsct/Platform/internal/config"
+	"github.com/marunsct/Platform/internal/events"
 	"github.com/marunsct/Platform/internal/secrets"
 	"github.com/marunsct/Platform/internal/store"
 )
@@ -91,9 +92,14 @@ func run(log *slog.Logger) error {
 			OperatorRole: cfg.OperatorRole}
 	}
 
+	st := store.New(pool)
+	store.AllowHTTPWebhooks = cfg.Env == "development"
+	relay := &events.Relay{Store: st, Keys: keys, Log: log}
+	go relay.Run(ctx)
+
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           api.New(store.New(pool), auth, keys, log).Handler(),
+		Handler:           api.New(st, auth, keys, log).Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      30 * time.Second,

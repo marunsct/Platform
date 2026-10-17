@@ -194,15 +194,19 @@ func (s *Store) ListRoles(ctx context.Context, appSlug string) ([]Role, error) {
 		if err != nil {
 			return err
 		}
-		rows, err := tx.Query(ctx, `SELECT `+roleCols+` FROM app_role r JOIN app a ON a.id = r.app_id
-			WHERE r.app_id = $1 ORDER BY r.name`, app.ID)
-		if err != nil {
-			return err
-		}
-		out, err = pgx.CollectRows(rows, func(r pgx.CollectableRow) (Role, error) { return scanRole(r) })
+		out, err = listRoles(ctx, tx, app.ID)
 		return err
 	})
 	return out, err
+}
+
+func listRoles(ctx context.Context, tx pgx.Tx, appID uuid.UUID) ([]Role, error) {
+	rows, err := tx.Query(ctx, `SELECT `+roleCols+` FROM app_role r JOIN app a ON a.id = r.app_id
+		WHERE r.app_id = $1 ORDER BY r.name`, appID)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (Role, error) { return scanRole(r) })
 }
 
 type NewRole struct {

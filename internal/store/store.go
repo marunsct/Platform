@@ -123,3 +123,20 @@ func mapErr(err error) error {
 	}
 	return err
 }
+
+// TryLeader takes a session-level advisory lock on a connection of its own, so one replica runs a background loop.
+// release unlocks and returns the connection; ok is false when another replica holds the lock.
+func (s *Store) TryLeader(ctx context.Context, key int64) (release func(), ok bool, err error) {
+	conn, err := s.pool.Acquire(ctx)
+	if err != nil {
+		return nil, false, err
+	}
+	if err := conn.QueryRow(ctx, `SELECT pg_try_advisory_lock($1)`, key).Scan(&ok); err != nil || !ok {
+		conn.Release()
+		return nil, false, err
+	}
+	return func() {
+		_, _ = conn.Exec(context.WithoutCancel(ctx), `SELECT pg_advisory_unlock($1)`, key)
+		conn.Release()
+	}, true, nil
+}

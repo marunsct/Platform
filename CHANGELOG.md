@@ -16,4 +16,12 @@
   are never returned, only a fingerprint.
 - `Idempotency-Key` on POST requests: retries replay the first response for 24 hours; reusing a key for a different
   request answers 422, and a retry racing the first attempt answers 409.
+- `GET /v1/me/tenants` and operator user management (`/admin/v1/users`: search, deactivate, delete with the row kept
+  anonymised).
+- App backends authenticate with their client id and a secret (`/admin/v1/apps/{app}/secrets`) and read their change
+  feed (`GET /v1/apps/{app}/changes`) and snapshots (`GET /v1/apps/{app}/snapshot`), filtered to tenants that enabled
+  the app.
+- Signed webhooks (`/admin/v1/apps/{app}/webhooks`): CloudEvents delivered in order per endpoint with
+  `Matura-Signature`, retried with backoff for 24 hours, plus a test delivery.
+- Build plan to 1.0 (docs/plan/21) and a guide for designing apps on Matura (docs/guide).
 - Docker Compose stack with Postgres, Keycloak (realm `matura`), Mailpit and `maturad`; CI with Postgres-backed tests.

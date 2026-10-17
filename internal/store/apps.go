@@ -247,3 +247,16 @@ func (s *Store) ListTenantApps(ctx context.Context, sc Scope, tenantID uuid.UUID
 	})
 	return out, err
 }
+
+// rawManifest scans a jsonb manifest column into a Manifest.
+type rawManifest struct{ m *Manifest }
+
+func (r rawManifest) Scan(src any) error {
+	switch v := src.(type) {
+	case []byte:
+		return json.Unmarshal(v, r.m)
+	case string:
+		return json.Unmarshal([]byte(v), r.m)
+	}
+	return invalid("manifest column has an unexpected type")
+}

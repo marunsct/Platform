@@ -15,8 +15,8 @@ the token, the contract tables, the events and the change feed stay the same fro
 | Milestone | Usable result | State on 2026-10-17 |
 |---|---|---|
 | M0 Foundation | API, schema with row-level security, outbox | built (PR #1, #2, #3) |
-| M1 First app signs in | sign-up, tenants, invitations, roles, tokens with `perms`, contract sync, three data modes, SDKs, conformance kit, DevFlow on Matura | **building now** (§3) |
-| M2 Second app and portal | AgentCanvas on Matura; tenant admins use the customer portal | next |
+| M1 First app signs in | sign-up, tenants, invitations, roles, tokens with `perms`, contract sync, three data modes, SDKs, conformance kit, **AgentCanvas** on Matura | **building now** (§3) |
+| M2 Second app and portal | DevFlow on Matura; tenant admins use the customer portal | next |
 | M3 Operator and security basics | operator console, MFA, sessions, security policies, audit log | |
 | M4 Enterprise identity | per-tenant SSO, SCIM, fine-grained permissions, agent identity | |
 | M5 Production install | Helm, per-tenant keys, entitlements, backups, observability, scale, DR, hardening | |
@@ -31,8 +31,8 @@ the token, the contract tables, the events and the change feed stay the same fro
   sample apps in each language.
 - **Verified locally until CI has runners.** GitHub Actions on the owner's account starts no jobs (see PR #3), so
   each push is checked with `gofmt`, `go vet` and `go test -race` against Postgres 16 first.
-- **App repositories get their own pull requests.** DevFlow (TS7d) and AgentCanvas (TS9a) adopt Matura in their own
-  repositories, linked from the Matura slice.
+- **App repositories get their own pull requests.** AgentCanvas (TS9a, first, at the owner's request on 2026-10-17)
+  and DevFlow (TS7d, in M2) adopt Matura in their own repositories, linked from the Matura slice.
 
 ## 3. M1 build sequence
 
@@ -49,13 +49,13 @@ Ordered so that each step is testable without the next one.
 | 7 | Sign-in realm | TS4-lite | realm-as-code: sign-up, verify email, reset password, Google and GitHub brokers (disabled until keys are set), `matura-api` audience, app client template | realm imports; documented first-run |
 | 8 | Python SDK | TS7 | token verification with JWKS cache, `Principal`, `require_permission`, contract tables migration, `apply` with the version rule, webhook receiver, feed reader, tenant session routing for three modes | example FastAPI app serves two tenants; keeps serving with `maturad` stopped |
 | 9 | Any-language kit | TS7e | contract SQL for Postgres, MySQL, SQL Server, SQLite; token and event test vectors; TypeScript SDK; `matura conformance` CLI | the sample apps pass the kit; a deliberately leaky app fails it |
-| 10 | DevFlow on Matura | TS7d | DevFlow pull request: SDK, contract tables, `tenant_id` and RLS on its tables, manifest with `admin`, `operator`, `viewer` | DevFlow runs for two tenants with no data crossing |
+| 10 | AgentCanvas on Matura | TS9a | AgentCanvas pull request (FastAPI + React): Python SDK, contract tables, its `organization`/`app_user`/`membership` mapped onto `matura_*`, `org_id` → `tenant_id` with RLS, manifest with its four roles, sign-in through Matura behind a flag | AgentCanvas runs for two tenants with no data crossing; its own sign-in still works behind the flag |
 
 ## 4. After M1
 
 | Milestone | Sprints | First slice |
 |---|---|---|
-| M2 | TS9a AgentCanvas on Matura, TS3 design system and app shell, TS8 customer portal I | AgentCanvas pull request using the Python SDK; then the portal shell on the design system |
+| M2 | TS7d DevFlow on Matura, TS3 design system and app shell, TS8 customer portal I | DevFlow pull request using the Python SDK; then the portal shell on the design system |
 | M3 | TS9 portal II, TS10 operator console, TS12 MFA and sessions | audit log from the outbox with hash chains (the outbox already records every change) |
 | M4 | TS11 OpenFGA, TS13 SSO, TS14 SCIM, TS15 agent identity | per-tenant SSO wizard on Keycloak brokering |
 | M5 | TS16–TS23 | Helm chart with the same three containers as Compose |
@@ -68,4 +68,4 @@ Ordered so that each step is testable without the next one.
 | CI has no runners | verify locally on every push; the owner checks Settings → Billing and plans for Actions |
 | Keycloak cannot run in the build container (no Docker daemon) | the mapper is unit-tested with Keycloak's own model mocks and its SPI jars from Maven Central; end-to-end sign-in tests run in Compose on the owner's machine |
 | Scope of 1.0 is large | each milestone is releasable; apps integrate once at M1 and keep the same contract to 1.0 |
-| App repositories drift | DevFlow and AgentCanvas pull requests pin the contract version (`matura.contract.v1`) and run the conformance kit |
+| App repositories drift | AgentCanvas and DevFlow pull requests pin the contract version (`matura.contract.v1`) and run the conformance kit |
