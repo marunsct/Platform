@@ -335,6 +335,8 @@ internal/events/        outbox relay, webhooks, feed (TS7c)
 keycloak/realm/         realm-as-code
 keycloak/extensions/    Java SPIs (TS5)
 sdk/python/             matura SDK (TS7)
+sdk/typescript/         @matura/sdk (TS7e)
+sdk/go/                 Go SDK, its own module (TS7e)
 deploy/compose/         docker compose
 api/openapi.yaml
 ```
