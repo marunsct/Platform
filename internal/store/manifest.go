@@ -1,6 +1,7 @@
 package store
 
 import (
+	"encoding/json"
 	"regexp"
 	"slices"
 
@@ -18,6 +19,8 @@ type Manifest struct {
 	DefaultRole string          `json:"default_role"`
 	OwnerRole   string          `json:"owner_role,omitempty"` // role tenant owners and admins get implicitly
 	Tenancy     Tenancy         `json:"tenancy"`
+	// Conformance is read by matura-conformance (docs/guide/conformance.md); maturad keeps it but does not use it.
+	Conformance json.RawMessage `json:"conformance,omitempty"`
 }
 
 type ManifestAuth struct {

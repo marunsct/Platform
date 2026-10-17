@@ -3,6 +3,8 @@
 ## Unreleased
 
 ### Added
+- Manifests may carry a `conformance` section (kept, not used by maturad). AgentCanvas passes all 19
+  `matura-conformance` checks; the run found and fixed a role-mapping gap in AgentCanvas#49.
 - TypeScript SDK `@matura/sdk` (sdk/typescript, no runtime dependencies): token verification, `Principal`, webhook
   signatures, contract tables with the version rule, change feed and placement client, framework-agnostic HTTP
   helpers and a fake issuer; runs the shared test vectors.

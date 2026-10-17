@@ -66,7 +66,8 @@ self-hosted, open standards, nothing phones home).
 - **TypeScript SDK, 2026-10-17:** `sdk/typescript` (`npm test`: 67 tests incl. all vectors on node:sqlite; Postgres
   dialect not yet run against a server). Known gap in both SDKs: placement events set `data_mode` without a version
   check, so a late replay of an older placement could overwrite a newer mode.
-- **Next:** run `matura-conformance` against AgentCanvas (add a `conformance` section to its manifest), Go SDK, then M2.
+- **Conformance on AgentCanvas, 2026-10-17:** 19/19 pass after fixing `role_for` in AgentCanvas#49 (a role skipping a rung no longer maps upward).
+- **Next:** Go SDK, Postgres run of the TypeScript SDK, then M2 (customer portal TS8, DevFlow TS7d).
 - **Was next:** doc 21 §3: any-language kit
   (TS7e: OpenAPI, TypeScript SDK, conformance CLI, contract SQL for other databases).
 - `main` holds LICENSE, SECURITY.md, CONTRIBUTING.md.
