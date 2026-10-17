@@ -50,6 +50,20 @@ func tenantEvents(t *testing.T, pool *pgxpool.Pool, tid string) []tenantEvent {
 	return out
 }
 
+// auditActions returns the actions of the tenant's audit events whose action starts with prefix, oldest first.
+func auditActions(t *testing.T, c client, tid, prefix string) ([]string, []map[string]any) {
+	t.Helper()
+	items := c.must(http.StatusOK, "GET", "/admin/v1/audit?tenant="+tid+"&action="+prefix+"&limit=1000", nil)["items"].([]any)
+	var acts []string
+	var evs []map[string]any
+	for i := len(items) - 1; i >= 0; i-- {
+		e := items[i].(map[string]any)
+		acts = append(acts, e["action"].(string))
+		evs = append(evs, e)
+	}
+	return acts, evs
+}
+
 func lastEvent(t *testing.T, pool *pgxpool.Pool, tid string) tenantEvent {
 	t.Helper()
 	ev := tenantEvents(t, pool, tid)
@@ -128,6 +142,17 @@ func TestTenantSuspension(t *testing.T) {
 	alice.problem(http.StatusForbidden, "tenant-suspended", "GET", "/v1/tenants/"+aid+"/members", nil)
 	op.must(http.StatusUnprocessableEntity, "PATCH", "/v1/tenants/"+aid, map[string]any{"status": "deleting"})
 	op.must(http.StatusOK, "PATCH", "/v1/tenants/"+aid, map[string]any{"status": "active"})
+
+	// the audit log keeps who did it and why
+	acts, evs := auditActions(t, op, aid, "tenant.status.changed")
+	if len(acts) != 4 {
+		t.Fatalf("audited status changes: %v", acts)
+	}
+	first := evs[0]
+	if d := first["data"].(map[string]any); d["action"] != "suspend" || d["reason"] != "unpaid invoice" ||
+		first["actor"].(map[string]any)["kind"] != "operator" {
+		t.Fatalf("audited suspension: %v", first)
+	}
 }
 
 // TestTenantDeletionGrace: deleting starts a grace period in which the tenant can be restored; the purger deletes
@@ -351,6 +376,9 @@ func TestEntitlements(t *testing.T) {
 	// no plan: no limits
 	op.must(http.StatusOK, "PUT", "/admin/v1/tenants/"+aid+"/plan", map[string]any{"plan": nil})
 	alice.must(http.StatusCreated, "POST", base+"/members", map[string]any{"user_id": users[7].user})
+	if acts, evs := auditActions(t, op, aid, "tenant.plan.changed"); len(acts) != 5 || evs[0]["data"].(map[string]any)["plan"] != "team" {
+		t.Fatalf("audited plan changes: %v", evs)
+	}
 }
 
 // TestSupportAccess: operators see a tenant's admin views only with time-boxed access the tenant approved (or
@@ -476,6 +504,24 @@ func TestSupportAccess(t *testing.T) {
 	alice.must(http.StatusOK, "PATCH", base, map[string]any{"support_access": "off"})
 	op.problem(http.StatusForbidden, "support-access-off", "POST", admin, map[string]any{"reason": "x", "duration_minutes": 15})
 	op.must(http.StatusNotFound, "POST", "/admin/v1/tenants/"+ids.New().String()+"/support-access", map[string]any{"reason": "x", "duration_minutes": 15})
+
+	// every request, decision and refusal is in the tenant's audit log
+	acts, _ := auditActions(t, op, aid, "support_access.")
+	want := []string{"support_access.requested", "support_access.approved", "support_access.revoked",
+		"support_access.requested", "support_access.denied", "support_access.requested", "support_access.approved",
+		"support_access.ended", "support_access.requested", "support_access.approved", "support_access.auto_approved"}
+	if len(acts) != len(want) {
+		t.Fatalf("audited support access: %v", acts)
+	}
+	for i := range want {
+		if acts[i] != want[i] {
+			t.Fatalf("audited support access: %v, want %v", acts, want)
+		}
+	}
+	denied, _ := auditActions(t, op, aid, "authz.denied")
+	if len(denied) == 0 {
+		t.Fatal("refused support access requests are not audited")
+	}
 }
 
 // TestOperatorTenantList: operators search, filter and page through tenants and read installation counts.

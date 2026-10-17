@@ -124,6 +124,8 @@ that mode unless `MATURA_ENV=development`.
 | Placements | `GET /v1/tenants/{tid}/placements`; app: `GET /v1/apps/{app}/placements/{tid}`, `PUT` (app-managed register), `POST …:ready`, `POST …:deleted`; app: `POST /v1/apps/{app}/placements/{tid}/credentials` (short-lived connection) |
 | Sync | `GET /v1/apps/{app}/changes`, `GET /v1/apps/{app}/snapshot?tenant=` |
 | Webhooks | `POST/GET /admin/v1/apps/{app}/webhooks`, `PATCH/DELETE …/{id}`, `POST …/{id}/test` |
+| Audit | `GET /v1/tenants/{tid}/audit`, `GET …/audit/export` (NDJSON), `GET …/audit:verify`, `GET/POST …/audit/sinks`, `PATCH/DELETE …/audit/sinks/{id}`; operators: `GET /admin/v1/audit`, `GET /admin/v1/audit:verify` (§13) |
+| Security policy | `GET/PUT /v1/tenants/{tid}/security-policy` (§13.4) |
 | Internal (Keycloak) | `POST /internal/v1/token-context` `{user_id, email, email_verified, name, locale, client_id, tenant, workspace}` → claims for the mapper, or `403 {error: access_denied, error_description}`; bearer `MATURA_INTERNAL_TOKEN` |
 | Health | `GET /healthz/live`, `GET /healthz/ready` |
 
@@ -178,7 +180,8 @@ The OpenAPI 3.1 document lives in `api/openapi.yaml` and is the source for gener
   `tenant-suspended` on every tenant route, and members of a tenant pending deletion 403 `tenant-pending-deletion`
   except `GET /v1/tenants/{tid}`, `DELETE` and `:restore`. A `deleting` or `deleted` tenant is 404 to members.
 - **Operators inside tenants.** Operators keep operator scope on the tenant record (`GET/PATCH/DELETE
-  /v1/tenants/{tid}`, `:restore`), its placements and its entitlements. Every other tenant route (members,
+  /v1/tenants/{tid}`, `:restore`), its placements, its entitlements and its security policy (to lift an IP
+  allow-list that locked the tenant out). Every other tenant route (members,
   workspaces, apps, grants, invitations, support access) needs active support access (403
   `support-access-required`), runs in the tenant's own scope (not operator scope) and is read-only (403
   `support-access-read-only` for anything but GET). An operator who is a member of the tenant acts as that member.
@@ -201,6 +204,11 @@ The OpenAPI 3.1 document lives in `api/openapi.yaml` and is the source for gener
   admins: `GET /v1/tenants/{tid}/support-access`) sees what was asked, who decided and when it was used. The rows
   are tenant-owned under RLS and never deleted. No token is issued and nobody is impersonated: the operator keeps
   their own identity, and the access only opens the GET routes above.
+- **Audit (§13).** Besides the contract events, `tenant.status.changed` records each lifecycle action with the real
+  status, the operator's reason and `purge_after`; `tenant.plan.changed` the plan and overrides;
+  `support_access.requested`, `.auto_approved`, `.approved`, `.denied`, `.revoked` and `.ended` each request and
+  decision, in the tenant's chain. Refusals for `support-access-required`, `support-access-read-only` and
+  `support-access-off` are `authz.denied`.
 - **Operator lists.** `GET /admin/v1/tenants?q=&status=a,b&cursor=&limit=` (by slug; `next_cursor` while more
   remain; default every status but `deleted`) with `member_count`; `GET /admin/v1/stats` (tenants and users by
   status with `total`, apps with the number of tenants that enabled each).
@@ -341,8 +349,9 @@ and reports `ready`. Expand-and-contract migrations are required, since tenants 
   ids; no user-supplied SQL ever reaches a server.
 - Invitation tokens: 32 random bytes, only the SHA-256 is stored, single use.
 - Rate limits per tenant and per IP on invitation and sign-up endpoints.
-- All operator actions and membership, grant and placement changes are recorded in the outbox (the audit module in
-  M3 consumes it).
+- Every change, operator action and refused request is recorded in the tenant's hash-chained audit log (§13).
+- Behind a reverse proxy, `MATURA_TRUSTED_PROXIES` names the proxies whose `X-Forwarded-For` is believed; the
+  client address (for IP allow-lists and the audit log) is the right-most hop that is not one of them.
 
 ## 10. Configuration
 
@@ -352,6 +361,7 @@ and reports `ready`. Expand-and-contract migrations are required, since tenants 
 | `MATURA_DATABASE_URL` | control-plane database, runtime role |
 | `MATURA_MIGRATE_DATABASE_URL` | same database, owner role (migrations at start-up) |
 | `MATURA_HTTP_ADDR` | default `:8080` |
+| `MATURA_METRICS_ADDR` | default `:9090`; serves Prometheus `/metrics` (request counts and latency by route, queue backlogs) on its own listener; empty turns it off |
 | `MATURA_ISSUER` | Keycloak realm URL |
 | `MATURA_AUTH` | `oidc` (default) or `dev` |
 | `MATURA_KEK` | base64 key-encryption key |
@@ -361,6 +371,7 @@ and reports `ready`. Expand-and-contract migrations are required, since tenants 
 | `MATURA_SMTP_ADDR` | `host:port` of the mail relay; unset: emails are queued, not sent |
 | `MATURA_SMTP_FROM`, `MATURA_SMTP_USER`, `MATURA_SMTP_PASSWORD` | sender address (default `no-reply@matura.local`) and optional login |
 | `MATURA_TENANT_DELETE_GRACE` | how long a deleted tenant can be restored before it is purged (Go duration, default `720h`) |
+| `MATURA_TRUSTED_PROXIES` | comma-separated addresses or CIDR ranges of reverse proxies whose `X-Forwarded-For` is believed; unset: the connection's address is the client's |
 
 ## 11. Testing
 
@@ -385,9 +396,87 @@ internal/ids/           UUIDv7, slugs
 internal/secrets/       KeyManager, AES-GCM envelope
 internal/placement/     provisioner (TS7b)
 internal/events/        outbox relay, webhooks, feed (TS7c)
+internal/audit/         audit streaming to tenant destinations (TS9)
 keycloak/realm/         realm-as-code
 keycloak/extensions/    Java SPIs (TS5)
 sdk/python/             matura SDK (TS7)
 deploy/compose/         docker compose
 api/openapi.yaml
 ```
+
+## 13. Audit log and security policies (TS9)
+
+### 13.1 Recording
+
+- **One hook.** `emit()` writes the outbox row and calls `audit()` in the same transaction, so every contract change
+  (tenants, workspaces, members, grants, apps, roles, placements, users) is recorded with the change or not at all.
+  Changes that are not contract events call `audit()` directly: invitations created, resent, revoked and accepted;
+  app secrets created and revoked; webhook endpoints created, changed and deleted; plans; database servers; security
+  policies; audit destinations; exports (`audit.exported`); tenant lifecycle actions, plan changes and support
+  access (§5.2). A request refused with 403 (`forbidden`,
+  `ip-not-allowed`, `operator-only`) is recorded as `authz.denied` in its own transaction.
+- **Actor.** `authenticate` puts a `store.Actor` in the request context: kind (`user`, `operator`, `app`), id, email,
+  request id (the caller's `X-Request-Id` when short and printable, otherwise a new one; echoed in the response), client
+  address and user agent. Work with no actor (the provisioner) is recorded as `system`.
+- **Action and target.** For changes from `emit()` the action is the event type without `matura.` (for example
+  `membership.added`) and the target its subject; `data` is the changed object. Secrets never appear in `data`.
+
+### 13.2 Hash chain
+
+- `audit_event` holds one chain per tenant and one for installation events (`tenant_id` null: apps, roles, plans,
+  database servers, users, refused operator calls). `seq` is the position in the chain, from 1; `id` orders events
+  across chains and is the list cursor.
+- `hash = SHA-256(canonical JSON)`; `prev_hash` is the previous event's hash in the chain (32 zero bytes for the
+  first). The canonical JSON is an object with the keys `action`, `actor` {`email`, `id`, `kind`}, `data`, `ip`,
+  `prev_hash` (hex), `request_id`, `seq`, `target`, `tenant_id`, `time`, `user_agent`: keys sorted bytewise, no
+  insignificant whitespace, HTML characters not escaped, missing strings and ids as `""`, `time` in UTC with six
+  fractional digits (`2006-01-02T15:04:05.000000Z`), and numbers in `data` written as integers when they are
+  integers and in shortest round-trip float form otherwise. `store.AuditEvent.Canonical` is the reference and
+  `TestAuditCanonical` pins it, so a verifier in any language can recompute exported hashes.
+- `audit_chain` keeps each chain's head (`seq`, `hash`). A writer locks the head row (`INSERT … ON CONFLICT DO
+  UPDATE … RETURNING`), so a chain grows one event at a time; the lock is held until the change commits. This
+  serialises writers per tenant, which suits M3 volumes; doc 17's audit throughput target (TS21) needs batching.
+- **Append-only.** `audit_event` has forced RLS with a SELECT policy (own tenant, or operator scope) and an INSERT
+  policy (own tenant, installation events, or operator scope) and no UPDATE or DELETE policy; `Migrate` also revokes
+  UPDATE, DELETE and TRUNCATE from the runtime role. Only a database superuser or the owner role can change history,
+  and verification shows it.
+- **Verify** (`GET …/audit:verify`, operators `GET /admin/v1/audit:verify?tenant=`) walks the chain in `seq` order,
+  recomputes each hash, checks `prev_hash` links and that no position is missing, and that the last event matches
+  the head (a removed tail). It answers `{ok, events, head_seq, head_hash, first_break: {seq, id, reason} | null}`.
+- Not yet: signed hourly checkpoints anchored to WORM storage or a transparency log (doc 07 §3), retention and
+  legal hold, and pseudonymising a deleted user's email in old events.
+
+### 13.3 Reading, export and streaming
+
+- **List** (owners and admins; operators across chains with `?tenant=<id>|installation`): newest first, `limit`
+  (default 100, at most 1000), `cursor` (`next_cursor` of the previous page, null on the last), filters `actor`
+  (user or app id, or email, case-insensitive), `action` (prefix), `from`/`to` (RFC 3339, `to` exclusive).
+- **Export** (`GET …/audit/export?from=&to=`): the chain oldest first as `application/x-ndjson`, one event per line
+  with its hashes, streamed in pages of 1000.
+- **Streaming destinations** (`audit_sink`, at most 10 per tenant, `kind: webhook`, HTTPS): the streamer (one active
+  replica, advisory lock 7351006) POSTs new events in chain order, up to 100 per request, as NDJSON with
+  `Matura-Signature` (same scheme as webhooks, secret sealed with the `KeyManager` under `audit_sink:<id>`),
+  `Matura-Audit-Sink`, `Matura-Audit-Tenant` and `Matura-Audit-Seq: <first>-<last>`. A 2xx moves the destination's
+  cursor to the last `seq`; anything else marks it `failing` and retries the same batch with backoff (1 s doubling
+  to 1 h) without ever skipping events. Delivery is at least once: receivers de-duplicate on (`tenant_id`, `seq`).
+  A new destination starts after the newest event, or at `seq` 1 with `backfill: true`. Syslog over TLS, S3, Splunk
+  HEC and the other doc 07 destinations are later kinds.
+
+### 13.4 Security policies
+
+`security_policy` (one row per tenant, forced RLS; absent means the default with version 0):
+
+| Field | Enforced by | Meaning |
+|---|---|---|
+| `require_mfa` | Keycloak (TS12) | members must use a second factor |
+| `session_max_age`, `idle_timeout` | Keycloak (TS12) | seconds (300 s–90 days, 60 s–30 days, idle ≤ max age); null is the installation default |
+| `allowed_email_domains` | maturad | new invitations only to these domains or their subdomains (422 otherwise) |
+| `ip_allowlist` | maturad | CIDR ranges; a member's tenant API call (every route that checks tenant access) from elsewhere gets 403 `ip-not-allowed`. Operators are exempt; non-members still get 404 |
+
+`PUT` replaces the whole policy (owners and admins, `If-Match` optional), normalises domains (lower case, no `@`)
+and ranges (masked), and refuses an allow-list that excludes the caller's own address. Each replica caches a
+tenant's policy for 5 s (cleared at once on the replica that took the `PUT`). Changes are audited
+(`security_policy.updated` with before and after); they are not contract events.
+
+Session listing and revocation need Keycloak's admin API and come with TS12.
+

@@ -1,0 +1,33 @@
+{{- if .Values.networkPolicy.enabled }}
+{{- $fullname := include "matura.fullname" . -}}
+# Only the HTTP ports are reachable; Keycloak's cache port is open to other Keycloak pods only.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fullname }}
+  labels: {{- include "matura.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels: {{- include "matura.selector" (dict "root" . "component" "maturad") | nindent 6 }}
+  policyTypes: [Ingress]
+  ingress:
+    - ports: [{ port: 8080 }, { port: 9090 }]
+{{- if .Values.keycloak.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fullname }}-keycloak
+  labels: {{- include "matura.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels: {{- include "matura.selector" (dict "root" . "component" "keycloak") | nindent 6 }}
+  policyTypes: [Ingress]
+  ingress:
+    - ports: [{ port: 8080 }]
+    - from:                                       # cache replication between Keycloak pods only
+        - podSelector:
+            matchLabels: {{- include "matura.selector" (dict "root" . "component" "keycloak") | nindent 14 }}
+      ports: [{ port: 7800 }, { port: 57800 }]
+{{- end }}
+{{- end }}

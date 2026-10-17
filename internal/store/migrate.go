@@ -71,6 +71,8 @@ func Migrate(ctx context.Context, conn *pgx.Conn, runtimeRole string) error {
 		`GRANT USAGE ON SCHEMA public TO ` + role,
 		`GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO ` + role,
 		`REVOKE ALL ON schema_migrations FROM ` + role,
+		// the audit log is append-only (technical specification §13)
+		`REVOKE UPDATE, DELETE, TRUNCATE ON audit_event FROM ` + role,
 		`GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO ` + role,
 	} {
 		if _, err := conn.Exec(ctx, stmt); err != nil {

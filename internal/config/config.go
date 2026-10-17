@@ -4,6 +4,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net/netip"
 	"os"
 	"strings"
 	"time"
@@ -15,6 +16,7 @@ type Config struct {
 	MigrateDatabaseURL string // owner role, runs migrations at start-up
 	RuntimeRole        string // role that receives table privileges after migrations
 	HTTPAddr           string
+	MetricsAddr        string // separate listener for /metrics; empty turns it off
 	Issuer             string // Keycloak realm URL
 	Audience           string
 	OperatorRole       string // realm role that grants operator scope
@@ -29,7 +31,8 @@ type Config struct {
 	SMTPFrom           string
 	SMTPUser           string
 	SMTPPassword       string
-	DeleteGrace        time.Duration // how long a deleted tenant can be restored; default 30 days
+	DeleteGrace        time.Duration  // how long a deleted tenant can be restored; default 30 days
+	TrustedProxies     []netip.Prefix // reverse proxies whose X-Forwarded-For is believed (IP allow-lists, audit)
 }
 
 func getenv(key, def string) string {
@@ -46,6 +49,7 @@ func FromEnv() (Config, error) {
 		MigrateDatabaseURL: os.Getenv("MATURA_MIGRATE_DATABASE_URL"),
 		RuntimeRole:        getenv("MATURA_RUNTIME_ROLE", "matura_app"),
 		HTTPAddr:           getenv("MATURA_HTTP_ADDR", ":8080"),
+		MetricsAddr:        getenv("MATURA_METRICS_ADDR", ":9090"),
 		Issuer:             os.Getenv("MATURA_ISSUER"),
 		Audience:           getenv("MATURA_AUDIENCE", "matura-api"),
 		OperatorRole:       getenv("MATURA_OPERATOR_ROLE", "matura-operator"),
@@ -67,6 +71,20 @@ func FromEnv() (Config, error) {
 		return c, fmt.Errorf("MATURA_TENANT_DELETE_GRACE must be a duration such as 720h (30 days), got %q", grace)
 	}
 	c.DeleteGrace = d
+	for _, raw := range strings.Split(os.Getenv("MATURA_TRUSTED_PROXIES"), ",") {
+		if raw = strings.TrimSpace(raw); raw == "" {
+			continue
+		}
+		p, err := netip.ParsePrefix(raw)
+		if err != nil {
+			a, aerr := netip.ParseAddr(raw)
+			if aerr != nil {
+				return c, fmt.Errorf("MATURA_TRUSTED_PROXIES: %q is not an address or CIDR range", raw)
+			}
+			p = netip.PrefixFrom(a, a.BitLen())
+		}
+		c.TrustedProxies = append(c.TrustedProxies, p.Masked())
+	}
 	return c, c.Validate()
 }
 

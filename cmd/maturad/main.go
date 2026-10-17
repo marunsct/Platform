@@ -19,10 +19,12 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/marunsct/Platform/internal/api"
+	"github.com/marunsct/Platform/internal/audit"
 	"github.com/marunsct/Platform/internal/config"
 	"github.com/marunsct/Platform/internal/events"
 	"github.com/marunsct/Platform/internal/lifecycle"
 	"github.com/marunsct/Platform/internal/mail"
+	"github.com/marunsct/Platform/internal/metrics"
 	"github.com/marunsct/Platform/internal/placement"
 	"github.com/marunsct/Platform/internal/secrets"
 	"github.com/marunsct/Platform/internal/store"
@@ -103,9 +105,12 @@ func run(log *slog.Logger) error {
 	go provisioner.Run(ctx)
 	purger := &lifecycle.Purger{Store: st, Log: log}
 	go purger.Run(ctx)
+	streamer := &audit.Streamer{Store: st, Keys: keys, Log: log}
+	go streamer.Run(ctx)
 
 	server := api.New(st, auth, keys, log)
 	server.SetSource(cfg.EventSource)
+	server.SetTrustedProxies(cfg.TrustedProxies)
 	server.EnableInternal(cfg.InternalToken)
 	server.SetDeletionGrace(cfg.DeleteGrace)
 	server.SetInvitations(api.Invitations{AcceptURL: cfg.InviteAcceptURL, PublicURL: cfg.PublicURL,
@@ -118,9 +123,22 @@ func run(log *slog.Logger) error {
 		log.Warn("MATURA_SMTP_ADDR is not set: invitation emails are queued but not sent; " +
 			"the API returns each invitation's link so an admin can pass it on")
 	}
+	reg := metrics.New()
+	reg.Backlog = st.Backlog
+	if cfg.MetricsAddr != "" {
+		go func() {
+			mux := http.NewServeMux()
+			mux.Handle("GET /metrics", reg)
+			msrv := &http.Server{Addr: cfg.MetricsAddr, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
+			log.Info("metrics listening", "addr", cfg.MetricsAddr)
+			if err := msrv.ListenAndServe(); err != nil {
+				log.Error("metrics listener stopped", "err", err)
+			}
+		}()
+	}
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           server.Handler(),
+		Handler:           reg.Wrap(server.Handler()),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      30 * time.Second,

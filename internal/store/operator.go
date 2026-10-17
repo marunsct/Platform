@@ -49,13 +49,16 @@ func (s *Store) PutPlan(ctx context.Context, sc Scope, p Plan) (Plan, error) {
 	}
 	var out Plan
 	err := s.tx(ctx, sc, func(tx pgx.Tx) error {
-		return mapErr(tx.QueryRow(ctx, `INSERT INTO plan (id, name, data_mode_required, data_mode_default, limits)
+		if err := mapErr(tx.QueryRow(ctx, `INSERT INTO plan (id, name, data_mode_required, data_mode_default, limits)
 			VALUES ($1, $2, $3, $4, $5)
 			ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, data_mode_required = EXCLUDED.data_mode_required,
 				data_mode_default = EXCLUDED.data_mode_default, limits = EXCLUDED.limits
 			RETURNING id, name, data_mode_required, data_mode_default, limits`,
 			p.ID, p.Name, p.DataModeRequired, p.DataModeDefault, []byte(p.Limits)).
-			Scan(&out.ID, &out.Name, &out.DataModeRequired, &out.DataModeDefault, &out.Limits))
+			Scan(&out.ID, &out.Name, &out.DataModeRequired, &out.DataModeDefault, &out.Limits)); err != nil {
+			return err
+		}
+		return audit(ctx, tx, uuid.Nil, "plan.updated", "plans/"+out.ID, out)
 	})
 	return out, err
 }
@@ -174,7 +177,10 @@ func (s *Store) CreateDBServer(ctx context.Context, sc Scope, km secrets.KeyMana
 			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'active', $12) RETURNING `+dbServerCols,
 			id, in.Name, in.Host, in.Port, in.AdminUser, sealed, km.Fingerprint([]byte(in.AdminPassword)), in.SSLMode,
 			nullable(in.Region), in.Dedicated, []byte(in.Labels), v))
-		return err
+		if err != nil {
+			return err
+		}
+		return audit(ctx, tx, uuid.Nil, "db_server.created", "db-servers/"+out.ID.String(), out)
 	})
 	return out, err
 }
@@ -232,7 +238,10 @@ func (s *Store) UpdateDBServer(ctx context.Context, sc Scope, km secrets.KeyMana
 			admin_secret = coalesce($6, admin_secret), admin_secret_fingerprint = coalesce($7, admin_secret_fingerprint),
 			version = $8, updated_at = now() WHERE id = $1 RETURNING `+dbServerCols,
 			id, p.Status, p.Region, p.Dedicated, labels, sealed, fp, v))
-		return err
+		if err != nil {
+			return err
+		}
+		return audit(ctx, tx, uuid.Nil, "db_server.updated", "db-servers/"+out.ID.String(), out)
 	})
 	return out, err
 }
@@ -255,7 +264,7 @@ func (s *Store) DeleteDBServer(ctx context.Context, sc Scope, id uuid.UUID) erro
 		if tag.RowsAffected() == 0 {
 			return ErrNotFound
 		}
-		return nil
+		return audit(ctx, tx, uuid.Nil, "db_server.deleted", "db-servers/"+id.String(), map[string]any{"id": id})
 	})
 }
 

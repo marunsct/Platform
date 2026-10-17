@@ -1,0 +1,8 @@
+apiVersion: v2
+name: matura
+description: Matura, self-hosted identity, tenancy and roles for your apps (maturad control plane and Keycloak)
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+home: https://github.com/marunsct/Platform
+license: Apache-2.0

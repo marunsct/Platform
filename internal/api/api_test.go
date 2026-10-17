@@ -135,8 +135,11 @@ func TestCrossTenant(t *testing.T) {
 	inv := alice.must(http.StatusCreated, "POST", "/v1/tenants/"+aid+"/invitations",
 		map[string]any{"email": "carol@example.test"})
 	iid := inv["id"].(string)
-	sid := op.must(http.StatusCreated, "POST", "/admin/v1/tenants/"+aid+"/support-access",
+	said := op.must(http.StatusCreated, "POST", "/admin/v1/tenants/"+aid+"/support-access",
 		map[string]any{"reason": "ticket", "duration_minutes": 10})["id"].(string)
+	sink := alice.must(http.StatusCreated, "POST", "/v1/tenants/"+aid+"/audit/sinks",
+		map[string]any{"url": "https://siem.example.test/in"})
+	sid := sink["id"].(string)
 
 	routes := []struct {
 		method, path string
@@ -165,8 +168,17 @@ func TestCrossTenant(t *testing.T) {
 		{"POST", "/v1/tenants/" + aid + ":restore", nil},
 		{"GET", "/v1/tenants/" + aid + "/entitlements", nil},
 		{"GET", "/v1/tenants/" + aid + "/support-access", nil},
-		{"POST", "/v1/tenants/" + aid + "/support-access/" + sid + ":approve", nil},
-		{"POST", "/v1/tenants/" + aid + "/support-access/" + sid + ":revoke", nil},
+		{"POST", "/v1/tenants/" + aid + "/support-access/" + said + ":approve", nil},
+		{"POST", "/v1/tenants/" + aid + "/support-access/" + said + ":revoke", nil},
+		{"GET", "/v1/tenants/" + aid + "/audit", nil},
+		{"GET", "/v1/tenants/" + aid + "/audit/export", nil},
+		{"GET", "/v1/tenants/" + aid + "/audit:verify", nil},
+		{"GET", "/v1/tenants/" + aid + "/audit/sinks", nil},
+		{"POST", "/v1/tenants/" + aid + "/audit/sinks", map[string]any{"url": "https://x.example.test"}},
+		{"PATCH", "/v1/tenants/" + aid + "/audit/sinks/" + sid, map[string]any{"status": "disabled"}},
+		{"DELETE", "/v1/tenants/" + aid + "/audit/sinks/" + sid, nil},
+		{"GET", "/v1/tenants/" + aid + "/security-policy", nil},
+		{"PUT", "/v1/tenants/" + aid + "/security-policy", map[string]any{"require_mfa": true}},
 	}
 	for _, rt := range routes {
 		if got, out := bob.do(rt.method, rt.path, rt.body); got != http.StatusNotFound {

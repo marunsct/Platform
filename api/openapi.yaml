@@ -42,6 +42,10 @@ tags:
     description: App role grants to members.
   - name: placements
     description: Where tenant data lives.
+  - name: audit
+    description: The tamper-evident audit log and its streaming destinations.
+  - name: security
+    description: Tenant security policies.
   - name: operator
     description: Installation operators only.
   - name: entitlements
@@ -1030,6 +1034,296 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
+  # --- audit log and security policy ------------------------------------------------------------------------------
+  /v1/tenants/{tid}/audit:
+    parameters:
+      - $ref: '#/components/parameters/tid'
+    get:
+      operationId: listAudit
+      summary: Read the tenant's audit log
+      description: |
+        Owners and admins (and operators). Newest first; pass `next_cursor` back as `cursor` for the next page
+        (`null` on the last page).
+      tags: [audit]
+      parameters:
+        - $ref: '#/components/parameters/auditActor'
+        - $ref: '#/components/parameters/auditAction'
+        - $ref: '#/components/parameters/auditFrom'
+        - $ref: '#/components/parameters/auditTo'
+        - $ref: '#/components/parameters/auditCursor'
+        - $ref: '#/components/parameters/auditLimit'
+      responses:
+        '200':
+          description: A page of events.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /v1/tenants/{tid}/audit/export:
+    parameters:
+      - $ref: '#/components/parameters/tid'
+    get:
+      operationId: exportAudit
+      summary: Export the tenant's audit log
+      description: |
+        Owners and admins. Streams the chain oldest first as NDJSON, one `AuditEvent` per line with its hashes, so
+        the receiver can check the chain itself. The export is itself recorded (`audit.exported`).
+      tags: [audit]
+      parameters:
+        - $ref: '#/components/parameters/auditFrom'
+        - $ref: '#/components/parameters/auditTo'
+      responses:
+        '200':
+          description: The events, one JSON object per line.
+          content:
+            application/x-ndjson:
+              schema:
+                $ref: '#/components/schemas/AuditEvent'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /v1/tenants/{tid}/audit:verify:
+    parameters:
+      - $ref: '#/components/parameters/tid'
+    get:
+      operationId: verifyAudit
+      summary: Verify the tenant's audit chain
+      description: |
+        Owners and admins. Recomputes every hash, checks each event links to the one before and that the chain ends
+        at its recorded head, and reports the first break.
+      tags: [audit]
+      responses:
+        '200':
+          description: The result; `ok` is false when the chain is broken.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditVerification'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /v1/tenants/{tid}/audit/sinks:
+    parameters:
+      - $ref: '#/components/parameters/tid'
+    get:
+      operationId: listAuditSinks
+      summary: List audit streaming destinations
+      description: Owners and admins. Includes delivery state.
+      tags: [audit]
+      responses:
+        '200':
+          description: The destinations.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditSinkList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      operationId: createAuditSink
+      summary: Add an audit streaming destination
+      description: |
+        Owners and admins; at most 10. maturad POSTs new events in chain order as NDJSON batches signed with
+        `Matura-Signature` (as webhooks are), and retries until a 2xx; events are never skipped. It starts after the
+        newest event, or at the start of the chain with `backfill`. The response carries the signing secret once
+        (`Cache-Control: no-store`).
+      tags: [audit]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [url]
+              properties:
+                kind:
+                  type: string
+                  enum: [webhook]
+                  default: webhook
+                url:
+                  type: string
+                  format: uri
+                backfill:
+                  type: boolean
+                  default: false
+      responses:
+        '201':
+          description: The destination, with its signing secret.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditSink'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+  /v1/tenants/{tid}/audit/sinks/{id}:
+    parameters:
+      - $ref: '#/components/parameters/tid'
+      - $ref: '#/components/parameters/id'
+    patch:
+      operationId: updateAuditSink
+      summary: Change an audit streaming destination
+      description: Owners and admins. Change the URL, or disable and re-enable delivery.
+      tags: [audit]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                url:
+                  type: string
+                  format: uri
+                status:
+                  type: string
+                  enum: [active, disabled]
+      responses:
+        '200':
+          description: The updated destination.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditSink'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+    delete:
+      operationId: deleteAuditSink
+      summary: Delete an audit streaming destination
+      description: Owners and admins.
+      tags: [audit]
+      responses:
+        '204':
+          description: Deleted.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /v1/tenants/{tid}/security-policy:
+    parameters:
+      - $ref: '#/components/parameters/tid'
+    get:
+      operationId: getSecurityPolicy
+      summary: Read the tenant's security policy
+      description: Owners and admins. A tenant that never set one gets the default (nothing enforced, version 0).
+      tags: [security]
+      responses:
+        '200':
+          description: The policy.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecurityPolicy'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      operationId: putSecurityPolicy
+      summary: Replace the tenant's security policy
+      description: |
+        Owners and admins. maturad enforces `allowed_email_domains` on new invitations (422 otherwise) and
+        `ip_allowlist` on every tenant API call by members (403 `ip-not-allowed`; operators are exempt; replicas
+        pick a change up within 5 s). The allow-list must include the caller's own address. `require_mfa`,
+        `session_max_age` and `idle_timeout` are stored for Keycloak to enforce.
+      tags: [security]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                require_mfa:
+                  type: boolean
+                session_max_age:
+                  type: [integer, 'null']
+                  minimum: 300
+                  description: Seconds; null is the installation default.
+                idle_timeout:
+                  type: [integer, 'null']
+                  minimum: 60
+                  description: Seconds, at most session_max_age; null is the installation default.
+                allowed_email_domains:
+                  type: array
+                  items:
+                    type: string
+                ip_allowlist:
+                  type: array
+                  description: Addresses or CIDR ranges.
+                  items:
+                    type: string
+      responses:
+        '200':
+          description: The policy.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecurityPolicy'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '412':
+          $ref: '#/components/responses/PreconditionFailed'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
   /v1/invitations:accept:
     post:
       operationId: acceptInvitation
@@ -1709,6 +2003,56 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+  /admin/v1/audit:
+    get:
+      operationId: adminListAudit
+      summary: Read the audit log across the installation
+      description: |
+        Operators. Every chain, or one with `tenant` (a tenant id, or `installation` for events with no tenant:
+        apps, roles, plans, database servers, users, refused operator calls). Newest first.
+      tags: [operator, audit]
+      parameters:
+        - $ref: '#/components/parameters/auditTenant'
+        - $ref: '#/components/parameters/auditActor'
+        - $ref: '#/components/parameters/auditAction'
+        - $ref: '#/components/parameters/auditFrom'
+        - $ref: '#/components/parameters/auditTo'
+        - $ref: '#/components/parameters/auditCursor'
+        - $ref: '#/components/parameters/auditLimit'
+      responses:
+        '200':
+          description: A page of events.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /admin/v1/audit:verify:
+    get:
+      operationId: adminVerifyAudit
+      summary: Verify one audit chain
+      description: Operators. The chain of `tenant`, or the installation chain without it.
+      tags: [operator, audit]
+      parameters:
+        - $ref: '#/components/parameters/auditTenant'
+      responses:
+        '200':
+          description: The result.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditVerification'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
   /admin/v1/tenants:
     get:
       operationId: adminListTenants
@@ -2520,6 +2864,52 @@ components:
       schema:
         type: string
         maxLength: 255
+    auditTenant:
+      name: tenant
+      in: query
+      description: A tenant id, or `installation` for events with no tenant.
+      schema:
+        type: string
+    auditActor:
+      name: actor
+      in: query
+      description: Only events by this user or app id, or this email address.
+      schema:
+        type: string
+    auditAction:
+      name: action
+      in: query
+      description: Only actions starting with this, e.g. `membership.` or `invitation.created`.
+      schema:
+        type: string
+    auditFrom:
+      name: from
+      in: query
+      description: Only events at or after this time (RFC 3339).
+      schema:
+        type: string
+        format: date-time
+    auditTo:
+      name: to
+      in: query
+      description: Only events before this time (RFC 3339).
+      schema:
+        type: string
+        format: date-time
+    auditCursor:
+      name: cursor
+      in: query
+      description: '`next_cursor` from the previous page.'
+      schema:
+        type: string
+    auditLimit:
+      name: limit
+      in: query
+      description: Page size; 100 by default, at most 1000.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 1000
     GraceDays:
       name: grace_days
       in: query
@@ -3694,3 +4084,174 @@ components:
           description: Refusal code, passed on as the OAuth error description.
         detail:
           type: string
+    AuditEvent:
+      type: object
+      required: [id, tenant_id, seq, time, actor, action, target, request_id, ip, user_agent, data, prev_hash, hash]
+      description: |
+        One audit record. `hash` is the hex SHA-256 of the record's canonical JSON (technical specification §13),
+        which includes `prev_hash`, the previous event's hash in the same chain (64 zeros for the first).
+      properties:
+        id:
+          type: integer
+          format: int64
+          description: Position across all chains; the list cursor.
+        tenant_id:
+          type: [string, 'null']
+          format: uuid
+          description: Null for installation events.
+        seq:
+          type: integer
+          format: int64
+          description: Position in the chain, from 1.
+        time:
+          type: string
+          format: date-time
+        actor:
+          type: object
+          required: [kind, id, email]
+          properties:
+            kind:
+              type: string
+              enum: [user, operator, app, system]
+            id:
+              type: [string, 'null']
+              format: uuid
+            email:
+              type: string
+        action:
+          type: string
+          description: e.g. `membership.added`, `invitation.created`, `security_policy.updated`, `authz.denied`.
+        target:
+          type: string
+        request_id:
+          type: string
+        ip:
+          type: string
+        user_agent:
+          type: string
+        data:
+          description: The changed object, or details of the action.
+        prev_hash:
+          type: string
+        hash:
+          type: string
+    AuditPage:
+      type: object
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuditEvent'
+        next_cursor:
+          type: [string, 'null']
+    AuditVerification:
+      type: object
+      required: [ok, events, head_seq, head_hash, first_break]
+      properties:
+        ok:
+          type: boolean
+        events:
+          type: integer
+          format: int64
+          description: Events checked before the first break.
+        head_seq:
+          type: integer
+          format: int64
+        head_hash:
+          type: string
+        first_break:
+          oneOf:
+            - type: 'null'
+            - type: object
+              required: [seq, reason]
+              properties:
+                seq:
+                  type: integer
+                  format: int64
+                id:
+                  type: integer
+                  format: int64
+                reason:
+                  type: string
+    AuditSink:
+      type: object
+      required: [id, tenant_id, kind, url, status, cursor, attempts, next_attempt_at, last_status, last_error,
+        delivered, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        kind:
+          type: string
+          enum: [webhook]
+        url:
+          type: string
+          format: uri
+        secret:
+          type: string
+          description: Signing secret; only in the create response.
+        status:
+          type: string
+          enum: [active, failing, disabled]
+        cursor:
+          type: integer
+          format: int64
+          description: Last chain `seq` the receiver acknowledged.
+        attempts:
+          type: integer
+        next_attempt_at:
+          type: string
+          format: date-time
+        last_status:
+          type: [integer, 'null']
+        last_error:
+          type: [string, 'null']
+        delivered:
+          type: integer
+          format: int64
+        created_at:
+          type: string
+          format: date-time
+    AuditSinkList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuditSink'
+    SecurityPolicy:
+      type: object
+      required: [tenant_id, require_mfa, session_max_age, idle_timeout, allowed_email_domains, ip_allowlist, version,
+        updated_at]
+      properties:
+        tenant_id:
+          type: string
+          format: uuid
+        require_mfa:
+          type: boolean
+        session_max_age:
+          type: [integer, 'null']
+          description: Seconds.
+        idle_timeout:
+          type: [integer, 'null']
+          description: Seconds.
+        allowed_email_domains:
+          type: array
+          items:
+            type: string
+        ip_allowlist:
+          type: array
+          description: CIDR ranges.
+          items:
+            type: string
+        version:
+          type: integer
+          format: int64
+        updated_at:
+          type: [string, 'null']
+          format: date-time

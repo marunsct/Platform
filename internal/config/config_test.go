@@ -27,3 +27,19 @@ func TestValidateFailsClosed(t *testing.T) {
 		t.Fatalf("dev auth in development: %v", err)
 	}
 }
+
+func TestTrustedProxies(t *testing.T) {
+	t.Setenv("MATURA_DATABASE_URL", "postgres://x")
+	t.Setenv("MATURA_ENV", "development")
+	t.Setenv("MATURA_AUTH", "dev")
+	t.Setenv("MATURA_TRUSTED_PROXIES", "10.0.0.1, 172.16.5.0/12")
+	c, err := FromEnv()
+	if err != nil || len(c.TrustedProxies) != 2 || c.TrustedProxies[0].String() != "10.0.0.1/32" ||
+		c.TrustedProxies[1].String() != "172.16.0.0/12" {
+		t.Fatalf("trusted proxies: %v %v", c.TrustedProxies, err)
+	}
+	t.Setenv("MATURA_TRUSTED_PROXIES", "proxy.local")
+	if _, err := FromEnv(); err == nil {
+		t.Fatal("a host name was accepted as a trusted proxy")
+	}
+}

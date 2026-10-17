@@ -263,8 +263,11 @@ func (s *Store) SetTenantPlan(ctx context.Context, sc Scope, tenantID uuid.UUID,
 		if err := emit(ctx, tx, v, tenantID, "tenant.updated", "tenants/"+tenantID.String(), t.Contract()); err != nil {
 			return err
 		}
-		out, err = entitlementsOf(ctx, tx, tenantID)
-		return err
+		if out, err = entitlementsOf(ctx, tx, tenantID); err != nil {
+			return err
+		}
+		return audit(ctx, tx, tenantID, "tenant.plan.changed", "tenants/"+tenantID.String()+"/entitlements",
+			map[string]any{"plan": t.Plan, "overrides": out.Overrides})
 	})
 	return out, err
 }

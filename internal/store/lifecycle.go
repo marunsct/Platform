@@ -109,7 +109,12 @@ func (s *Store) ChangeTenantStatus(ctx context.Context, sc Scope, id uuid.UUID, 
 		if a.Do == "restore" && out.Status == "active" {
 			event = "tenant.reactivated"
 		}
-		return emit(ctx, tx, v, id, event, "tenants/"+id.String(), out.Contract())
+		if err := emit(ctx, tx, v, id, event, "tenants/"+id.String(), out.Contract()); err != nil {
+			return err
+		}
+		// the event shows what apps see; the audit log also keeps the action, the real status and the reason
+		return audit(ctx, tx, id, "tenant.status.changed", "tenants/"+id.String(), map[string]any{"action": a.Do,
+			"from": cur.Status, "status": out.Status, "reason": out.StatusReason, "purge_after": out.PurgeAfter})
 	})
 	return out, err
 }

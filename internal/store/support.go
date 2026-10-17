@@ -63,6 +63,16 @@ func scanSupport(row pgx.Row) (SupportAccess, error) {
 	return a, mapErr(err)
 }
 
+// supportAudited reads the request back and records it in the tenant's audit log as support_access.<what>.
+func supportAudited(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID, what string) (SupportAccess, error) {
+	a, err := getSupport(ctx, tx, tenantID, id)
+	if err != nil {
+		return a, err
+	}
+	return a, audit(ctx, tx, tenantID, "support_access."+what,
+		"tenants/"+tenantID.String()+"/support-access/"+id.String(), a)
+}
+
 func getSupport(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) (SupportAccess, error) {
 	return scanSupport(tx.QueryRow(ctx, `SELECT `+supportCols+supportFrom+` WHERE s.tenant_id = $1 AND s.id = $2`,
 		tenantID, id))
@@ -102,8 +112,12 @@ func (s *Store) RequestSupportAccess(ctx context.Context, sc Scope, tenantID, op
 		if _, err := tx.Exec(ctx, q, id, tenantID, operatorID, reason, minutes); err != nil {
 			return mapErr(err)
 		}
+		what := "requested"
+		if policy == "allowed" {
+			what = "auto_approved"
+		}
 		var err error
-		out, err = getSupport(ctx, tx, tenantID, id)
+		out, err = supportAudited(ctx, tx, tenantID, id, what)
 		return err
 	})
 	return out, err
@@ -143,7 +157,11 @@ func (s *Store) DecideSupportAccess(ctx context.Context, sc Scope, tenantID, id,
 			WHERE tenant_id = $1 AND id = $2`, tenantID, id, by); err != nil {
 			return mapErr(err)
 		}
-		out, err = getSupport(ctx, tx, tenantID, id)
+		what := "denied"
+		if approve {
+			what = "approved"
+		}
+		out, err = supportAudited(ctx, tx, tenantID, id, what)
 		return err
 	})
 	return out, err
@@ -173,7 +191,7 @@ func (s *Store) EndSupportAccess(ctx context.Context, sc Scope, tenantID, id, by
 			WHERE tenant_id = $1 AND id = $2`, tenantID, id, state, by); err != nil {
 			return mapErr(err)
 		}
-		out, err = getSupport(ctx, tx, tenantID, id)
+		out, err = supportAudited(ctx, tx, tenantID, id, state)
 		return err
 	})
 	return out, err
