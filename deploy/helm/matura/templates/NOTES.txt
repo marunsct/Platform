@@ -1,0 +1,8 @@
+Matura is starting. maturad runs its database migrations on start-up.
+
+  maturad:  {{ .Values.publicURL }}
+  portal:   {{ .Values.publicURL }}/portal/
+  issuer:   {{ include "matura.issuer" . }}
+
+Make yourself an operator: give your Keycloak user the realm role "{{ .Values.maturad.operatorRole }}".
+Register an app:  PUT {{ .Values.publicURL }}/admin/v1/apps/<slug> with its manifest (docs/guide).
