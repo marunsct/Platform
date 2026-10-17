@@ -19,6 +19,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/marunsct/Platform/internal/api"
+	"github.com/marunsct/Platform/internal/audit"
 	"github.com/marunsct/Platform/internal/config"
 	"github.com/marunsct/Platform/internal/events"
 	"github.com/marunsct/Platform/internal/mail"
@@ -101,9 +102,12 @@ func run(log *slog.Logger) error {
 	go relay.Run(ctx)
 	provisioner := &placement.Provisioner{Store: st, Keys: keys, Log: log}
 	go provisioner.Run(ctx)
+	streamer := &audit.Streamer{Store: st, Keys: keys, Log: log}
+	go streamer.Run(ctx)
 
 	server := api.New(st, auth, keys, log)
 	server.SetSource(cfg.EventSource)
+	server.SetTrustedProxies(cfg.TrustedProxies)
 	server.EnableInternal(cfg.InternalToken)
 	server.SetInvitations(api.Invitations{AcceptURL: cfg.InviteAcceptURL, PublicURL: cfg.PublicURL,
 		Issuer: cfg.Issuer, ClientID: cfg.PortalClientID})
