@@ -7,6 +7,7 @@ import (
 	"net/netip"
 	"os"
 	"strings"
+	"time"
 )
 
 type Config struct {
@@ -25,11 +26,12 @@ type Config struct {
 	EventSource        string // CloudEvents source of this installation
 	PublicURL          string // where people reach maturad, for links in emails
 	InviteAcceptURL    string // page invitation links open; default <PublicURL>/invitations/accept
-	PortalClientID     string // public Keycloak client the accept page signs in with
+	PortalClientID     string // public Keycloak client the portal and the accept page sign in with (PKCE)
 	SMTPAddr           string // host:port of the mail relay; empty: emails are queued but not sent
 	SMTPFrom           string
 	SMTPUser           string
 	SMTPPassword       string
+	DeleteGrace        time.Duration  // how long a deleted tenant can be restored; default 30 days
 	TrustedProxies     []netip.Prefix // reverse proxies whose X-Forwarded-For is believed (IP allow-lists, audit)
 	KeycloakURL        string         // Keycloak base URL maturad calls (default: from Issuer)
 	KeycloakClientID   string         // confidential client whose service account manages the realm
@@ -69,6 +71,12 @@ func FromEnv() (Config, error) {
 		KeycloakClientID:   getenv("MATURA_KEYCLOAK_CLIENT_ID", "matura-admin"),
 		KeycloakSecret:     os.Getenv("MATURA_KEYCLOAK_CLIENT_SECRET"),
 	}
+	grace := getenv("MATURA_TENANT_DELETE_GRACE", "720h")
+	d, err := time.ParseDuration(grace)
+	if err != nil || d < 0 {
+		return c, fmt.Errorf("MATURA_TENANT_DELETE_GRACE must be a duration such as 720h (30 days), got %q", grace)
+	}
+	c.DeleteGrace = d
 	for _, raw := range strings.Split(os.Getenv("MATURA_TRUSTED_PROXIES"), ",") {
 		if raw = strings.TrimSpace(raw); raw == "" {
 			continue

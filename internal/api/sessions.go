@@ -196,7 +196,7 @@ var errNotGoverned = errors.New("this person also belongs to other organisations
 	"verified by yours, so only they (or the installation's operators) can change their sign-in")
 
 // governedMember checks a tenant owner or admin may act on a member's Keycloak account: the target is a member,
-// admins do not act on owners, and the tenant governs the person (store.GovernsUser). Operators may always.
+// admins do not act on owners, and the tenant governs the person (store.GovernsUser). Operators (with approved support access) skip the governance rule.
 func (s *Server) governedMember(w http.ResponseWriter, r *http.Request) (uuid.UUID, uuid.UUID, store.Scope, bool) {
 	tid, ok := pathUUID(w, r, "tid")
 	if !ok {

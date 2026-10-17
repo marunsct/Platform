@@ -48,7 +48,7 @@ func refuse(code, msg string) error { return &TokenRefusal{Code: code, Msg: msg}
 
 // TokenContextFor works out the claims for a token, recording the user on first sight and remembering the tenant
 // they chose. It refuses inactive users, tenants the user does not belong to, inactive tenants and tenants that
-// have not enabled the app (RL-2).
+// have not enabled the app (RL-2). Suspended tenants and tenants pending deletion refuse everyone, owners too (TN-3).
 func (s *Store) TokenContextFor(ctx context.Context, req TokenRequest) (TokenContext, error) {
 	u, err := s.UpsertUser(ctx, req.User)
 	if err != nil {
@@ -77,6 +77,8 @@ func (s *Store) TokenContextFor(ctx context.Context, req TokenRequest) (TokenCon
 		case "active":
 		case "suspended":
 			return refuse("tenant_suspended", "this organisation is suspended")
+		case "pending_deletion":
+			return refuse("tenant_pending_deletion", "this organisation is scheduled for deletion")
 		default:
 			return refuse("tenant_inactive", "this organisation is not available")
 		}
@@ -154,11 +156,11 @@ func checkSessionLimits(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, req 
 	return nil
 }
 
-// chooseTenant picks the tenant named in the request, else the last used, else the first by name. A tenant the
-// user is not an active member of is refused when named, and skipped otherwise.
+// chooseTenant picks the tenant named in the request, else an active one (the last used first, then by name), so a
+// suspended tenant is only chosen, and refused, when the user has no active one or names it. A tenant the user is
+// not an active member of is refused when named, and skipped otherwise.
 func chooseTenant(ctx context.Context, tx pgx.Tx, userID uuid.UUID, want string) (*Tenant, Membership, error) {
-	q := `SELECT t.id, t.slug, t.name, t.kind, t.status, t.plan, t.data_mode_default, t.version, t.created_at,
-			t.updated_at, m.tenant_role, m.version
+	q := `SELECT ` + tenantColsOf("t") + `, m.tenant_role, m.version
 		FROM membership m JOIN tenant t ON t.id = m.tenant_id
 		WHERE m.user_id = $1 AND m.status = 'active' AND t.status <> 'deleted'`
 	var args = []any{userID}
@@ -172,14 +174,13 @@ func chooseTenant(ctx context.Context, tx pgx.Tx, userID uuid.UUID, want string)
 			args = append(args, want)
 		}
 	default:
-		q += ` ORDER BY (t.id = (SELECT last_tenant_id FROM app_user WHERE id = $1)) DESC NULLS LAST,
-			(t.status = 'active') DESC, t.name`
+		q += ` ORDER BY (t.status = 'active') DESC,
+			(t.id = (SELECT last_tenant_id FROM app_user WHERE id = $1)) DESC NULLS LAST, t.name`
 	}
 	q += ` LIMIT 1`
 	var t Tenant
 	var m Membership
-	err := tx.QueryRow(ctx, q, args...).Scan(&t.ID, &t.Slug, &t.Name, &t.Kind, &t.Status, &t.Plan, &t.DataModeDefault,
-		&t.Version, &t.CreatedAt, &t.UpdatedAt, &m.TenantRole, &m.Version)
+	err := tx.QueryRow(ctx, q, args...).Scan(append(tenantDest(&t), &m.TenantRole, &m.Version)...)
 	if err == pgx.ErrNoRows {
 		if want != "" {
 			return nil, m, refuse("not_a_member", "you are not a member of this organisation")

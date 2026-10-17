@@ -3,6 +3,8 @@ package api
 import (
 	"net/http"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -76,7 +78,7 @@ func (s *Server) getTenant(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("ETag", etag(t.Version))
-	writeJSON(w, http.StatusOK, t)
+	writeJSON(w, http.StatusOK, tenantFor(sc, t))
 }
 
 func etag(v int64) string { return `"` + strconv.FormatInt(v, 10) + `"` }
@@ -87,19 +89,22 @@ func (s *Server) patchTenant(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in struct {
-		Name   *string `json:"name"`
-		Plan   *string `json:"plan"`
-		Status *string `json:"status"`
+		Name          *string `json:"name"`
+		Plan          *string `json:"plan"`
+		Status        *string `json:"status"`
+		Reason        string  `json:"reason"`
+		SupportAccess *string `json:"support_access"`
 	}
 	if !decode(w, r, &in) {
 		return
 	}
-	sc, _, err := s.tenantAccess(r, tid, true)
+	sc, m, err := s.tenantAccess(r, tid, true)
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	if (in.Plan != nil || in.Status != nil) && !sc.Operator {
+	if (in.Plan != nil || in.Status != nil) && !sc.Operator ||
+		in.SupportAccess != nil && !sc.Operator && m.TenantRole != "owner" {
 		s.fail(w, r, errForbidden)
 		return
 	}
@@ -108,16 +113,44 @@ func (s *Server) patchTenant(w http.ResponseWriter, r *http.Request) {
 		problem(w, http.StatusBadRequest, "bad-request", err.Error())
 		return
 	}
-	t, err := s.store.UpdateTenant(r.Context(), sc, tid, store.TenantPatch{Name: in.Name, Plan: in.Plan, Status: in.Status}, ver)
-	if err != nil {
-		s.fail(w, r, err)
-		return
+	var t store.Tenant
+	if in.Name != nil || in.Plan != nil || in.SupportAccess != nil || in.Status == nil {
+		t, err = s.store.UpdateTenant(r.Context(), sc, tid, store.TenantPatch{Name: in.Name, Plan: in.Plan,
+			SupportAccess: in.SupportAccess}, ver)
+		if err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		ver = 0
+	}
+	if in.Status != nil { // the same as :suspend and :resume
+		act := map[string]string{"suspended": "suspend", "active": "resume"}[*in.Status]
+		if act == "" {
+			problem(w, http.StatusUnprocessableEntity, "invalid",
+				"status can be set to active or suspended; delete a tenant with DELETE")
+			return
+		}
+		t, err = s.store.ChangeTenantStatus(r.Context(), sc, tid, store.TenantAction{Do: act, Reason: in.Reason,
+			IfVersion: ver})
+		if err != nil {
+			s.fail(w, r, err)
+			return
+		}
 	}
 	w.Header().Set("ETag", etag(t.Version))
-	writeJSON(w, http.StatusOK, t)
+	writeJSON(w, http.StatusOK, tenantFor(sc, t))
 }
 
-// deleteTenant starts the grace period (TN-3); data removal across apps follows in TS7b.
+// tenantFor hides the operator's status reason from everyone else.
+func tenantFor(sc store.Scope, t store.Tenant) store.Tenant {
+	if !sc.Operator {
+		t.StatusReason = nil
+	}
+	return t
+}
+
+// deleteTenant starts the grace period (TN-3): the tenant is pending deletion and can be restored until
+// purge_after, when the purger deletes it (TN-5). Owners and operators.
 func (s *Server) deleteTenant(w http.ResponseWriter, r *http.Request) {
 	tid, ok := pathUUID(w, r, "tid")
 	if !ok {
@@ -132,18 +165,66 @@ func (s *Server) deleteTenant(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, errForbidden)
 		return
 	}
+	s.startDeletion(w, r, sc, tid)
+}
+
+// startDeletion reads the deletion options (operators: grace_days and reason) and marks the tenant pending deletion.
+func (s *Server) startDeletion(w http.ResponseWriter, r *http.Request, sc store.Scope, tid uuid.UUID) {
 	ver, err := ifMatch(r)
 	if err != nil {
 		problem(w, http.StatusBadRequest, "bad-request", err.Error())
 		return
 	}
-	deleting := "deleting"
-	t, err := s.store.UpdateTenant(r.Context(), sc, tid, store.TenantPatch{Status: &deleting}, ver)
+	q := r.URL.Query()
+	grace := s.deleteGrace
+	if g := q.Get("grace_days"); g != "" {
+		days, err := strconv.Atoi(g)
+		if err != nil || days < 0 || days > 365 {
+			problem(w, http.StatusBadRequest, "bad-request", "grace_days must be a whole number from 0 to 365")
+			return
+		}
+		if !sc.Operator {
+			s.fail(w, r, errForbidden)
+			return
+		}
+		grace = time.Duration(days) * 24 * time.Hour
+	}
+	reason := q.Get("reason")
+	if reason != "" && !sc.Operator {
+		reason = ""
+	}
+	t, err := s.store.ChangeTenantStatus(r.Context(), sc, tid, store.TenantAction{Do: "delete", Grace: grace,
+		Reason: reason, IfVersion: ver})
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusAccepted, t)
+	writeJSON(w, http.StatusAccepted, tenantFor(sc, t))
+}
+
+// tenantAction serves POST /v1/tenants/{tid}:restore (owners and operators).
+func (s *Server) tenantAction(w http.ResponseWriter, r *http.Request) {
+	raw, found := strings.CutSuffix(r.PathValue("tid"), ":restore")
+	tid, err := uuid.Parse(raw)
+	if !found || err != nil {
+		problem(w, http.StatusNotFound, "not-found", "not found")
+		return
+	}
+	sc, m, err := s.tenantAccess(r, tid, true)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	if !sc.Operator && m.TenantRole != "owner" {
+		s.fail(w, r, errForbidden)
+		return
+	}
+	t, err := s.store.ChangeTenantStatus(r.Context(), sc, tid, store.TenantAction{Do: "restore"})
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, tenantFor(sc, t))
 }
 
 // --- workspaces ---------------------------------------------------------------------------------------------------

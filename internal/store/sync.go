@@ -192,6 +192,7 @@ func (s *Store) AppSnapshot(ctx context.Context, app App, tenantID uuid.UUID) (S
 		if err != nil {
 			return err
 		}
+		t = t.Contract()
 		out.Tenant = &t
 		rows, err := tx.Query(ctx, `SELECT `+workspaceCols+` FROM workspace WHERE tenant_id = $1 ORDER BY id`, tenantID)
 		if err != nil {

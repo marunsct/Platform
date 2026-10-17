@@ -25,7 +25,8 @@ CREATE TABLE IF NOT EXISTS matura_tenant (
     kind text NOT NULL CHECK (kind IN ('company','shared','personal')),
     status text NOT NULL CHECK (status IN ('provisioning','active','suspended','deleting','deleted')),
     plan text, data_mode text NOT NULL CHECK (data_mode IN ('shared','schema','database')),
-    version bigint NOT NULL, updated_at timestamptz NOT NULL);
+    version bigint NOT NULL, updated_at timestamptz NOT NULL, placement_version bigint NOT NULL DEFAULT 0);
+ALTER TABLE matura_tenant ADD COLUMN IF NOT EXISTS placement_version bigint NOT NULL DEFAULT 0;
 CREATE TABLE IF NOT EXISTS matura_workspace (
     id uuid PRIMARY KEY, tenant_id uuid NOT NULL REFERENCES matura_tenant(id), name text NOT NULL,
     status text NOT NULL CHECK (status IN ('active','archived','deleted')), is_default boolean NOT NULL DEFAULT false,
@@ -78,7 +79,8 @@ CREATE POLICY tenant_isolation ON matura_user USING (EXISTS (SELECT 1 FROM matur
 _SQLITE = """
 CREATE TABLE IF NOT EXISTS matura_tenant (
     id text PRIMARY KEY, slug text NOT NULL UNIQUE, name text NOT NULL, kind text NOT NULL, status text NOT NULL,
-    plan text, data_mode text NOT NULL, version integer NOT NULL, updated_at text NOT NULL);
+    plan text, data_mode text NOT NULL, version integer NOT NULL, updated_at text NOT NULL,
+    placement_version integer NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS matura_workspace (
     id text PRIMARY KEY, tenant_id text NOT NULL REFERENCES matura_tenant(id), name text NOT NULL,
     status text NOT NULL, is_default boolean NOT NULL DEFAULT 0, version integer NOT NULL, updated_at text NOT NULL,
@@ -141,9 +143,15 @@ class _Dialect:
         return list(v or []) if self.pg else json.dumps(list(v or []))
 
 
-def _upsert(table: str, key: list[str], cols: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+# Once a placement is applied, data_mode is the placement's (it has its own version), not the tenant's default.
+_KEEP_PLACED_MODE = {"data_mode": "CASE WHEN t.placement_version > 0 THEN t.data_mode ELSE excluded.data_mode END"}
+
+
+def _upsert(table: str, key: list[str], cols: dict[str, Any],
+            sets_override: dict[str, str] | None = None) -> tuple[str, dict[str, Any]]:
     names = list(cols)
-    sets = ", ".join(f"{c} = excluded.{c}" for c in names if c not in key)
+    over = sets_override or {}
+    sets = ", ".join(f"{c} = {over.get(c, 'excluded.' + c)}" for c in names if c not in key)
     sql = (f"INSERT INTO {table} AS t ({', '.join(names)}) VALUES ({', '.join(':' + c for c in names)}) "
            f"ON CONFLICT ({', '.join(key)}) DO UPDATE SET {sets} WHERE t.version < excluded.version")
     return sql, cols
@@ -201,7 +209,7 @@ class Contract:
                 "id": d.id(p["id"]), "slug": p["slug"], "name": p["name"], "kind": p.get("kind", "company"),
                 "status": p["status"], "plan": p.get("plan"),
                 "data_mode": p.get("data_mode") or p.get("data_mode_default") or "shared",
-                "version": version, "updated_at": d.ts(p.get("updated_at"))})]
+                "version": version, "updated_at": d.ts(p.get("updated_at"))}, _KEEP_PLACED_MODE)]
         if obj == "workspace":
             return [self._tenant_stub(p["tenant_id"]), _upsert("matura_workspace", ["id"], {
                 "id": d.id(p["id"]), "tenant_id": d.id(p["tenant_id"]), "name": p["name"], "status": p["status"],
@@ -245,9 +253,11 @@ class Contract:
                 "status": "deleted" if typ.endswith(".deleted") else "active", "version": version,
                 "updated_at": d.ts(None)}))
             return out
-        if obj == "placement":
-            return [("UPDATE matura_tenant SET data_mode = :mode WHERE id = :id",
-                     {"mode": p["mode"], "id": d.id(p["tenant_id"])})]
+        if obj == "placement":  # versioned on its own: matura_tenant.placement_version
+            return [self._tenant_stub(p["tenant_id"]),
+                    ("UPDATE matura_tenant SET data_mode = :mode, placement_version = :version "
+                     "WHERE id = :id AND placement_version < :version",
+                     {"mode": p["mode"], "version": version, "id": d.id(p["tenant_id"])})]
         return []  # tenant_app, app_manifest, ping: hooks only
 
     def from_principal(self, principal: Any) -> list[tuple[str, dict[str, Any]]]:

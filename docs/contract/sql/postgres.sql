@@ -7,7 +7,8 @@ CREATE TABLE IF NOT EXISTS matura_tenant (
     kind text NOT NULL CHECK (kind IN ('company','shared','personal')),
     status text NOT NULL CHECK (status IN ('provisioning','active','suspended','deleting','deleted')),
     plan text, data_mode text NOT NULL CHECK (data_mode IN ('shared','schema','database')),
-    version bigint NOT NULL, updated_at timestamptz NOT NULL);
+    version bigint NOT NULL, updated_at timestamptz NOT NULL, placement_version bigint NOT NULL DEFAULT 0);
+ALTER TABLE matura_tenant ADD COLUMN IF NOT EXISTS placement_version bigint NOT NULL DEFAULT 0;
 CREATE TABLE IF NOT EXISTS matura_workspace (
     id uuid PRIMARY KEY, tenant_id uuid NOT NULL REFERENCES matura_tenant(id), name text NOT NULL,
     status text NOT NULL CHECK (status IN ('active','archived','deleted')), is_default boolean NOT NULL DEFAULT false,

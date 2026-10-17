@@ -25,6 +25,7 @@ ISSUER = "https://matura.test/realms/matura"
 AUDIENCE = "notes"
 NOW = 1792140360  # 2026-10-17T09:26:00Z
 T1, T2 = "0192b7a4-6000-7000-8000-000000000001", "0192b7a4-6000-7000-8000-000000000002"
+T3 = "0192b7a4-6000-7000-8000-000000000003"
 U1 = "0192b7a4-5c1e-7d2a-9f00-4b1e2a9c0d11"
 W1 = "0192b7a4-7000-7000-8000-0000000000a1"
 G1 = "0192b7a4-8000-7000-8000-0000000000b1"
@@ -122,9 +123,23 @@ def apply_section() -> dict:
         ev(12, "tenant.created", "tenant", 30, {**tenant, "id": T2, "slug": "globex", "name": "Globex"}, tenant=T2),
         ev(13, "placement.provisioned", "placement", 32, {"tenant_id": T2, "app_id": "x", "mode": "database",
                                                           "state": "provisioned"}, tenant=T2),
+        # placements have their own version: an older one arriving late changes nothing, and a newer tenant change
+        # keeps the placement's data_mode (its data_mode_default is only the tenant's default)
+        ev(14, "placement.requested", "placement", 29, {"tenant_id": T2, "app_id": "x", "mode": "schema",
+                                                        "state": "requested"}, tenant=T2),
+        ev(15, "tenant.updated", "tenant", 40, {**tenant, "id": T2, "slug": "globex", "name": "Globex Corp"},
+           tenant=T2),
+        # a placement before its tenant: the tenant stub keeps the mode, and the tenant created later fills the rest
+        ev(16, "placement.provisioned", "placement", 52, {"tenant_id": T3, "app_id": "x", "mode": "schema",
+                                                          "state": "provisioned"}, tenant=T3),
+        ev(17, "tenant.created", "tenant", 50, {**tenant, "id": T3, "slug": "initech", "name": "Initech"},
+           tenant=T3),
+        ev(18, "placement.requested", "placement", 51, {"tenant_id": T3, "app_id": "x", "mode": "database",
+                                                        "state": "requested"}, tenant=T3),
     ]
     queries = {
-        "matura_tenant": "SELECT id, slug, name, kind, status, plan, data_mode, version FROM matura_tenant ORDER BY id",
+        "matura_tenant": ("SELECT id, slug, name, kind, status, plan, data_mode, version, placement_version "
+                          "FROM matura_tenant ORDER BY id"),
         "matura_user": "SELECT id, email, display_name, status, version FROM matura_user ORDER BY id",
         "matura_membership": "SELECT tenant_id, user_id, tenant_role, status, version FROM matura_membership "
                              "ORDER BY tenant_id, user_id",
@@ -164,7 +179,9 @@ def apply_section() -> dict:
     return {"description": "Apply these events in this order (contract §5): skip an event id already applied, keep a "
                            "row only when its version is newer, create missing tenant/user/workspace rows as stubs "
                            "with version 0, rename grants with an app role (a rename follows the grant events "
-                           "before it, as webhooks and the feed deliver them in commit order). 'applied' says which events are new; "
+                           "before it, as webhooks and the feed deliver them in commit order), and set a tenant's data_mode from "
+                           "a placement only when the placement's version is newer than placement_version (tenant "
+                           "changes then keep it). 'applied' says which events are new; "
                            "'rows' is the final state of the listed columns (stub names are the id).",
             "events": events, "applied": result["applied"], "rows": result["rows"]}
 

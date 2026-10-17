@@ -23,9 +23,11 @@ import (
 	"github.com/marunsct/Platform/internal/config"
 	"github.com/marunsct/Platform/internal/events"
 	"github.com/marunsct/Platform/internal/keycloak"
+	"github.com/marunsct/Platform/internal/lifecycle"
 	"github.com/marunsct/Platform/internal/mail"
 	"github.com/marunsct/Platform/internal/metrics"
 	"github.com/marunsct/Platform/internal/placement"
+	"github.com/marunsct/Platform/internal/portal"
 	"github.com/marunsct/Platform/internal/secrets"
 	"github.com/marunsct/Platform/internal/store"
 )
@@ -103,6 +105,8 @@ func run(log *slog.Logger) error {
 	go relay.Run(ctx)
 	provisioner := &placement.Provisioner{Store: st, Keys: keys, Log: log}
 	go provisioner.Run(ctx)
+	purger := &lifecycle.Purger{Store: st, Log: log}
+	go purger.Run(ctx)
 	streamer := &audit.Streamer{Store: st, Keys: keys, Log: log}
 	go streamer.Run(ctx)
 
@@ -128,8 +132,10 @@ func run(log *slog.Logger) error {
 		log.Warn("MATURA_KEYCLOAK_CLIENT_SECRET is not set: session, MFA and SSO endpoints answer 503")
 	}
 	api.AllowHTTPIdentityProviders = cfg.Env == "development"
+	server.SetDeletionGrace(cfg.DeleteGrace)
 	server.SetInvitations(api.Invitations{AcceptURL: cfg.InviteAcceptURL, PublicURL: cfg.PublicURL,
 		Issuer: cfg.Issuer, ClientID: cfg.PortalClientID})
+	server.SetPortal(portal.Config{Auth: cfg.Auth, Issuer: cfg.Issuer, ClientID: cfg.PortalClientID})
 	if cfg.SMTPAddr != "" {
 		mailer := &mail.Mailer{Store: st, Log: log, Sender: mail.SMTP{Addr: cfg.SMTPAddr, From: cfg.SMTPFrom,
 			User: cfg.SMTPUser, Password: cfg.SMTPPassword}}

@@ -4,7 +4,8 @@
 
 CREATE TABLE IF NOT EXISTS matura_tenant (
     id text PRIMARY KEY, slug text NOT NULL UNIQUE, name text NOT NULL, kind text NOT NULL, status text NOT NULL,
-    plan text, data_mode text NOT NULL, version integer NOT NULL, updated_at text NOT NULL);
+    plan text, data_mode text NOT NULL, version integer NOT NULL, updated_at text NOT NULL,
+    placement_version integer NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS matura_workspace (
     id text PRIMARY KEY, tenant_id text NOT NULL REFERENCES matura_tenant(id), name text NOT NULL,
     status text NOT NULL, is_default boolean NOT NULL DEFAULT 0, version integer NOT NULL, updated_at text NOT NULL,

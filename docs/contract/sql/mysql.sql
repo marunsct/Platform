@@ -13,7 +13,8 @@ CREATE TABLE IF NOT EXISTS matura_tenant (
     plan varchar(64),
     data_mode varchar(16) NOT NULL CHECK (data_mode IN ('shared','schema','database')),
     version bigint NOT NULL,
-    updated_at datetime(6) NOT NULL
+    updated_at datetime(6) NOT NULL,
+    placement_version bigint NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS matura_workspace (
     id char(36) NOT NULL PRIMARY KEY,

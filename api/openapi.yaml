@@ -26,6 +26,8 @@ security:
 tags:
   - name: health
     description: Probes and liveness.
+  - name: portal
+    description: The customer portal web app.
   - name: me
     description: The signed-in user.
   - name: tenants
@@ -52,6 +54,10 @@ tags:
     description: Verified domains, per-tenant identity providers and home-realm discovery (TS13).
   - name: operator
     description: Installation operators only.
+  - name: entitlements
+    description: Plans, limits and usage.
+  - name: support-access
+    description: Time-boxed, read-only operator access a tenant approves.
   - name: app-backend
     description: Called by app backends with their client credentials.
   - name: internal
@@ -124,6 +130,43 @@ paths:
                 $ref: '#/components/schemas/InvitationPreview'
         '410':
           $ref: '#/components/responses/Gone'
+  /portal/:
+    get:
+      operationId: portalApp
+      summary: Customer portal
+      description: |
+        The customer portal, a single-page app embedded in maturad. Built files are served as they are (hashed
+        `assets/` are cached for a year); any other path under `/portal/` returns `index.html` so the app's router
+        can show it, except missing files with an extension, which are 404. Every response carries a strict
+        Content-Security-Policy (`script-src 'self'`, `style-src 'self'`, `connect-src` limited to maturad and the
+        issuer). `/portal` redirects here.
+      tags: [portal]
+      security: []
+      responses:
+        '200':
+          description: A built file, or `index.html` for the app's own routes.
+          content:
+            text/html:
+              schema:
+                type: string
+        '404':
+          description: A missing file.
+  /portal/config.json:
+    get:
+      operationId: portalConfig
+      summary: Portal runtime configuration
+      description: |
+        What the portal needs to sign in: the OIDC issuer and the public client it uses (authorization code with
+        PKCE), or `auth: dev` when maturad trusts development headers. `Cache-Control: no-store`.
+      tags: [portal]
+      security: []
+      responses:
+        '200':
+          description: The configuration.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PortalConfig'
 
   # --- me ---------------------------------------------------------------------------------------------------------
   /v1/me:
@@ -260,7 +303,10 @@ paths:
     patch:
       operationId: updateTenant
       summary: Update a tenant
-      description: Owners and admins may rename; only operators may change `plan` or `status`.
+      description: |
+        Owners and admins may rename; only owners (and operators) set `support_access`; only operators change `plan`
+        or `status` (`suspended` with a `reason`, or `active`: the same as `:suspend` and `:resume`). A suspended
+        tenant answers 403 `tenant-suspended` to its members.
       tags: [tenants]
       parameters:
         - $ref: '#/components/parameters/IfMatch'
@@ -279,8 +325,13 @@ paths:
                   description: Operators only.
                 status:
                   type: string
-                  enum: [provisioning, active, suspended, deleting, deleted]
-                  description: Operators only.
+                  enum: [active, suspended]
+                  description: Operators only. Delete a tenant with DELETE.
+                reason:
+                  type: string
+                  description: Why the tenant is suspended (operators; required to suspend).
+                support_access:
+                  $ref: '#/components/schemas/SupportAccessPolicy'
       responses:
         '200':
           description: The updated tenant.
@@ -308,13 +359,20 @@ paths:
     delete:
       operationId: deleteTenant
       summary: Delete a tenant
-      description: Owners and operators. Sets the status to `deleting`, which starts the grace period.
+      description: |
+        Owners and operators. The tenant becomes `pending_deletion` with `purge_after` (default 30 days,
+        `MATURA_TENANT_DELETE_GRACE`) and can be restored until then with `:restore`; members can only read it.
+        Apps see it as suspended. After the grace period the purger moves it to `deleting` (apps get
+        `tenant.deleting` and delete its data, placements retire) and, once every placement is deleted, `deleted`.
+        Repeating the call changes nothing.
       tags: [tenants]
       parameters:
         - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/GraceDays'
+        - $ref: '#/components/parameters/DeletionReason'
       responses:
         '202':
-          description: Deletion started; the tenant with status `deleting`.
+          description: Deletion scheduled; the tenant with status `pending_deletion`.
           content:
             application/json:
               schema:
@@ -331,6 +389,152 @@ paths:
           $ref: '#/components/responses/Conflict'
         '412':
           $ref: '#/components/responses/PreconditionFailed'
+
+  /v1/tenants/{tid}:restore:
+    parameters:
+      - $ref: '#/components/parameters/tid'
+    post:
+      operationId: restoreTenant
+      summary: Restore a tenant pending deletion
+      description: Owners and operators, until `purge_after`. The tenant returns to the status it had (a suspended tenant stays suspended).
+      tags: [tenants]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: The restored tenant.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tenant'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /v1/tenants/{tid}/entitlements:
+    parameters:
+      - $ref: '#/components/parameters/tid'
+    get:
+      operationId: getEntitlements
+      summary: Get the tenant's plan, limits and usage
+      description: Members and operators.
+      tags: [entitlements]
+      responses:
+        '200':
+          description: The entitlements.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Entitlements'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /v1/tenants/{tid}/support-access:
+    parameters:
+      - $ref: '#/components/parameters/tid'
+    get:
+      operationId: listTenantSupportAccess
+      summary: List support access requests
+      description: Owners and admins see every request, decision and use (newest first, at most 200).
+      tags: [support-access]
+      responses:
+        '200':
+          description: The requests.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupportAccessList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /v1/tenants/{tid}/support-access/{id}:approve:
+    parameters:
+      - $ref: '#/components/parameters/tid'
+      - $ref: '#/components/parameters/id'
+    post:
+      operationId: approveSupportAccess
+      summary: Approve a support access request
+      description: Owners. The access starts now and lasts `duration_minutes`.
+      tags: [support-access]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: The request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupportAccess'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /v1/tenants/{tid}/support-access/{id}:deny:
+    parameters:
+      - $ref: '#/components/parameters/tid'
+      - $ref: '#/components/parameters/id'
+    post:
+      operationId: denySupportAccess
+      summary: Deny a support access request
+      description: Owners.
+      tags: [support-access]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: The request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupportAccess'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /v1/tenants/{tid}/support-access/{id}:revoke:
+    parameters:
+      - $ref: '#/components/parameters/tid'
+      - $ref: '#/components/parameters/id'
+    post:
+      operationId: revokeSupportAccess
+      summary: Revoke support access
+      description: Owners. Ends a pending or active grant at once.
+      tags: [support-access]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: The request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupportAccess'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
 
   # --- workspaces -------------------------------------------------------------------------------------------------
   /v1/tenants/{tid}/workspaces:
@@ -380,6 +584,8 @@ paths:
                 $ref: '#/components/schemas/Workspace'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '402':
+          $ref: '#/components/responses/PlanLimit'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -487,6 +693,8 @@ paths:
                 $ref: '#/components/schemas/Membership'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '402':
+          $ref: '#/components/responses/PlanLimit'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -592,6 +800,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/TenantApp'
+        '402':
+          $ref: '#/components/responses/PlanLimit'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -1193,6 +1403,8 @@ paths:
                     $ref: '#/components/schemas/Membership'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '402':
+          $ref: '#/components/responses/PlanLimit'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -1884,6 +2096,346 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+  /admin/v1/tenants:
+    get:
+      operationId: adminListTenants
+      summary: List tenants
+      description: Operators. Every tenant with its active member count, by slug, a page at a time.
+      tags: [operator]
+      parameters:
+        - name: q
+          in: query
+          description: Match slug or name.
+          schema:
+            type: string
+        - name: status
+          in: query
+          description: One or more statuses, comma-separated. Default every status but `deleted`.
+          schema:
+            type: string
+        - name: cursor
+          in: query
+          description: The `next_cursor` of the previous page.
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+      responses:
+        '200':
+          description: A page of tenants.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenantSummaryList'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+  /admin/v1/tenants/{tid}:
+    parameters:
+      - $ref: '#/components/parameters/tid'
+    delete:
+      operationId: adminDeleteTenant
+      summary: Delete a tenant (operators)
+      description: As `DELETE /v1/tenants/{tid}`; `grace_days=0` lets the purger delete it on its next round.
+      tags: [operator]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/GraceDays'
+        - $ref: '#/components/parameters/DeletionReason'
+      responses:
+        '202':
+          description: Deletion scheduled; the tenant with status `pending_deletion`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tenant'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '412':
+          $ref: '#/components/responses/PreconditionFailed'
+  /admin/v1/tenants/{tid}:suspend:
+    parameters:
+      - $ref: '#/components/parameters/tid'
+    post:
+      operationId: suspendTenantAdmin
+      summary: Suspend a tenant
+      description: Operators. Sign-in into the tenant is refused (`tenant_suspended`) and its API answers 403 `tenant-suspended` to members; apps get `tenant.suspended`. Repeating it updates the reason.
+      tags: [operator]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [reason]
+              properties:
+                reason:
+                  type: string
+                  description: Shown to operators only.
+      responses:
+        '200':
+          description: The tenant.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tenant'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '412':
+          $ref: '#/components/responses/PreconditionFailed'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+  /admin/v1/tenants/{tid}:resume:
+    parameters:
+      - $ref: '#/components/parameters/tid'
+    post:
+      operationId: resumeTenantAdmin
+      summary: Resume a suspended tenant
+      description: Operators. Apps get `tenant.reactivated`.
+      tags: [operator]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/IfMatch'
+      responses:
+        '200':
+          description: The tenant.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tenant'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '412':
+          $ref: '#/components/responses/PreconditionFailed'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+  /admin/v1/tenants/{tid}:restore:
+    parameters:
+      - $ref: '#/components/parameters/tid'
+    post:
+      operationId: restoreTenantAdmin
+      summary: Restore a tenant pending deletion (operators)
+      description: Operators. As `POST /v1/tenants/{tid}:restore`.
+      tags: [operator]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/IfMatch'
+      responses:
+        '200':
+          description: The tenant.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tenant'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '412':
+          $ref: '#/components/responses/PreconditionFailed'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+  /admin/v1/tenants/{tid}/plan:
+    parameters:
+      - $ref: '#/components/parameters/tid'
+    put:
+      operationId: putTenantPlan
+      summary: Set a tenant's plan and overrides
+      description: |
+        Operators. `plan` null or "" removes the plan (no limits). `overrides` (same shape as a plan's limits)
+        replaces the tenant's overrides; leave it out to keep them, null to clear them. Usage above a new limit is
+        kept; only new additions are refused. Existing placements keep their data mode.
+      tags: [operator, entitlements]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                plan:
+                  type: [string, 'null']
+                overrides:
+                  oneOf:
+                    - $ref: '#/components/schemas/Limits'
+                    - type: 'null'
+      responses:
+        '200':
+          description: The tenant's entitlements.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Entitlements'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+  /admin/v1/tenants/{tid}/support-access:
+    parameters:
+      - $ref: '#/components/parameters/tid'
+    get:
+      operationId: adminListSupportAccess
+      summary: List a tenant's support access requests (operators)
+      tags: [operator, support-access]
+      responses:
+        '200':
+          description: The requests.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupportAccessList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      operationId: requestSupportAccess
+      summary: Request support access
+      description: |
+        Operators. Asks for read-only access to the tenant's admin views (its GET routes) for up to 8 hours. With
+        the tenant's `support_access` `approval` (default) an owner must approve it within 24 hours; with `allowed`
+        it starts at once; with `off` it is refused (403 `support-access-off`). The tenant sees the request, the
+        decision and every use. No token is issued: the operator keeps their own identity.
+      tags: [operator, support-access]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [reason, duration_minutes]
+              properties:
+                reason:
+                  type: string
+                  maxLength: 500
+                  description: Shown to the tenant.
+                duration_minutes:
+                  type: integer
+                  minimum: 1
+                  maximum: 480
+      responses:
+        '201':
+          description: The request (`pending`, or `active` when the tenant allows access without approval).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupportAccess'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+  /admin/v1/tenants/{tid}/support-access/{id}:end:
+    parameters:
+      - $ref: '#/components/parameters/tid'
+      - $ref: '#/components/parameters/id'
+    post:
+      operationId: endSupportAccess
+      summary: End your support access early
+      description: The operator who asked ends a pending or active grant.
+      tags: [operator, support-access]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: The request, `ended`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupportAccess'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /admin/v1/stats:
+    get:
+      operationId: adminStats
+      summary: Installation counts
+      description: Operators. Tenants and users by status (with `total`), and each app with the number of tenants that enabled it.
+      tags: [operator]
+      responses:
+        '200':
+          description: The counts.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Stats'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
   /admin/v1/users:
     get:
       operationId: listUsers
@@ -2345,7 +2897,7 @@ paths:
       description: |
         Owners and admins (admins not for owners), for members the tenant governs: the member's email domain is
         verified by this tenant, or they belong to no other organisation. Otherwise 403 `not-governed`, since
-        Keycloak sessions span every tenant the person belongs to. Operators may always.
+        Keycloak sessions span every tenant the person belongs to. Operators need approved support access and then skip this rule.
       tags: [sessions]
       responses:
         '200':
@@ -2965,6 +3517,20 @@ components:
         type: integer
         minimum: 1
         maximum: 1000
+    GraceDays:
+      name: grace_days
+      in: query
+      description: Operators only. Days until the purge (0 to 365) instead of the installation's default.
+      schema:
+        type: integer
+        minimum: 0
+        maximum: 365
+    DeletionReason:
+      name: reason
+      in: query
+      description: Operators only. Why the tenant is deleted; shown to operators.
+      schema:
+        type: string
     IfMatch:
       name: If-Match
       in: header
@@ -3037,6 +3603,25 @@ components:
         application/problem+json:
           schema:
             $ref: '#/components/schemas/Problem'
+    PlanLimit:
+      description: |
+        The tenant's plan does not allow it (`plan-limit`): `limit` names it (`max_members`, `max_workspaces` or
+        `apps`), with `max` and `used` for counted limits.
+      content:
+        application/problem+json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/Problem'
+              - type: object
+                required: [limit]
+                properties:
+                  limit:
+                    type: string
+                    enum: [max_members, max_workspaces, apps]
+                  max:
+                    type: integer
+                  used:
+                    type: integer
     NotReady:
       description: The database is unreachable.
       content:
@@ -3222,7 +3807,16 @@ components:
           enum: [company, shared, personal]
         status:
           type: string
-          enum: [provisioning, active, suspended, deleting, deleted]
+          enum: [provisioning, active, suspended, pending_deletion, deleting, deleted]
+        status_reason:
+          type: string
+          description: Why it is suspended or deleted; operators only.
+        purge_after:
+          type: [string, 'null']
+          format: date-time
+          description: When a tenant pending deletion is purged.
+        support_access:
+          $ref: '#/components/schemas/SupportAccessPolicy'
         plan:
           type: [string, 'null']
         data_mode_default:
@@ -3244,6 +3838,172 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Tenant'
+    TenantSummaryList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            allOf:
+              - $ref: '#/components/schemas/Tenant'
+              - type: object
+                required: [member_count]
+                properties:
+                  member_count:
+                    type: integer
+        next_cursor:
+          type: string
+          description: Present when there are more tenants.
+    SupportAccessPolicy:
+      type: string
+      enum: [approval, allowed, 'off']
+      default: approval
+      description: Whether operators need an owner's approval for support access, need none, or cannot ask.
+    SupportAccess:
+      type: object
+      required: [id, tenant_id, operator_id, reason, duration_minutes, state, requested_at, uses]
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        operator_id:
+          type: string
+          format: uuid
+        operator_email:
+          type: [string, 'null']
+        reason:
+          type: string
+        duration_minutes:
+          type: integer
+        state:
+          type: string
+          enum: [pending, active, expired, denied, revoked, ended]
+        auto_approved:
+          type: boolean
+        requested_at:
+          type: string
+          format: date-time
+        decided_by:
+          type: [string, 'null']
+          format: uuid
+        decided_at:
+          type: [string, 'null']
+          format: date-time
+        starts_at:
+          type: [string, 'null']
+          format: date-time
+        expires_at:
+          type: [string, 'null']
+          format: date-time
+        ended_by:
+          type: [string, 'null']
+          format: uuid
+        ended_at:
+          type: [string, 'null']
+          format: date-time
+        last_used_at:
+          type: [string, 'null']
+          format: date-time
+        uses:
+          type: integer
+          description: Requests made with this grant.
+    SupportAccessList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/SupportAccess'
+    Limits:
+      type: object
+      description: |
+        A plan's limits or a tenant's overrides. A missing limit, or a negative number, means no limit; a missing
+        `apps` list allows every app, as does `"*"` in it. Other keys are kept for apps.
+      additionalProperties: true
+      properties:
+        max_members:
+          type: integer
+        max_workspaces:
+          type: integer
+        apps:
+          type: array
+          items:
+            type: string
+        features:
+          type: object
+          additionalProperties:
+            type: boolean
+    Entitlements:
+      type: object
+      required: [tenant_id, plan, limits, plan_limits, overrides, usage]
+      properties:
+        tenant_id:
+          type: string
+          format: uuid
+        plan:
+          oneOf:
+            - type: object
+              required: [id, name]
+              properties:
+                id:
+                  type: string
+                name:
+                  type: string
+            - type: 'null'
+        limits:
+          $ref: '#/components/schemas/Limits'
+        plan_limits:
+          $ref: '#/components/schemas/Limits'
+        overrides:
+          $ref: '#/components/schemas/Limits'
+        usage:
+          type: object
+          required: [members, workspaces, apps]
+          properties:
+            members:
+              type: integer
+              description: Members holding a seat (active or deactivated).
+            workspaces:
+              type: integer
+            apps:
+              type: array
+              items:
+                type: string
+    Stats:
+      type: object
+      required: [tenants, users, apps]
+      properties:
+        tenants:
+          type: object
+          additionalProperties:
+            type: integer
+        users:
+          type: object
+          additionalProperties:
+            type: integer
+        apps:
+          type: object
+          required: [total, items]
+          properties:
+            total:
+              type: integer
+            items:
+              type: array
+              items:
+                type: object
+                required: [app, status, tenants]
+                properties:
+                  app:
+                    type: string
+                  status:
+                    type: string
+                  tenants:
+                    type: integer
     MyTenant:
       description: A tenant with the caller's role in it.
       allOf:
@@ -3721,6 +4481,22 @@ components:
         expires_at:
           type: string
           format: date-time
+
+    PortalConfig:
+      type: object
+      required: [auth, issuer, client_id, product]
+      properties:
+        auth:
+          type: string
+          enum: [oidc, dev]
+        issuer:
+          type: string
+          description: OIDC issuer the browser signs in with; empty when not configured.
+        client_id:
+          type: string
+          description: Public client (default `matura-console`).
+        product:
+          type: string
 
     Plan:
       type: object

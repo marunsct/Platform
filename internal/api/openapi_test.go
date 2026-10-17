@@ -16,12 +16,20 @@ import (
 // openAPIAliases maps operations the document lists as their own paths to the router pattern that serves them:
 // colon actions inside a path segment are dispatched by one handler on the wildcard.
 var openAPIAliases = map[string]string{
-	"POST /v1/apps/{app}/placements/{tid}:ready":     "POST /v1/apps/{app}/placements/{tid}",
-	"POST /v1/apps/{app}/placements/{tid}:deleted":   "POST /v1/apps/{app}/placements/{tid}",
-	"POST /v1/tenants/{tid}/invitations/{id}:resend": "POST /v1/tenants/{tid}/invitations/{id}",
-	"POST /v1/tenants/{tid}/members/{uid}:sign-out":  "POST /v1/tenants/{tid}/members/{uid}",
-	"POST /v1/tenants/{tid}/members/{uid}:reset-mfa": "POST /v1/tenants/{tid}/members/{uid}",
-	"POST /v1/tenants/{tid}/domains/{domain}:verify": "POST /v1/tenants/{tid}/domains/{domain}",
+	"POST /v1/apps/{app}/placements/{tid}:ready":           "POST /v1/apps/{app}/placements/{tid}",
+	"POST /v1/apps/{app}/placements/{tid}:deleted":         "POST /v1/apps/{app}/placements/{tid}",
+	"POST /v1/tenants/{tid}/invitations/{id}:resend":       "POST /v1/tenants/{tid}/invitations/{id}",
+	"POST /v1/tenants/{tid}:restore":                       "POST /v1/tenants/{tid}",
+	"POST /v1/tenants/{tid}/support-access/{id}:approve":   "POST /v1/tenants/{tid}/support-access/{id}",
+	"POST /v1/tenants/{tid}/support-access/{id}:deny":      "POST /v1/tenants/{tid}/support-access/{id}",
+	"POST /v1/tenants/{tid}/support-access/{id}:revoke":    "POST /v1/tenants/{tid}/support-access/{id}",
+	"POST /admin/v1/tenants/{tid}:suspend":                 "POST /admin/v1/tenants/{tid}",
+	"POST /admin/v1/tenants/{tid}:resume":                  "POST /admin/v1/tenants/{tid}",
+	"POST /admin/v1/tenants/{tid}:restore":                 "POST /admin/v1/tenants/{tid}",
+	"POST /admin/v1/tenants/{tid}/support-access/{id}:end": "POST /admin/v1/tenants/{tid}/support-access/{id}",
+	"POST /v1/tenants/{tid}/members/{uid}:sign-out":        "POST /v1/tenants/{tid}/members/{uid}",
+	"POST /v1/tenants/{tid}/members/{uid}:reset-mfa":       "POST /v1/tenants/{tid}/members/{uid}",
+	"POST /v1/tenants/{tid}/domains/{domain}:verify":       "POST /v1/tenants/{tid}/domains/{domain}",
 }
 
 var openAPIMethods = []string{"get", "put", "post", "delete", "patch", "head", "options", "trace"}

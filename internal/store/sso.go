@@ -338,7 +338,11 @@ func (s *Store) SSOLogin(ctx context.Context, alias string, user UserProfile) (S
 		case err != nil && err != ErrNotFound:
 			return err
 		}
-		if _, err := addMember(ctx, tx, conn.TenantID, u.ID, conn.DefaultTenantRole); err != nil {
+		if _, err := addMember(ctx, tx, conn.TenantID, u.ID, conn.DefaultTenantRole, true); err != nil {
+			var limit *LimitError
+			if errors.As(err, &limit) {
+				return refuse("plan_limit", "this organisation has no room for more members; ask its admin")
+			}
 			return err
 		}
 		out.Joined = true

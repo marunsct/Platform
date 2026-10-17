@@ -143,6 +143,9 @@ func (s *Store) EnableApp(ctx context.Context, sc Scope, tenantID uuid.UUID, app
 		if err != nil {
 			return err
 		}
+		if err := checkAppAllowed(ctx, tx, tenantID, app.Slug); err != nil {
+			return err
+		}
 		v, err := nextVersion(ctx, tx)
 		if err != nil {
 			return err

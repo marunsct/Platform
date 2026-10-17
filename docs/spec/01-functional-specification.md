@@ -59,9 +59,10 @@ Requirement ids are stable; acceptance criteria are tested by the sprint named.
 |---|---|---|---|
 | TN-1 | Operators and sign-up create tenants with a unique slug, name, kind and plan | duplicate slug refused with a clear error | TS2 |
 | TN-2 | Every tenant gets a default workspace; admins can create, rename and archive more | an archived workspace is read-only in apps | TS2 / TS8 |
-| TN-3 | Tenant states: `provisioning`, `active`, `suspended`, `deleting`, `deleted`; suspended tenants cannot sign in except owners; deleting tenants can be restored by an owner during a grace period (default 14 days) | tested per state | TS2 / TS10 |
+| TN-3 | Tenant states: `provisioning`, `active`, `suspended`, `pending_deletion`, `deleting`, `deleted`. Operators suspend (with a reason) and resume; a suspended tenant refuses sign-in and its API to everyone, owners included, except operators. Owners and operators delete a tenant: it is `pending_deletion` and restorable by an owner or operator for a grace period (default 30 days, configurable), then purged | tested per state: token refused, API 403 `tenant-suspended`, restore before the purge, purge after it | TS2 / TS10 |
 | TN-4 | No user, admin or app can read or change another tenant's data through the API | the cross-tenant suite calls every route as tenant B with tenant A's ids and gets 404 | TS2 |
 | TN-5 | Deleting a tenant asks every app with a placement to delete its data, and completes only when each app confirms or the operator overrides with a reason | the deletion record lists each app's confirmation | TS7b |
+| TN-6 | Plans set limits (members, workspaces, which apps) and features; operators move a tenant to a plan and override single limits for it. Adding a member, accepting an invitation, creating a workspace and enabling an app over the limit are refused with `plan-limit` naming the limit; the tenant sees its plan, limits and usage | refused at the limit, also when requests race; an override lifts it | TS10 / TS18 |
 
 ### 4.3 Users and members (UM)
 
@@ -130,6 +131,9 @@ Requirement ids are stable; acceptance criteria are tested by the sprint named.
 |---|---|---|
 | CO-1 | Customer admin portal: members, invitations, roles per app, workspaces, enabled apps, data placements (read-only), audit of membership changes | TS8 |
 | CO-2 | Operator console: tenants, users, apps and their roles (create, edit, delete; RL-8), database servers, plans and modes, placements and their state | TS10 |
+| OP-1 | Operators list tenants with search, status filter, member counts and pages, and see installation counts (tenants and users by status, apps and how many tenants use each) | TS10 |
+| OP-2 | Operators see a tenant's record, placements and entitlements, but not its members, workspaces, grants or invitations, unless they hold support access | TS10 |
+| OP-3 | Support access: an operator asks for read-only access to one tenant for at most 8 hours with a reason; an owner approves or denies it (or the tenant allows access without approval, or turns requests off); owners can revoke it and the operator can end it; it expires by itself; the tenant sees every request, decision and use. No token impersonation | TS10 |
 | CO-3 | Account page for every user: profile, tenants, sessions, sign-out everywhere | TS8 |
 | CO-4 | Embeddable React components for apps that prefer their own pages: tenant switcher, members table, invite dialog | TS7 / TS8 |
 
@@ -149,7 +153,8 @@ Requirement ids are stable; acceptance criteria are tested by the sprint named.
    AgentCanvas → AgentCanvas runs migrations on that database → reports ready.
 6. **App manages its own storage**: an app that keeps its own per-tenant databases creates one on `tenant.created`,
    then calls `PUT /v1/apps/{app}/placements/{tenant}` with `manager: app, mode: database, location: "eu-db-3"`.
-7. **Delete a tenant**: owner deletes Acme → 14-day grace → `tenant.deleting` to each app → each app deletes Acme's
+7. **Delete a tenant**: owner deletes Acme → 30-day grace (apps see it as suspended; an owner can restore it) →
+   `tenant.deleting` to each app → each app deletes Acme's
    data (drop schema or database, or delete rows) and confirms → Matura drops platform-managed storage, purges its
    own rows, records the confirmations.
 

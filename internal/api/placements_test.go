@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/marunsct/Platform/internal/ids"
+	"github.com/marunsct/Platform/internal/lifecycle"
 	"github.com/marunsct/Platform/internal/placement"
 )
 
@@ -181,7 +182,11 @@ func TestPlatformManagedPlacements(t *testing.T) {
 	if code, _ := app.do("POST", "/v1/apps/"+slug+"/placements/"+tenants["da"]+":deleted", ""); code != http.StatusConflict {
 		t.Fatalf(":deleted before the tenant is deleted: %d", code)
 	}
-	op.must(http.StatusAccepted, "DELETE", "/v1/tenants/"+tenants["da"], nil)
+	op.must(http.StatusAccepted, "DELETE", "/v1/tenants/"+tenants["da"]+"?grace_days=0", nil)
+	purger := &lifecycle.Purger{Store: st}
+	if n, _, err := purger.Round(ctx); err != nil || n != 1 {
+		t.Fatalf("purge: %d %v", n, err)
+	}
 	if _, p := app.do("GET", "/v1/apps/"+slug+"/placements/"+tenants["da"], ""); p["state"] != "retiring" {
 		t.Fatalf("after tenant deletion: %v", p)
 	}
@@ -196,6 +201,12 @@ func TestPlatformManagedPlacements(t *testing.T) {
 	}
 	if _, p := app.do("GET", "/v1/apps/"+slug+"/placements/"+tenants["da"], ""); p["state"] != "deleted" {
 		t.Fatalf("after drop: %v", p)
+	}
+	if _, done, _ := purger.Round(ctx); done != 1 {
+		t.Fatalf("tenant not marked deleted once its storage was dropped: %d", done)
+	}
+	if got := op.must(http.StatusOK, "GET", "/v1/tenants/"+tenants["da"], nil); got["status"] != "deleted" {
+		t.Fatalf("tenant after purge: %v", got["status"])
 	}
 	admin, err := pgx.Connect(ctx, os.Getenv("MATURA_TEST_DATABASE_URL"))
 	if err != nil {

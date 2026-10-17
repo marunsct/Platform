@@ -98,9 +98,10 @@ CREATE TABLE matura_tenant (
     kind         text NOT NULL CHECK (kind IN ('company','shared','personal')),
     status       text NOT NULL CHECK (status IN ('provisioning','active','suspended','deleting','deleted')),
     plan         text,
-    data_mode    text NOT NULL CHECK (data_mode IN ('shared','schema','database')),
+    data_mode    text NOT NULL CHECK (data_mode IN ('shared','schema','database')),  -- this app's placement mode
     version      bigint NOT NULL,
-    updated_at   timestamptz NOT NULL
+    updated_at   timestamptz NOT NULL,
+    placement_version bigint NOT NULL DEFAULT 0   -- version of the placement change data_mode came from; 0 = none yet
 );
 
 CREATE TABLE matura_workspace (
@@ -235,6 +236,11 @@ ON CONFLICT (tenant_id, user_id) DO UPDATE SET … = EXCLUDED.…
 WHERE m.version < EXCLUDED.version;
 ```
 
+A placement (`matura.placement.*`) sets `matura_tenant.data_mode` to its `mode` under the same rule, compared with
+`placement_version` rather than `version`, because a placement and its tenant change independently. Once a placement
+has been applied, tenant changes keep `data_mode` (their `data_mode_default` is only the tenant's default). The SQL is
+in `docs/contract/sql/README.md`.
+
 From the token, the SDK upserts the user, tenant and membership only when the token's `ver` is newer than what it has
 cached (an in-process cache keyed by user and tenant, so most requests do no database write). Token claims carry
 fewer fields than events; a token-created row is completed by the next event or feed read.
@@ -245,7 +251,7 @@ Delivered as signed webhooks (TS7c) and, from M5, NATS subjects `matura.<tenant>
 
 | Type | Sent when |
 |---|---|
-| `matura.tenant.created`, `.updated`, `.suspended`, `.reactivated`, `.deleting`, `.deleted` | tenant lifecycle |
+| `matura.tenant.created`, `.updated`, `.suspended`, `.reactivated`, `.deleting`, `.deleted` | tenant lifecycle; a tenant waiting out its deletion grace period arrives as `suspended` with `purge_after` set (it can still be restored: keep its data until `.deleting`) |
 | `matura.workspace.created`, `.updated`, `.archived`, `.deleted` | workspaces |
 | `matura.user.created`, `.updated`, `.deactivated`, `.deleted` | profile changes (sent to every app the user's tenants use) |
 | `matura.membership.added`, `.updated`, `.removed` | members |

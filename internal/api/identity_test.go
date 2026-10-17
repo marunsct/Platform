@@ -235,9 +235,9 @@ func TestMemberSessionsAndMFAReset(t *testing.T) {
 	alice.must(http.StatusOK, "POST", "/v1/tenants/"+aid+"/domains/example.test:verify", nil)
 	alice.must(http.StatusNoContent, "POST", m+carol.user.String()+":sign-out", nil)
 
-	// operators may act on anyone
+	// operators go through support access like any other tenant admin view
 	op := client{t: t, srv: srv, user: ids.New(), op: true}
-	op.must(http.StatusNoContent, "POST", "/v1/tenants/"+globex["id"].(string)+"/members/"+carol.user.String()+":sign-out", nil)
+	op.must(http.StatusForbidden, "POST", "/v1/tenants/"+globex["id"].(string)+"/members/"+carol.user.String()+":sign-out", nil)
 }
 
 // TestDomainsAndSSO: a tenant verifies a domain over DNS, connects an OIDC or SAML identity provider (created in
