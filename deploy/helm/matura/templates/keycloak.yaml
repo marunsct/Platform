@@ -64,6 +64,8 @@ spec:
             - { name: MATURA_URL, value: "http://{{ $fullname }}:{{ .Values.service.port }}" }
             - name: MATURA_INTERNAL_TOKEN
               valueFrom: { secretKeyRef: { name: {{ include "matura.secrets" . }}, key: internalToken } }
+            - name: MATURA_KEYCLOAK_CLIENT_SECRET
+              valueFrom: { secretKeyRef: { name: {{ include "matura.secrets" . }}, key: keycloakClientSecret, optional: true } }
           readinessProbe:
             httpGet: { path: /health/ready, port: management }
           startupProbe:

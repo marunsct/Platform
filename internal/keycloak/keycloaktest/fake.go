@@ -1,0 +1,259 @@
+// Package keycloaktest is an in-memory stand-in for the parts of Keycloak's admin REST API that maturad uses, for
+// tests that should not need a running Keycloak.
+package keycloaktest
+
+import (
+	"crypto/rand"
+	"encoding/hex"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+)
+
+const (
+	Realm        = "matura"
+	ClientID     = "matura-admin"
+	ClientSecret = "fake-secret"
+)
+
+// Session is a fake SSO session.
+type Session struct {
+	ID         string            `json:"id"`
+	UserID     string            `json:"userId"`
+	IPAddress  string            `json:"ipAddress"`
+	Start      int64             `json:"start"`
+	LastAccess int64             `json:"lastAccess"`
+	RememberMe bool              `json:"rememberMe"`
+	Clients    map[string]string `json:"clients"`
+}
+
+// Credential is a fake stored credential.
+type Credential struct {
+	ID          string `json:"id"`
+	Type        string `json:"type"`
+	UserLabel   string `json:"userLabel,omitempty"`
+	CreatedDate int64  `json:"createdDate"`
+}
+
+// Server is a fake Keycloak. Its fields may be read under Lock/Unlock.
+type Server struct {
+	*httptest.Server
+	sync.Mutex
+
+	Sessions    map[string][]Session    // by user id
+	Credentials map[string][]Credential // by user id
+	IdPs        map[string]map[string]any
+	Mappers     map[string][]map[string]any
+	Imports     map[string]map[string]string // import-config answers by fromUrl
+	TokenCalls  int
+	Logouts     []string // user ids signed out everywhere
+	tokens      map[string]bool
+}
+
+// New starts a fake Keycloak for the realm Realm, closed when the test ends.
+func New(t testing.TB) *Server {
+	f := &Server{Sessions: map[string][]Session{}, Credentials: map[string][]Credential{},
+		IdPs: map[string]map[string]any{}, Mappers: map[string][]map[string]any{},
+		Imports: map[string]map[string]string{}, tokens: map[string]bool{}}
+	f.Server = httptest.NewServer(http.HandlerFunc(f.serve))
+	t.Cleanup(f.Close)
+	return f
+}
+
+// Issuer is the realm's issuer URL on the fake.
+func (f *Server) Issuer() string { return f.URL + "/realms/" + Realm }
+
+// AddSession records a session for the user and returns its id.
+func (f *Server) AddSession(userID, ip string, clients ...string) string {
+	f.Lock()
+	defer f.Unlock()
+	cl := map[string]string{}
+	for _, c := range clients {
+		cl[randomID()] = c
+	}
+	now := time.Now().UnixMilli()
+	s := Session{ID: randomID(), UserID: userID, IPAddress: ip, Start: now - 60000, LastAccess: now, Clients: cl}
+	f.Sessions[userID] = append(f.Sessions[userID], s)
+	return s.ID
+}
+
+// AddCredential records a credential of the given type for the user and returns its id.
+func (f *Server) AddCredential(userID, typ, label string) string {
+	f.Lock()
+	defer f.Unlock()
+	c := Credential{ID: randomID(), Type: typ, UserLabel: label, CreatedDate: time.Now().UnixMilli()}
+	f.Credentials[userID] = append(f.Credentials[userID], c)
+	return c.ID
+}
+
+// ExpireTokens makes every issued access token invalid, as if Keycloak restarted with new keys.
+func (f *Server) ExpireTokens() {
+	f.Lock()
+	defer f.Unlock()
+	f.tokens = map[string]bool{}
+}
+
+func randomID() string {
+	b := make([]byte, 16)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
+}
+
+func writeJSON(w http.ResponseWriter, status int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(v)
+}
+
+func (f *Server) serve(w http.ResponseWriter, r *http.Request) {
+	f.Lock()
+	defer f.Unlock()
+	if r.URL.Path == "/realms/"+Realm+"/protocol/openid-connect/token" {
+		_ = r.ParseForm()
+		if r.PostForm.Get("grant_type") != "client_credentials" || r.PostForm.Get("client_id") != ClientID ||
+			r.PostForm.Get("client_secret") != ClientSecret {
+			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized_client"})
+			return
+		}
+		f.TokenCalls++
+		tok := randomID()
+		f.tokens[tok] = true
+		writeJSON(w, http.StatusOK, map[string]any{"access_token": tok, "expires_in": 300, "token_type": "Bearer"})
+		return
+	}
+	prefix := "/admin/realms/" + Realm + "/"
+	if !strings.HasPrefix(r.URL.Path, prefix) {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "Realm not found."})
+		return
+	}
+	if tok, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer "); !ok || !f.tokens[tok] {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+	parts := strings.Split(strings.TrimPrefix(r.URL.Path, prefix), "/")
+	route := r.Method + " " + strings.Join(pattern(parts), "/")
+	switch route {
+	case "GET users/*/sessions":
+		writeJSON(w, http.StatusOK, orEmpty(f.Sessions[parts[1]]))
+	case "POST users/*/logout":
+		delete(f.Sessions, parts[1])
+		f.Logouts = append(f.Logouts, parts[1])
+		w.WriteHeader(http.StatusNoContent)
+	case "DELETE sessions/*":
+		for uid, list := range f.Sessions {
+			for i, s := range list {
+				if s.ID == parts[1] {
+					f.Sessions[uid] = append(list[:i:i], list[i+1:]...)
+					w.WriteHeader(http.StatusNoContent)
+					return
+				}
+			}
+		}
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "Sesssion not found"})
+	case "GET users/*/credentials":
+		writeJSON(w, http.StatusOK, orEmpty(f.Credentials[parts[1]]))
+	case "DELETE users/*/credentials/*":
+		list := f.Credentials[parts[1]]
+		for i, c := range list {
+			if c.ID == parts[3] {
+				f.Credentials[parts[1]] = append(list[:i:i], list[i+1:]...)
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+		}
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "Credential not found"})
+	case "POST identity-provider/import-config":
+		var in map[string]string
+		_ = json.NewDecoder(r.Body).Decode(&in)
+		cfg, ok := f.Imports[in["fromUrl"]]
+		if !ok {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"errorMessage": "Could not import config"})
+			return
+		}
+		writeJSON(w, http.StatusOK, cfg)
+	case "POST identity-provider/instances":
+		var in map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&in)
+		alias, _ := in["alias"].(string)
+		if _, ok := f.IdPs[alias]; ok {
+			writeJSON(w, http.StatusConflict, map[string]string{"errorMessage": "Identity Provider " + alias + " already exists"})
+			return
+		}
+		f.IdPs[alias] = in
+		w.WriteHeader(http.StatusCreated)
+	case "GET identity-provider/instances/*":
+		idp, ok := f.IdPs[parts[2]]
+		if !ok {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		writeJSON(w, http.StatusOK, idp)
+	case "PUT identity-provider/instances/*":
+		if _, ok := f.IdPs[parts[2]]; !ok {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		var in map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&in)
+		f.IdPs[parts[2]] = in
+		w.WriteHeader(http.StatusNoContent)
+	case "DELETE identity-provider/instances/*":
+		if _, ok := f.IdPs[parts[2]]; !ok {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		delete(f.IdPs, parts[2])
+		delete(f.Mappers, parts[2])
+		w.WriteHeader(http.StatusNoContent)
+	case "GET identity-provider/instances/*/mappers":
+		writeJSON(w, http.StatusOK, orEmpty(f.Mappers[parts[2]]))
+	case "POST identity-provider/instances/*/mappers":
+		if _, ok := f.IdPs[parts[2]]; !ok {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		var in map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&in)
+		in["id"] = randomID()
+		f.Mappers[parts[2]] = append(f.Mappers[parts[2]], in)
+		w.WriteHeader(http.StatusCreated)
+	case "DELETE identity-provider/instances/*/mappers/*":
+		list := f.Mappers[parts[2]]
+		for i, m := range list {
+			if m["id"] == parts[4] {
+				f.Mappers[parts[2]] = append(list[:i:i], list[i+1:]...)
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+		}
+		w.WriteHeader(http.StatusNotFound)
+	default:
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "fake keycloak does not serve " + route})
+	}
+}
+
+// pattern replaces ids in an admin path with *, keeping the fixed words.
+func pattern(parts []string) []string {
+	fixed := map[string]bool{"users": true, "sessions": true, "logout": true, "credentials": true,
+		"identity-provider": true, "instances": true, "mappers": true, "import-config": true}
+	out := make([]string, len(parts))
+	for i, p := range parts {
+		if fixed[p] {
+			out[i] = p
+		} else {
+			out[i] = "*"
+		}
+	}
+	return out
+}
+
+func orEmpty[T any](list []T) []T {
+	if list == nil {
+		return []T{}
+	}
+	return list
+}

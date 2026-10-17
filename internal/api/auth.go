@@ -23,6 +23,7 @@ type Principal struct {
 	Locale        string
 	Operator      bool
 	AppID         uuid.UUID // set for app backends; UserID is then empty
+	SessionID     string    // Keycloak SSO session (the token's sid), when known
 }
 
 // Authenticator turns a request into a Principal or an error that becomes 401.
@@ -50,6 +51,7 @@ func (DevAuthenticator) Authenticate(r *http.Request) (Principal, error) {
 		EmailVerified: true,
 		Name:          r.Header.Get("X-Matura-Dev-Name"),
 		Operator:      r.Header.Get("X-Matura-Dev-Operator") == "true",
+		SessionID:     r.Header.Get("X-Matura-Dev-Session"),
 	}, nil
 }
 
@@ -67,6 +69,7 @@ type claims struct {
 	EmailVerified bool   `json:"email_verified"`
 	Name          string `json:"name"`
 	Locale        string `json:"locale"`
+	SessionID     string `json:"sid"`
 	RealmAccess   struct {
 		Roles []string `json:"roles"`
 	} `json:"realm_access"`
@@ -97,6 +100,7 @@ func (a JWTAuthenticator) Authenticate(r *http.Request) (Principal, error) {
 		Name:          c.Name,
 		Locale:        c.Locale,
 		Operator:      a.OperatorRole != "" && slices.Contains(c.RealmAccess.Roles, a.OperatorRole),
+		SessionID:     c.SessionID,
 	}, nil
 }
 

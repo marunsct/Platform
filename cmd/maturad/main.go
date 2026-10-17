@@ -22,6 +22,7 @@ import (
 	"github.com/marunsct/Platform/internal/audit"
 	"github.com/marunsct/Platform/internal/config"
 	"github.com/marunsct/Platform/internal/events"
+	"github.com/marunsct/Platform/internal/keycloak"
 	"github.com/marunsct/Platform/internal/mail"
 	"github.com/marunsct/Platform/internal/metrics"
 	"github.com/marunsct/Platform/internal/placement"
@@ -109,6 +110,24 @@ func run(log *slog.Logger) error {
 	server.SetSource(cfg.EventSource)
 	server.SetTrustedProxies(cfg.TrustedProxies)
 	server.EnableInternal(cfg.InternalToken)
+	if cfg.KeycloakSecret != "" {
+		base, realm, err := keycloak.SplitIssuer(cfg.Issuer)
+		if err != nil {
+			return err
+		}
+		if cfg.KeycloakURL != "" {
+			base = cfg.KeycloakURL
+		}
+		kc, err := keycloak.New(keycloak.Config{BaseURL: base, Realm: realm, ClientID: cfg.KeycloakClientID,
+			ClientSecret: cfg.KeycloakSecret})
+		if err != nil {
+			return err
+		}
+		server.SetKeycloak(kc, cfg.Issuer)
+	} else {
+		log.Warn("MATURA_KEYCLOAK_CLIENT_SECRET is not set: session, MFA and SSO endpoints answer 503")
+	}
+	api.AllowHTTPIdentityProviders = cfg.Env == "development"
 	server.SetInvitations(api.Invitations{AcceptURL: cfg.InviteAcceptURL, PublicURL: cfg.PublicURL,
 		Issuer: cfg.Issuer, ClientID: cfg.PortalClientID})
 	if cfg.SMTPAddr != "" {

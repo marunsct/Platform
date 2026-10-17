@@ -55,6 +55,8 @@ spec:
               valueFrom: { secretKeyRef: { name: {{ include "matura.secrets" . }}, key: kek } }
             - name: MATURA_INTERNAL_TOKEN
               valueFrom: { secretKeyRef: { name: {{ include "matura.secrets" . }}, key: internalToken } }
+            - name: MATURA_KEYCLOAK_CLIENT_SECRET
+              valueFrom: { secretKeyRef: { name: {{ include "matura.secrets" . }}, key: keycloakClientSecret, optional: true } }
             {{- with .Values.smtp }}
             {{- if .addr }}
             - { name: MATURA_SMTP_ADDR, value: {{ .addr | quote }} }

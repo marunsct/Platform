@@ -33,11 +33,13 @@ database:
   migrateUrl: ""
   runtimeRole: matura_app
 
-# Secret with keys: kek (base64 32 bytes, openssl rand -base64 32) and internalToken (openssl rand -hex 32).
+# Secret with keys: kek (base64 32 bytes, openssl rand -base64 32), internalToken (openssl rand -hex 32) and
+# keycloakClientSecret (secret of the realm's matura-admin client, used by maturad for sessions, MFA and SSO).
 secrets:
   existingSecret: ""
   kek: ""
   internalToken: ""
+  keycloakClientSecret: ""
 
 smtp:
   addr: ""                              # host:port; empty queues emails without sending

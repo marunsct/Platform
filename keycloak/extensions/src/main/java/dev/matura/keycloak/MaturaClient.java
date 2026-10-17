@@ -15,8 +15,9 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Calls maturad's {@code POST /internal/v1/token-context} (technical specification §6) and caches answers for a few
- * seconds, so a burst of token requests for the same user, app and tenant costs one call.
+ * Calls maturad's internal API (technical specification §6): {@code POST /internal/v1/token-context}, whose answers
+ * are cached for a few seconds so a burst of token requests for the same user, app and tenant costs one call, and the
+ * sign-in checks {@code /internal/v1/mfa-policy} and {@code /internal/v1/sso-login}, which are not cached.
  */
 public final class MaturaClient {
 
@@ -27,14 +28,19 @@ public final class MaturaClient {
 
     /** What the mapper knows about the token being issued. */
     public record Request(String userId, String email, boolean emailVerified, String name, String locale,
-                          String clientId, String tenant, String workspace) {
-        String key() { return userId + "|" + clientId + "|" + tenant + "|" + workspace; }
+                          String clientId, String tenant, String workspace, long sessionStarted, long sessionLastUse) {
+        public Request(String userId, String email, boolean emailVerified, String name, String locale,
+                       String clientId, String tenant, String workspace) {
+            this(userId, email, emailVerified, name, locale, clientId, tenant, workspace, 0, 0);
+        }
+        String key() { return userId + "|" + clientId + "|" + tenant + "|" + workspace + "|" + sessionStarted; }
     }
 
     private record Cached(Answer answer, long expiresAt) {}
 
     private static final ObjectMapper JSON = new ObjectMapper();
 
+    private final String base;
     private final URI endpoint;
     private final String token;
     private final HttpClient http;
@@ -43,7 +49,8 @@ public final class MaturaClient {
     private final Map<String, Cached> cache = new ConcurrentHashMap<>();
 
     public MaturaClient(String baseUrl, String token, Duration ttl, Clock clock) {
-        this.endpoint = URI.create(baseUrl.replaceAll("/+$", "") + "/internal/v1/token-context");
+        this.base = baseUrl.replaceAll("/+$", "");
+        this.endpoint = URI.create(base + "/internal/v1/token-context");
         this.token = token;
         this.ttl = ttl;
         this.clock = clock;
@@ -75,7 +82,44 @@ public final class MaturaClient {
         body.put("client_id", req.clientId());
         body.put("tenant", req.tenant() == null ? "" : req.tenant());
         body.put("workspace", req.workspace() == null ? "" : req.workspace());
-        HttpRequest httpReq = HttpRequest.newBuilder(endpoint)
+        body.put("session_started", req.sessionStarted());
+        body.put("session_last_use", req.sessionLastUse());
+        Answer answer = post(endpoint, body);
+        cache.put(req.key(), new Cached(answer, now + ttl.toMillis()));
+        if (cache.size() > 10_000) {
+            cache.entrySet().removeIf(e -> e.getValue().expiresAt() <= now);
+        }
+        return answer;
+    }
+
+    /** Whether the user must sign in with a second factor (a tenant of theirs requires MFA). */
+    public boolean mfaRequired(String userId) throws IOException, InterruptedException {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("user_id", userId);
+        Answer a = post(URI.create(base + "/internal/v1/mfa-policy"), body);
+        if (a.refused()) {
+            throw new IOException("maturad refused the MFA policy question: " + a.refusal());
+        }
+        return Boolean.TRUE.equals(a.claims().get("required"));
+    }
+
+    /**
+     * Checks a sign-in through a tenant's identity provider; with a user id the user joins the tenant. A refusal
+     * (address outside the tenant's verified domains, unknown provider…) comes back as a refused Answer.
+     */
+    public Answer ssoLogin(String alias, String email, String userId, String name) throws IOException, InterruptedException {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("alias", alias);
+        body.put("email", email == null ? "" : email);
+        if (userId != null) {
+            body.put("user_id", userId);
+        }
+        body.put("name", name == null ? "" : name);
+        return post(URI.create(base + "/internal/v1/sso-login"), body);
+    }
+
+    private Answer post(URI uri, Map<String, Object> body) throws IOException, InterruptedException {
+        HttpRequest httpReq = HttpRequest.newBuilder(uri)
                 .timeout(Duration.ofSeconds(3))
                 .header("Authorization", "Bearer " + token)
                 .header("Content-Type", "application/json")
@@ -84,18 +128,12 @@ public final class MaturaClient {
         HttpResponse<String> res = http.send(httpReq, HttpResponse.BodyHandlers.ofString());
         Map<String, Object> out = res.body().isBlank() ? Map.of()
                 : JSON.readValue(res.body(), new TypeReference<Map<String, Object>>() {});
-        Answer answer;
         if (res.statusCode() == 200) {
-            answer = new Answer(out, null, null);
-        } else if (res.statusCode() == 403 && "access_denied".equals(out.get("error"))) {
-            answer = new Answer(Map.of(), String.valueOf(out.get("error_description")), String.valueOf(out.get("detail")));
-        } else {
-            throw new IOException("maturad answered " + res.statusCode() + " for token context");
+            return new Answer(out, null, null);
         }
-        cache.put(req.key(), new Cached(answer, now + ttl.toMillis()));
-        if (cache.size() > 10_000) {
-            cache.entrySet().removeIf(e -> e.getValue().expiresAt() <= now);
+        if (res.statusCode() == 403 && "access_denied".equals(out.get("error"))) {
+            return new Answer(Map.of(), String.valueOf(out.get("error_description")), String.valueOf(out.get("detail")));
         }
-        return answer;
+        throw new IOException("maturad answered " + res.statusCode() + " for " + uri.getPath());
     }
 }

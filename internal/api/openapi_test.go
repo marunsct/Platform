@@ -19,6 +19,9 @@ var openAPIAliases = map[string]string{
 	"POST /v1/apps/{app}/placements/{tid}:ready":     "POST /v1/apps/{app}/placements/{tid}",
 	"POST /v1/apps/{app}/placements/{tid}:deleted":   "POST /v1/apps/{app}/placements/{tid}",
 	"POST /v1/tenants/{tid}/invitations/{id}:resend": "POST /v1/tenants/{tid}/invitations/{id}",
+	"POST /v1/tenants/{tid}/members/{uid}:sign-out":  "POST /v1/tenants/{tid}/members/{uid}",
+	"POST /v1/tenants/{tid}/members/{uid}:reset-mfa": "POST /v1/tenants/{tid}/members/{uid}",
+	"POST /v1/tenants/{tid}/domains/{domain}:verify": "POST /v1/tenants/{tid}/domains/{domain}",
 }
 
 var openAPIMethods = []string{"get", "put", "post", "delete", "patch", "head", "options", "trace"}

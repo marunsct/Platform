@@ -172,6 +172,16 @@ func TestCrossTenant(t *testing.T) {
 		{"DELETE", "/v1/tenants/" + aid + "/audit/sinks/" + sid, nil},
 		{"GET", "/v1/tenants/" + aid + "/security-policy", nil},
 		{"PUT", "/v1/tenants/" + aid + "/security-policy", map[string]any{"require_mfa": true}},
+		{"GET", "/v1/tenants/" + aid + "/members/" + alice.user.String() + "/sessions", nil},
+		{"POST", "/v1/tenants/" + aid + "/members/" + alice.user.String() + ":sign-out", nil},
+		{"POST", "/v1/tenants/" + aid + "/members/" + alice.user.String() + ":reset-mfa", nil},
+		{"GET", "/v1/tenants/" + aid + "/domains", nil},
+		{"POST", "/v1/tenants/" + aid + "/domains", map[string]any{"domain": "x.test"}},
+		{"POST", "/v1/tenants/" + aid + "/domains/x.test:verify", nil},
+		{"DELETE", "/v1/tenants/" + aid + "/domains/x.test", nil},
+		{"GET", "/v1/tenants/" + aid + "/sso", nil},
+		{"POST", "/v1/tenants/" + aid + "/sso", map[string]any{"protocol": "saml", "metadata_url": "https://x.test/m"}},
+		{"DELETE", "/v1/tenants/" + aid + "/sso", nil},
 	}
 	for _, rt := range routes {
 		if got, out := bob.do(rt.method, rt.path, rt.body); got != http.StatusNotFound {

@@ -30,6 +30,10 @@ class MaturaClientTest {
              "troles":["member"],"roles":["editor"],"perms":["run.start","workflow.read"],"ver":{"u":12,"m":40,"t":7},
              "pmode":"shared"}""";
 
+    volatile String mfaAnswer = "{\"required\":true,\"tenants\":[\"acme\"]}";
+    volatile int ssoStatus = 200;
+    volatile String ssoAnswer = "{\"tid\":\"x\",\"tenant\":\"acme\",\"joined\":true}";
+
     @BeforeEach
     void start() throws IOException {
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
@@ -39,6 +43,20 @@ class MaturaClientTest {
             lastBody.set(new String(ex.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
             byte[] b = answer.getBytes(StandardCharsets.UTF_8);
             ex.sendResponseHeaders(status, b.length);
+            ex.getResponseBody().write(b);
+            ex.close();
+        });
+        server.createContext("/internal/v1/mfa-policy", ex -> {
+            lastBody.set(new String(ex.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+            byte[] b = mfaAnswer.getBytes(StandardCharsets.UTF_8);
+            ex.sendResponseHeaders(200, b.length);
+            ex.getResponseBody().write(b);
+            ex.close();
+        });
+        server.createContext("/internal/v1/sso-login", ex -> {
+            lastBody.set(new String(ex.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+            byte[] b = ssoAnswer.getBytes(StandardCharsets.UTF_8);
+            ex.sendResponseHeaders(ssoStatus, b.length);
             ex.getResponseBody().write(b);
             ex.close();
         });
@@ -96,5 +114,36 @@ class MaturaClientTest {
         status = 500;
         answer = "{}";
         assertThrows(IOException.class, () -> client().tokenContext(req("acme")));
+    }
+
+    @Test
+    void mfaPolicy() throws Exception {
+        assertTrue(client().mfaRequired("u1"));
+        assertTrue(lastBody.get().contains("\"user_id\":\"u1\""));
+        mfaAnswer = "{\"required\":false,\"tenants\":[]}";
+        assertFalse(client().mfaRequired("u1"));
+    }
+
+    @Test
+    void ssoLogin() throws Exception {
+        MaturaClient.Answer a = client().ssoLogin("t-acme", "ana@acme.test", "u1", "Ana");
+        assertFalse(a.refused());
+        assertEquals(true, a.claims().get("joined"));
+        assertTrue(lastBody.get().contains("\"alias\":\"t-acme\""));
+
+        ssoStatus = 403;
+        ssoAnswer = "{\"error\":\"access_denied\",\"error_description\":\"domain_not_verified\",\"detail\":\"no\"}";
+        a = client().ssoLogin("t-acme", "ceo@globex.test", null, null);
+        assertTrue(a.refused());
+        assertEquals("domain_not_verified", a.refusal());
+        assertFalse(lastBody.get().contains("user_id"), "no user id before the account exists");
+    }
+
+    @Test
+    void sessionTimesAreSent() throws Exception {
+        client().tokenContext(new MaturaClient.Request("u", null, true, null, null, "agentcanvas", "acme", null,
+                1700000000000L, 1700000060000L));
+        assertTrue(lastBody.get().contains("\"session_started\":1700000000000"));
+        assertTrue(lastBody.get().contains("\"session_last_use\":1700000060000"));
     }
 }

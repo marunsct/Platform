@@ -1,4 +1,4 @@
-# Keycloak with Matura's extension (token mapper). Build context: repository root.
+# Keycloak with Matura's extension (token mapper, MFA policy and tenant SSO authenticators). Build context: repository root.
 FROM maven:3.9-eclipse-temurin-21 AS build
 WORKDIR /src
 COPY keycloak/extensions/pom.xml .

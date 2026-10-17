@@ -4,6 +4,7 @@ import (
 	"context"
 	"slices"
 	"sort"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -18,6 +19,11 @@ type TokenRequest struct {
 	ClientID  string
 	Tenant    string // slug or id; empty means the tenant used last, else the first one
 	Workspace string // id; empty means the tenant's default workspace
+	// The Keycloak session the token is issued from: when it started and when the mapper last issued a token in
+	// it. Zero values skip the tenant's session limits.
+	SessionStarted time.Time
+	SessionLastUse time.Time
+	Now            time.Time // default time.Now()
 }
 
 // TokenContext is the Matura part of an access token (contract §2).
@@ -74,6 +80,9 @@ func (s *Store) TokenContextFor(ctx context.Context, req TokenRequest) (TokenCon
 		default:
 			return refuse("tenant_inactive", "this organisation is not available")
 		}
+		if err := checkSessionLimits(ctx, tx, t.ID, req); err != nil {
+			return err
+		}
 		var enabled bool
 		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM tenant_app WHERE tenant_id = $1 AND app_id = $2
 			AND status = 'enabled')`, t.ID, app.ID).Scan(&enabled); err != nil {
@@ -119,6 +128,30 @@ func (s *Store) TokenContextFor(ctx context.Context, req TokenRequest) (TokenCon
 		return nil
 	})
 	return out, err
+}
+
+// checkSessionLimits refuses a token from a Keycloak session older than the tenant's session_max_age, or idle (no
+// token issued in it) for longer than its idle_timeout (security policy, TS12).
+func checkSessionLimits(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, req TokenRequest) error {
+	if req.SessionStarted.IsZero() {
+		return nil
+	}
+	p, err := getPolicy(ctx, tx, tenantID)
+	if err != nil {
+		return err
+	}
+	now := req.Now
+	if now.IsZero() {
+		now = time.Now()
+	}
+	if p.SessionMaxAge != nil && now.Sub(req.SessionStarted) > time.Duration(*p.SessionMaxAge)*time.Second {
+		return refuse("session_expired", "this organisation limits how long a sign-in lasts; sign in again")
+	}
+	if p.IdleTimeout != nil && !req.SessionLastUse.IsZero() &&
+		now.Sub(req.SessionLastUse) > time.Duration(*p.IdleTimeout)*time.Second {
+		return refuse("session_expired", "you were inactive for longer than this organisation allows; sign in again")
+	}
+	return nil
 }
 
 // chooseTenant picks the tenant named in the request, else the last used, else the first by name. A tenant the

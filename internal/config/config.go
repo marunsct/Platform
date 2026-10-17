@@ -31,6 +31,9 @@ type Config struct {
 	SMTPUser           string
 	SMTPPassword       string
 	TrustedProxies     []netip.Prefix // reverse proxies whose X-Forwarded-For is believed (IP allow-lists, audit)
+	KeycloakURL        string         // Keycloak base URL maturad calls (default: from Issuer)
+	KeycloakClientID   string         // confidential client whose service account manages the realm
+	KeycloakSecret     string         // empty: session, MFA and SSO endpoints answer 503
 }
 
 func getenv(key, def string) string {
@@ -62,6 +65,9 @@ func FromEnv() (Config, error) {
 		SMTPFrom:           getenv("MATURA_SMTP_FROM", "no-reply@matura.local"),
 		SMTPUser:           os.Getenv("MATURA_SMTP_USER"),
 		SMTPPassword:       os.Getenv("MATURA_SMTP_PASSWORD"),
+		KeycloakURL:        os.Getenv("MATURA_KEYCLOAK_URL"),
+		KeycloakClientID:   getenv("MATURA_KEYCLOAK_CLIENT_ID", "matura-admin"),
+		KeycloakSecret:     os.Getenv("MATURA_KEYCLOAK_CLIENT_SECRET"),
 	}
 	for _, raw := range strings.Split(os.Getenv("MATURA_TRUSTED_PROXIES"), ",") {
 		if raw = strings.TrimSpace(raw); raw == "" {
@@ -93,6 +99,9 @@ func (c Config) Validate() error {
 	}
 	if c.SMTPAddr != "" && !strings.Contains(c.SMTPFrom, "@") {
 		return errors.New("MATURA_SMTP_FROM must be an email address")
+	}
+	if c.KeycloakSecret != "" && c.Issuer == "" {
+		return errors.New("MATURA_KEYCLOAK_CLIENT_SECRET needs MATURA_ISSUER (the realm comes from it)")
 	}
 	switch c.Auth {
 	case "dev":
