@@ -1,7 +1,9 @@
 package dev.matura.keycloak;
 
+import jakarta.ws.rs.core.MultivaluedMap;
 import jakarta.ws.rs.core.Response;
 import org.keycloak.OAuthErrorException;
+import org.keycloak.http.HttpRequest;
 import org.keycloak.models.AuthenticatedClientSessionModel;
 import org.keycloak.models.ClientSessionContext;
 import org.keycloak.models.KeycloakSession;
@@ -15,12 +17,18 @@ import org.keycloak.representations.AccessToken;
 import org.keycloak.services.ErrorResponseException;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * Adds tid, tenant, wid, troles, roles, perms (or perms_ref), ver and pmode to access tokens, from maturad
  * (technical specification §6). The tenant comes from the authorisation request parameter {@code matura_tenant}
  * (slug or id), else the one the user used last; the workspace from {@code matura_workspace}. A user outside the
  * tenant, or a tenant that has not enabled the app, gets {@code access_denied} with the reason as description.
+ *
+ * <p>On an agent's client (TS15) it also sends the audience the request asked for ({@code matura_app},
+ * {@code audience} or {@code resource} parameter), and maturad answers with the agent's tenant, the app's client id
+ * as audience, {@code kind}, and for a person's token issued to the agent (token exchange) {@code act} and the
+ * permissions both have.
  */
 public class MaturaTokenMapper extends AbstractOIDCProtocolMapper implements OIDCAccessTokenMapper {
 
@@ -62,7 +70,7 @@ public class MaturaTokenMapper extends AbstractOIDCProtocolMapper implements OID
         long lastUse = parseLong(userSession.getNote(LAST_USE_NOTE));
         MaturaClient.Request req = new MaturaClient.Request(user.getId(), user.getEmail(), user.isEmailVerified(), name,
                 user.getFirstAttribute("locale"), cs.getClient().getClientId(), cs.getNote(TENANT_NOTE),
-                cs.getNote(WORKSPACE_NOTE), userSession.getStarted() * 1000L, lastUse);
+                cs.getNote(WORKSPACE_NOTE), userSession.getStarted() * 1000L, lastUse, requestedAudience(session));
         MaturaClient.Answer answer;
         try {
             answer = client().tokenContext(req);
@@ -81,6 +89,33 @@ public class MaturaTokenMapper extends AbstractOIDCProtocolMapper implements OID
         userSession.setNote(LAST_USE_NOTE, Long.toString(System.currentTimeMillis()));
         MaturaClaims.apply(token, answer.claims());
         return token;
+    }
+
+    /** Audience parameters an agent's client may send: Matura's own, RFC 8693's and RFC 8707's (in that order). */
+    static final List<String> AUDIENCE_PARAMS = List.of("matura_app", "audience", "resource");
+
+    /** The audience the token request asked for, from its form parameters; null outside the token endpoint. */
+    static String requestedAudience(KeycloakSession session) {
+        try {
+            HttpRequest req = session.getContext().getHttpRequest();
+            if (req == null || !"POST".equals(req.getHttpMethod())) {
+                return null;
+            }
+            MultivaluedMap<String, String> form = req.getDecodedFormParameters();
+            return form == null ? null : firstAudience(form);
+        } catch (RuntimeException e) {
+            return null;
+        }
+    }
+
+    static String firstAudience(Map<String, List<String>> form) {
+        for (String name : AUDIENCE_PARAMS) {
+            List<String> v = form.get(name);
+            if (v != null && !v.isEmpty() && v.get(0) != null && !v.get(0).isBlank()) {
+                return v.get(0).trim();
+            }
+        }
+        return null;
     }
 
     private static long parseLong(String s) {

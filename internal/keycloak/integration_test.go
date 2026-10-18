@@ -133,6 +133,54 @@ func TestAgainstKeycloak(t *testing.T) {
 		t.Fatalf("after delete: %v", err)
 	}
 
+	// agent clients (TS15): confidential, client credentials and token exchange, the Matura mapper, a service user
+	ac := keycloak.AgentClient{ClientID: "agent-it-" + randomHex(3), Name: "Report bot", Description: "it",
+		TenantID: uuid.NewString(), Kind: "agent"}
+	created, err := c.CreateAgentClient(ctx, ac)
+	if err != nil || created.UUID == "" || created.Secret == "" {
+		t.Fatalf("create agent client: %+v %v", created, err)
+	}
+	if _, err := uuid.Parse(created.ServiceUserID); err != nil {
+		t.Fatalf("service-account user id %q: %v", created.ServiceUserID, err)
+	}
+	if _, err := c.CreateAgentClient(ctx, ac); !errors.Is(err, keycloak.ErrConflict) {
+		t.Fatalf("same client id again: %v", err)
+	}
+	rotated, err := c.RotateClientSecret(ctx, created.UUID)
+	if err != nil || rotated == created.Secret || rotated == "" {
+		t.Fatalf("rotate: %q %v", rotated, err)
+	}
+	ac.Name = "Old bot"
+	if err := c.UpdateAgentClient(ctx, created.UUID, ac, false); err != nil {
+		t.Fatal(err)
+	}
+	var cl struct {
+		Name                   string            `json:"name"`
+		Enabled                bool              `json:"enabled"`
+		PublicClient           bool              `json:"publicClient"`
+		ServiceAccountsEnabled bool              `json:"serviceAccountsEnabled"`
+		StandardFlowEnabled    bool              `json:"standardFlowEnabled"`
+		Attributes             map[string]string `json:"attributes"`
+		ProtocolMappers        []struct {
+			ProtocolMapper string `json:"protocolMapper"`
+		} `json:"protocolMappers"`
+	}
+	adm.call(t, "GET", "/admin/realms/"+realm+"/clients/"+created.UUID, nil, &cl, 200)
+	if cl.Name != "Old bot" || cl.Enabled || cl.PublicClient || !cl.ServiceAccountsEnabled || cl.StandardFlowEnabled ||
+		cl.Attributes["standard.token.exchange.enabled"] != "true" || len(cl.ProtocolMappers) != 1 ||
+		cl.ProtocolMappers[0].ProtocolMapper != keycloak.MapperID {
+		t.Fatalf("agent client after a partial update: %+v", cl)
+	}
+	var su struct{ ID string }
+	adm.call(t, "GET", "/admin/realms/"+realm+"/users/"+created.ServiceUserID, nil, &su, 200)
+	if err := c.DeleteClient(ctx, created.UUID); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.DeleteClient(ctx, created.UUID); err != nil {
+		t.Fatalf("deleting it again: %v", err)
+	}
+	adm.call(t, "GET", "/admin/realms/"+realm+"/users/"+created.ServiceUserID, nil, nil, http.StatusNotFound)
+
 	// erasure deletes the account (api.UserDirectory)
 	if err := c.DeleteUser(ctx, uuid.MustParse(uid)); err != nil {
 		t.Fatal(err)

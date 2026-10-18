@@ -303,9 +303,12 @@ func (c *Contract) FromPrincipal(pr *Principal) []Statement {
 	if mode == "" {
 		mode = "shared"
 	}
-	kind := "human"
-	if pr.IsService {
-		kind = "service"
+	kind := pr.Kind
+	if kind == "" {
+		kind = "human"
+		if pr.IsService {
+			kind = "service"
+		}
 	}
 	var email, name any
 	if pr.Email != "" {

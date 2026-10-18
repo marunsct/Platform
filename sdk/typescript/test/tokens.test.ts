@@ -186,7 +186,8 @@ describe("Principal", () => {
       {
         userId: "u", tenantId: "t", tenantSlug: "acme", workspaceId: "w", tenantRoles: ["admin"], roles: ["r"],
         permissions: ["p"], permsRef: null, email: "a@x", emailVerified: true, name: "A", versions: { u: 12, m: 40, t: 7 },
-        placementMode: "schema", mfa: true, sessionId: "s", clientId: "devflow", isService: false, claims: undefined,
+        placementMode: "schema", mfa: true, sessionId: "s", clientId: "devflow", isService: false, kind: "human", actor: null,
+        claims: undefined,
       },
     );
     assert.ok(Principal.fromClaims({ sub: "u", acr: 2 }).mfa);

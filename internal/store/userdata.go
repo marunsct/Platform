@@ -56,7 +56,7 @@ func (s *Store) ExportUserData(ctx context.Context, userID uuid.UUID) (UserData,
 		if out.Memberships, err = pgx.CollectRows(rows, func(r pgx.CollectableRow) (UserMembership, error) {
 			var m UserMembership
 			err := r.Scan(&m.TenantID, &m.UserID, &m.TenantRole, &m.Status, &m.JoinedAt, &m.Version, &m.UpdatedAt,
-				&m.Email, &m.DisplayName, &m.TenantSlug, &m.TenantName)
+				&m.Email, &m.DisplayName, &m.Kind, &m.TenantSlug, &m.TenantName)
 			return m, err
 		}); err != nil {
 			return err

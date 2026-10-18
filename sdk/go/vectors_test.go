@@ -66,6 +66,16 @@ func TestTokenVectors(t *testing.T) {
 			if !reflect.DeepEqual(got, want) {
 				t.Fatalf("principal = %v, want %v", got, want)
 			}
+			if p.Kind != w.Kind {
+				t.Errorf("kind = %q, want %q", p.Kind, w.Kind)
+			}
+			switch {
+			case w.Actor == nil && p.Actor != nil:
+				t.Errorf("actor = %+v, want none", p.Actor)
+			case w.Actor != nil && (p.Actor == nil ||
+				*p.Actor != (matura.Actor{Sub: w.Actor.Sub, Kind: w.Actor.Kind, ClientID: w.Actor.ClientID})):
+				t.Errorf("actor = %+v, want %+v", p.Actor, *w.Actor)
+			}
 			for perm, ok := range w.Has {
 				if p.Has(perm) != ok {
 					t.Errorf("Has(%q) = %v", perm, !ok)

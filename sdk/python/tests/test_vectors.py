@@ -46,6 +46,11 @@ def test_token_vectors(case, frozen):
     assert list(p.permissions) == want["permissions"]
     assert p.email == want["email"]
     assert p.placement_mode == want["placement_mode"]
+    assert p.kind == want["kind"]
+    actor = want["actor"]
+    assert (p.actor is None) if actor is None else (
+        p.actor is not None and (p.actor.sub, p.actor.kind, p.actor.client_id) ==
+        (actor["sub"], actor["kind"], actor["client_id"]))
     for perm, ok in want["has"].items():
         assert p.has(perm) is ok, perm
 

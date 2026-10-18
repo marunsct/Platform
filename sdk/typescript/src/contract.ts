@@ -285,7 +285,7 @@ export class Contract {
       }, "id"),
       this.placeholder("matura_user", {
         id: d.id(principal.userId), email: principal.email || null, email_verified: d.bool(principal.emailVerified),
-        display_name: principal.name, locale: null, kind: principal.isService ? "service" : "human", status: "active",
+        display_name: principal.name, locale: null, kind: principal.kind, status: "active",
         version: 0, updated_at: now,
       }, "id"),
       this.placeholder("matura_membership", {

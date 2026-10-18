@@ -24,6 +24,38 @@ type Principal struct {
 	Operator      bool
 	AppID         uuid.UUID // set for app backends; UserID is then empty
 	SessionID     string    // Keycloak SSO session (the token's sid), when known
+	Kind          string    // of UserID: human (also when the token has no kind claim), service or agent
+	Actor         *Actor    // set when an agent acts for UserID (the token's act claim, RFC 8693)
+}
+
+// Actor is the agent a delegated token names in its act claim.
+type Actor struct {
+	ID       uuid.UUID
+	Kind     string
+	ClientID string
+}
+
+// actorOf reads an act claim; a malformed one is an error so a delegated token is never taken for the person's own.
+func actorOf(act *actClaim) (*Actor, error) {
+	if act == nil {
+		return nil, nil
+	}
+	id, err := uuid.Parse(act.Sub)
+	if err != nil {
+		return nil, errors.New("token act.sub is not an agent id")
+	}
+	kind := act.Kind
+	if kind != "service" {
+		kind = "agent"
+	}
+	return &Actor{ID: id, Kind: kind, ClientID: act.ClientID}, nil
+}
+
+func kindOf(k string) string {
+	if k == "service" || k == "agent" {
+		return k
+	}
+	return "human"
 }
 
 // Authenticator turns a request into a Principal or an error that becomes 401.
@@ -45,13 +77,23 @@ func (DevAuthenticator) Authenticate(r *http.Request) (Principal, error) {
 	if err != nil {
 		return Principal{}, errors.New("X-Matura-Dev-User must be a UUID")
 	}
+	var act *actClaim
+	if a := r.Header.Get("X-Matura-Dev-Act"); a != "" { // an agent acting for the user: its id
+		act = &actClaim{Sub: a, Kind: "agent"}
+	}
+	actor, err := actorOf(act)
+	if err != nil {
+		return Principal{}, err
+	}
 	return Principal{
+		Actor:         actor,
 		UserID:        id,
 		Email:         r.Header.Get("X-Matura-Dev-Email"),
 		EmailVerified: true,
 		Name:          r.Header.Get("X-Matura-Dev-Name"),
 		Operator:      r.Header.Get("X-Matura-Dev-Operator") == "true",
 		SessionID:     r.Header.Get("X-Matura-Dev-Session"),
+		Kind:          kindOf(r.Header.Get("X-Matura-Dev-Kind")),
 	}, nil
 }
 
@@ -63,13 +105,21 @@ type JWTAuthenticator struct {
 	OperatorRole string
 }
 
+type actClaim struct {
+	Sub      string `json:"sub"`
+	Kind     string `json:"kind"`
+	ClientID string `json:"client_id"`
+}
+
 type claims struct {
 	jwt.RegisteredClaims
-	Email         string `json:"email"`
-	EmailVerified bool   `json:"email_verified"`
-	Name          string `json:"name"`
-	Locale        string `json:"locale"`
-	SessionID     string `json:"sid"`
+	Email         string    `json:"email"`
+	EmailVerified bool      `json:"email_verified"`
+	Name          string    `json:"name"`
+	Locale        string    `json:"locale"`
+	SessionID     string    `json:"sid"`
+	Kind          string    `json:"kind"`
+	Act           *actClaim `json:"act"`
 	RealmAccess   struct {
 		Roles []string `json:"roles"`
 	} `json:"realm_access"`
@@ -93,7 +143,13 @@ func (a JWTAuthenticator) Authenticate(r *http.Request) (Principal, error) {
 	if err != nil {
 		return Principal{}, errors.New("token subject is not a user id")
 	}
+	actor, err := actorOf(c.Act)
+	if err != nil {
+		return Principal{}, err
+	}
 	return Principal{
+		Kind:          kindOf(c.Kind),
+		Actor:         actor,
 		UserID:        id,
 		Email:         c.Email,
 		EmailVerified: c.EmailVerified,

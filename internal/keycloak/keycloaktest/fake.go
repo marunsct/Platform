@@ -50,8 +50,11 @@ type Server struct {
 	Mappers     map[string][]map[string]any
 	Imports     map[string]map[string]string // import-config answers by fromUrl
 	TokenCalls  int
-	Logouts     []string // user ids signed out everywhere
-	Deleted     []string // user ids whose accounts were deleted
+	Logouts     []string                  // user ids signed out everywhere
+	Deleted     []string                  // user ids whose accounts were deleted
+	Clients     map[string]map[string]any // client representations by internal id
+	Secrets     map[string]string         // client secrets by internal id
+	ServiceUser map[string]string         // service-account user id by client internal id
 	tokens      map[string]bool
 }
 
@@ -59,7 +62,8 @@ type Server struct {
 func New(t testing.TB) *Server {
 	f := &Server{Sessions: map[string][]Session{}, Credentials: map[string][]Credential{},
 		IdPs: map[string]map[string]any{}, Mappers: map[string][]map[string]any{},
-		Imports: map[string]map[string]string{}, tokens: map[string]bool{}}
+		Imports: map[string]map[string]string{}, Clients: map[string]map[string]any{}, Secrets: map[string]string{},
+		ServiceUser: map[string]string{}, tokens: map[string]bool{}}
 	f.Server = httptest.NewServer(http.HandlerFunc(f.serve))
 	t.Cleanup(f.Close)
 	return f
@@ -67,6 +71,18 @@ func New(t testing.TB) *Server {
 
 // Issuer is the realm's issuer URL on the fake.
 func (f *Server) Issuer() string { return f.URL + "/realms/" + Realm }
+
+// ClientByClientID returns the representation of the client with that clientId, or nil.
+func (f *Server) ClientByClientID(clientID string) map[string]any {
+	f.Lock()
+	defer f.Unlock()
+	for _, c := range f.Clients {
+		if c["clientId"] == clientID {
+			return c
+		}
+	}
+	return nil
+}
 
 // AddSession records a session for the user and returns its id.
 func (f *Server) AddSession(userID, ip string, clients ...string) string {
@@ -102,6 +118,15 @@ func randomID() string {
 	b := make([]byte, 16)
 	_, _ = rand.Read(b)
 	return hex.EncodeToString(b)
+}
+
+// uuidLike returns a random version-4 UUID string, like the ids Keycloak assigns.
+func uuidLike() string {
+	b := make([]byte, 16)
+	_, _ = rand.Read(b)
+	b[6], b[8] = b[6]&0x0f|0x40, b[8]&0x3f|0x80
+	h := hex.EncodeToString(b)
+	return h[:8] + "-" + h[8:12] + "-" + h[12:16] + "-" + h[16:20] + "-" + h[20:]
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
@@ -237,6 +262,66 @@ func (f *Server) serve(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		w.WriteHeader(http.StatusNotFound)
+	case "POST clients":
+		var in map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&in)
+		for _, c := range f.Clients {
+			if c["clientId"] == in["clientId"] {
+				writeJSON(w, http.StatusConflict, map[string]string{"errorMessage": "Client already exists"})
+				return
+			}
+		}
+		id := uuidLike()
+		in["id"] = id
+		f.Clients[id] = in
+		f.Secrets[id] = randomID()
+		f.ServiceUser[id] = uuidLike()
+		w.WriteHeader(http.StatusCreated)
+	case "GET clients":
+		out := []map[string]any{}
+		for _, c := range f.Clients {
+			if q := r.URL.Query().Get("clientId"); q == "" || c["clientId"] == q {
+				out = append(out, c)
+			}
+		}
+		writeJSON(w, http.StatusOK, out)
+	case "PUT clients/*":
+		c, ok := f.Clients[parts[1]]
+		if !ok {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		var in map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&in)
+		for k, v := range in {
+			c[k] = v
+		}
+		w.WriteHeader(http.StatusNoContent)
+	case "DELETE clients/*":
+		if _, ok := f.Clients[parts[1]]; !ok {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Could not find client"})
+			return
+		}
+		delete(f.Clients, parts[1])
+		delete(f.Secrets, parts[1])
+		delete(f.ServiceUser, parts[1])
+		w.WriteHeader(http.StatusNoContent)
+	case "GET clients/*/service-account-user":
+		if _, ok := f.Clients[parts[1]]; !ok {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"id": f.ServiceUser[parts[1]],
+			"username": "service-account-" + f.Clients[parts[1]]["clientId"].(string)})
+	case "GET clients/*/client-secret", "POST clients/*/client-secret":
+		if _, ok := f.Clients[parts[1]]; !ok {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		if r.Method == http.MethodPost {
+			f.Secrets[parts[1]] = randomID()
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"type": "secret", "value": f.Secrets[parts[1]]})
 	default:
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "fake keycloak does not serve " + route})
 	}
@@ -245,7 +330,8 @@ func (f *Server) serve(w http.ResponseWriter, r *http.Request) {
 // pattern replaces ids in an admin path with *, keeping the fixed words.
 func pattern(parts []string) []string {
 	fixed := map[string]bool{"users": true, "sessions": true, "logout": true, "credentials": true,
-		"identity-provider": true, "instances": true, "mappers": true, "import-config": true}
+		"identity-provider": true, "instances": true, "mappers": true, "import-config": true, "clients": true,
+		"service-account-user": true, "client-secret": true}
 	out := make([]string, len(parts))
 	for i, p := range parts {
 		if fixed[p] {

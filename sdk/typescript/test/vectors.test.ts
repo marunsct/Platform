@@ -41,6 +41,9 @@ describe("token vectors", () => {
       assert.deepEqual([...p.permissions], want.permissions);
       assert.equal(p.email, want.email);
       assert.equal(p.placementMode, want.placement_mode);
+      assert.equal(p.kind, want.kind);
+      assert.deepEqual(p.actor, want.actor === null ? null
+        : { sub: want.actor.sub, kind: want.actor.kind, clientId: want.actor.client_id });
       for (const [perm, ok] of Object.entries(want.has)) assert.equal(p.has(perm), ok, perm);
     });
   }

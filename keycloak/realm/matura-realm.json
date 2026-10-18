@@ -41,7 +41,7 @@
     {
       "clientId": "matura-admin",
       "name": "Matura control plane (admin API)",
-      "description": "maturad's service account: sessions, second factors and tenant identity providers",
+      "description": "maturad's service account: sessions, second factors, tenant identity providers and agent clients",
       "enabled": true,
       "publicClient": false,
       "clientAuthenticatorType": "client-secret",
@@ -166,7 +166,9 @@
           "view-users",
           "manage-users",
           "view-identity-providers",
-          "manage-identity-providers"
+          "manage-identity-providers",
+          "view-clients",
+          "manage-clients"
         ]
       }
     }

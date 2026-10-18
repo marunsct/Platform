@@ -2,6 +2,7 @@ package store
 
 import (
 	"encoding/json"
+	"net/url"
 	"regexp"
 	"slices"
 
@@ -48,6 +49,9 @@ type ManifestAuth struct {
 	RedirectURIs           []string `json:"redirect_uris"`
 	PostLogoutRedirectURIs []string `json:"post_logout_redirect_uris,omitempty"`
 	PublicClient           bool     `json:"public_client"`
+	// Resources are the app's protected-resource identifiers (RFC 9728), e.g. its MCP server's URL: an agent that
+	// asks Keycloak for a token with resource=<one of them> gets a token for this app (TS15).
+	Resources []string `json:"resources,omitempty"`
 }
 
 type PermissionDef struct {
@@ -147,6 +151,12 @@ func (m *Manifest) Normalize() error {
 	}
 	if len(m.Roles) > 0 && m.OwnerRole != "" && !seen[m.OwnerRole] {
 		return invalid("owner_role %q is not one of the app's roles", m.OwnerRole)
+	}
+	for _, r := range m.Auth.Resources {
+		u, err := url.Parse(r)
+		if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" || u.Fragment != "" {
+			return invalid("auth resource %q must be an absolute http(s) URL without a fragment", r)
+		}
 	}
 	if a := m.Authorization; a != nil {
 		if len(a.Model) == 0 || string(a.Model) == "null" {

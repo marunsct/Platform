@@ -276,7 +276,7 @@ class Contract:
             _placeholder("matura_user", {
                 "id": d.id(principal.user_id), "email": principal.email or None,
                 "email_verified": principal.email_verified, "display_name": principal.name, "locale": None,
-                "kind": "service" if principal.is_service else "human", "status": "active", "version": 0,
+                "kind": getattr(principal, "kind", "human"), "status": "active", "version": 0,
                 "updated_at": now}, "id"),
             _placeholder("matura_membership", {
                 "tenant_id": d.id(principal.tenant_id), "user_id": d.id(principal.user_id),

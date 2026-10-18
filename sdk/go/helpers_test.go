@@ -44,16 +44,22 @@ type vectors struct {
 			Token     string `json:"token"`
 			Valid     bool   `json:"valid"`
 			Principal struct {
-				UserID        string          `json:"user_id"`
-				TenantID      *string         `json:"tenant_id"`
-				TenantSlug    *string         `json:"tenant_slug"`
-				WorkspaceID   *string         `json:"workspace_id"`
-				TenantRoles   []string        `json:"tenant_roles"`
-				Roles         []string        `json:"roles"`
-				Permissions   []string        `json:"permissions"`
-				Email         string          `json:"email"`
-				PlacementMode *string         `json:"placement_mode"`
-				Has           map[string]bool `json:"has"`
+				UserID        string   `json:"user_id"`
+				TenantID      *string  `json:"tenant_id"`
+				TenantSlug    *string  `json:"tenant_slug"`
+				WorkspaceID   *string  `json:"workspace_id"`
+				TenantRoles   []string `json:"tenant_roles"`
+				Roles         []string `json:"roles"`
+				Permissions   []string `json:"permissions"`
+				Email         string   `json:"email"`
+				PlacementMode *string  `json:"placement_mode"`
+				Kind          string   `json:"kind"`
+				Actor         *struct {
+					Sub      string `json:"sub"`
+					Kind     string `json:"kind"`
+					ClientID string `json:"client_id"`
+				} `json:"actor"`
+				Has map[string]bool `json:"has"`
 			} `json:"principal"`
 		} `json:"cases"`
 	} `json:"tokens"`
