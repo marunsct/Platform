@@ -24,39 +24,8 @@ import (
 	"github.com/marunsct/Platform/internal/testdb"
 )
 
-// kcAdmin calls a real Keycloak's admin API as the master realm's admin.
-type kcAdmin struct {
-	base, token string
-}
-
-func (a kcAdmin) call(t *testing.T, method, path string, in, out any, want int) {
-	t.Helper()
-	var body io.Reader
-	if in != nil {
-		b, _ := json.Marshal(in)
-		body = bytes.NewReader(b)
-	}
-	req, _ := http.NewRequest(method, a.base+path, body)
-	req.Header.Set("Authorization", "Bearer "+a.token)
-	req.Header.Set("Content-Type", "application/json")
-	res, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer res.Body.Close()
-	raw, _ := io.ReadAll(res.Body)
-	if res.StatusCode != want {
-		t.Fatalf("%s %s: %d %s", method, path, res.StatusCode, raw)
-	}
-	if out != nil {
-		if err := json.Unmarshal(raw, out); err != nil {
-			t.Fatal(err)
-		}
-	}
-}
-
 // TestSCIMAgainstKeycloak provisions through maturad's SCIM endpoint into a real Keycloak 26.4
-// (MATURA_TEST_KEYCLOAK_URL, master admin from MATURA_TEST_KEYCLOAK_ADMIN / _PASSWORD, default admin/admin). It
+// (MATURA_TEST_KEYCLOAK_URL, master admin from MATURA_TEST_KEYCLOAK_ADMIN and MATURA_TEST_KEYCLOAK_PASSWORD, default admin/admin). It
 // uses a throwaway realm with the repository's matura-admin client and user profile (so employeeNumber and department
 // are kept), and deletes the realm at the end.
 func TestSCIMAgainstKeycloak(t *testing.T) {
@@ -64,21 +33,7 @@ func TestSCIMAgainstKeycloak(t *testing.T) {
 	if base == "" {
 		t.Skip("MATURA_TEST_KEYCLOAK_URL is not set")
 	}
-	user, pass := os.Getenv("MATURA_TEST_KEYCLOAK_ADMIN"), os.Getenv("MATURA_TEST_KEYCLOAK_ADMIN_PASSWORD")
-	if user == "" {
-		user, pass = "admin", "admin"
-	}
-	res, err := http.PostForm(base+"/realms/master/protocol/openid-connect/token", url.Values{
-		"grant_type": {"password"}, "client_id": {"admin-cli"}, "username": {user}, "password": {pass}})
-	if err != nil || res.StatusCode != http.StatusOK {
-		t.Fatalf("master admin sign-in: %v %v", err, res)
-	}
-	var tok struct {
-		AccessToken string `json:"access_token"`
-	}
-	_ = json.NewDecoder(res.Body).Decode(&tok)
-	res.Body.Close()
-	adm := kcAdmin{base: base, token: tok.AccessToken}
+	adm := kcMaster(t, base)
 
 	raw, err := os.ReadFile("../../keycloak/realm/matura-realm.json")
 	if err != nil {
@@ -162,7 +117,7 @@ func TestSCIMAgainstKeycloak(t *testing.T) {
 		"value": "a-long-password-123", "temporary": false}, nil, http.StatusNoContent)
 	adm.call(t, "POST", r+"/clients", map[string]any{"clientId": "it-cli", "enabled": true, "publicClient": true,
 		"directAccessGrantsEnabled": true, "standardFlowEnabled": false}, nil, http.StatusCreated)
-	res, err = http.PostForm(base+"/realms/"+realm+"/protocol/openid-connect/token", url.Values{
+	res, err := http.PostForm(base+"/realms/"+realm+"/protocol/openid-connect/token", url.Values{
 		"grant_type": {"password"}, "client_id": {"it-cli"}, "username": {"renamed@acme.test"},
 		"password": {"a-long-password-123"}})
 	if err != nil || res.StatusCode != http.StatusOK {

@@ -26,14 +26,25 @@ public final class MaturaClient {
         public boolean refused() { return refusal != null; }
     }
 
-    /** What the mapper knows about the token being issued. */
+    /**
+     * What the mapper knows about the token being issued. {@code audience} is what an agent's client asked a token
+     * for (the {@code matura_app}, {@code audience} or {@code resource} parameter); maturad ignores it for apps.
+     */
     public record Request(String userId, String email, boolean emailVerified, String name, String locale,
-                          String clientId, String tenant, String workspace, long sessionStarted, long sessionLastUse) {
+                          String clientId, String tenant, String workspace, long sessionStarted, long sessionLastUse,
+                          String audience) {
+        public Request(String userId, String email, boolean emailVerified, String name, String locale,
+                       String clientId, String tenant, String workspace, long sessionStarted, long sessionLastUse) {
+            this(userId, email, emailVerified, name, locale, clientId, tenant, workspace, sessionStarted, sessionLastUse,
+                    null);
+        }
         public Request(String userId, String email, boolean emailVerified, String name, String locale,
                        String clientId, String tenant, String workspace) {
-            this(userId, email, emailVerified, name, locale, clientId, tenant, workspace, 0, 0);
+            this(userId, email, emailVerified, name, locale, clientId, tenant, workspace, 0, 0, null);
         }
-        String key() { return userId + "|" + clientId + "|" + tenant + "|" + workspace + "|" + sessionStarted; }
+        String key() {
+            return userId + "|" + clientId + "|" + tenant + "|" + workspace + "|" + sessionStarted + "|" + audience;
+        }
     }
 
     private record Cached(Answer answer, long expiresAt) {}
@@ -84,6 +95,9 @@ public final class MaturaClient {
         body.put("workspace", req.workspace() == null ? "" : req.workspace());
         body.put("session_started", req.sessionStarted());
         body.put("session_last_use", req.sessionLastUse());
+        if (req.audience() != null && !req.audience().isBlank()) {
+            body.put("audience", req.audience());
+        }
         Answer answer = post(endpoint, body);
         cache.put(req.key(), new Cached(answer, now + ttl.toMillis()));
         if (cache.size() > 10_000) {

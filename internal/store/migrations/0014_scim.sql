@@ -1,11 +1,6 @@
 -- SCIM 2.0 provisioning (TS14, technical specification §19): bearer tokens per tenant, provisioned users, groups,
 -- group-to-role mappings and the grants those mappings created.
 
--- Changes made through SCIM are audited with actor kind `scim` (actor id: the token).
-ALTER TABLE audit_event DROP CONSTRAINT audit_event_actor_kind_check;
-ALTER TABLE audit_event ADD CONSTRAINT audit_event_actor_kind_check
-    CHECK (actor_kind IN ('user','operator','app','system','scim'));
-
 -- Only the SHA-256 of a token is kept; prefix is its first characters, to tell tokens apart in lists.
 CREATE TABLE scim_token (
     id           uuid PRIMARY KEY,

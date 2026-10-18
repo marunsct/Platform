@@ -45,6 +45,8 @@ type Server struct {
 	install        readiness.Install // this installation's configuration, for readiness (TS24)
 	trust          trustCache        // rendered trust page (TS25)
 	access         *access.Service   // OpenFGA (TS11); nil: permission endpoints answer 501
+	resource       string            // maturad's public URL as an OAuth protected resource (TS15)
+	apiAudience    string            // the token audience maturad's API accepts
 }
 
 // seenProfile remembers a profile already written; it is re-checked after a minute so a deactivated account stops
@@ -93,6 +95,7 @@ func (s *Server) Handler() http.Handler {
 	s.handle(mux, "GET /portal/", s.portal.Files)
 	s.handle(mux, "GET /trust", s.trustPage(false))
 	s.handle(mux, "GET /trust.json", s.trustPage(true))
+	s.handle(mux, "GET /.well-known/oauth-protected-resource", s.protectedResource)
 	// SCIM 2.0 per tenant, authenticated with the tenant's SCIM tokens (TS14)
 	s.handle(mux, "GET /scim/v2/tenants/{tid}/ServiceProviderConfig", s.scim(s.scimServiceProviderConfig))
 	s.handle(mux, "GET /scim/v2/tenants/{tid}/ResourceTypes", s.scim(s.scimResourceTypes))
@@ -134,6 +137,12 @@ func (s *Server) Handler() http.Handler {
 	s.handle(api, "GET /v1/tenants/{tid}/grants", s.listGrants)
 	s.handle(api, "POST /v1/tenants/{tid}/grants", s.createGrant)
 	s.handle(api, "DELETE /v1/tenants/{tid}/grants/{id}", s.revokeGrant)
+	s.handle(api, "GET /v1/tenants/{tid}/agents", s.listAgents)
+	s.handle(api, "POST /v1/tenants/{tid}/agents", s.createAgent)
+	s.handle(api, "GET /v1/tenants/{tid}/agents/{id}", s.getAgent)
+	s.handle(api, "PATCH /v1/tenants/{tid}/agents/{id}", s.patchAgent)
+	s.handle(api, "DELETE /v1/tenants/{tid}/agents/{id}", s.deleteAgent)
+	s.handle(api, "POST /v1/tenants/{tid}/agents/{id}", s.agentAction) // {id}:rotate-secret
 	s.handle(api, "GET /v1/tenants/{tid}/placements", s.listPlacements)
 	s.handle(api, "GET /v1/tenants/{tid}/invitations", s.listInvitations)
 	s.handle(api, "POST /v1/tenants/{tid}/invitations", s.createInvitation)
@@ -290,7 +299,7 @@ func (s *Server) authenticate(next, appNext http.Handler) http.Handler {
 		}
 		p, err := s.auth.Authenticate(r)
 		if err != nil {
-			w.Header().Set("WWW-Authenticate", `Bearer realm="matura"`)
+			w.Header().Set("WWW-Authenticate", s.bearerChallenge())
 			problem(w, http.StatusUnauthorized, "unauthenticated", err.Error())
 			return
 		}
@@ -309,8 +318,25 @@ func (s *Server) authenticate(next, appNext http.Handler) http.Handler {
 			}
 			s.seen.Store(p.UserID, seenProfile{profile: profile, at: time.Now()})
 		}
+		p.Kind = kindOf(p.Kind)
+		if p.Actor != nil || p.Kind != "human" { // installation operators are people acting themselves
+			p.Operator = false
+		}
 		actor.Kind, actor.ID, actor.Email = "user", p.UserID, p.Email
-		if p.Operator {
+		switch {
+		case p.Actor != nil: // an agent acting for the person in sub
+			if ok, err := s.store.UserActive(r.Context(), p.Actor.ID); err != nil || !ok {
+				if err != nil {
+					s.fail(w, r, err)
+					return
+				}
+				problem(w, http.StatusForbidden, "user-inactive", "the agent acting for you is deactivated")
+				return
+			}
+			actor.Kind, actor.ID, actor.Email, actor.OnBehalfOf = p.Actor.Kind, p.Actor.ID, "", p.UserID
+		case p.Kind == "agent" || p.Kind == "service":
+			actor.Kind = p.Kind
+		case p.Operator:
 			actor.Kind = "operator"
 		}
 		r = r.WithContext(store.WithActor(withPrincipal(r.Context(), p), actor))
@@ -500,7 +526,8 @@ func (s *Server) tenantAccess(r *http.Request, tid uuid.UUID, manage bool) (stor
 	if err := s.checkIP(r, tid); err != nil {
 		return sc, m, err
 	}
-	if manage && m.TenantRole != "owner" && m.TenantRole != "admin" {
+	// a delegated call has at most what both the person and the agent (a plain member) may do
+	if manage && (p.Actor != nil || (m.TenantRole != "owner" && m.TenantRole != "admin")) {
 		return sc, m, errForbidden
 	}
 	return sc, m, nil

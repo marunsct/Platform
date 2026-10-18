@@ -146,4 +146,42 @@ class MaturaClientTest {
         assertTrue(lastBody.get().contains("\"session_started\":1700000000000"));
         assertTrue(lastBody.get().contains("\"session_last_use\":1700000060000"));
     }
+
+    @Test
+    void agentAudienceIsSentAndKeyed() throws Exception {
+        MaturaClient c = client();
+        c.tokenContext(new MaturaClient.Request("u", null, false, null, null, "agent-1", null, null, 0, 0, "agentcanvas"));
+        assertTrue(lastBody.get().contains("\"audience\":\"agentcanvas\""));
+        c.tokenContext(new MaturaClient.Request("u", null, false, null, null, "agent-1", null, null, 0, 0, "devflow"));
+        assertEquals(2, calls.get(), "another audience is another key");
+        c.tokenContext(new MaturaClient.Request("u", null, false, null, null, "agent-1", null, null, 0, 0, null));
+        assertFalse(lastBody.get().contains("audience"), "no audience parameter, none sent");
+    }
+
+    @Test
+    void delegatedClaims() {
+        AccessToken token = new AccessToken();
+        token.addAudience("account");
+        Map<String, Object> act = Map.of("sub", "0192b7a4-0000-7000-8000-00000000a6e7", "kind", "agent",
+                "client_id", "agent-1");
+        MaturaClaims.apply(token, Map.of("kind", "human", "act", act, "aud", "agentcanvas",
+                "perms", List.of("workflow.read")));
+        assertEquals("human", token.getOtherClaims().get("kind"));
+        assertEquals(act, token.getOtherClaims().get("act"));
+        assertTrue(token.hasAudience("agentcanvas"));
+        assertTrue(token.hasAudience("account"), "existing audiences stay");
+        assertFalse(token.getOtherClaims().containsKey("aud"));
+
+        MaturaClaims.apply(token, Map.of("kind", "agent"));
+        assertFalse(token.getOtherClaims().containsKey("act"), "a stale act is removed");
+    }
+
+    @Test
+    void audienceParameterOrder() {
+        assertEquals("agentcanvas", MaturaTokenMapper.firstAudience(Map.of("audience", List.of("devflow"),
+                "matura_app", List.of("agentcanvas"))));
+        assertEquals("https://canvas.example/mcp", MaturaTokenMapper.firstAudience(Map.of("resource",
+                List.of("https://canvas.example/mcp"))));
+        assertNull(MaturaTokenMapper.firstAudience(Map.of("audience", List.of(" "))));
+    }
 }

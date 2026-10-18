@@ -96,10 +96,11 @@ func hashSCIMToken(token string) []byte {
 }
 
 // scim authenticates a SCIM request with a bearer token of the tenant in the path. A token of another tenant is
-// unknown here (401). Changes are audited with actor kind `scim` and the token's id.
+// unknown here (401). Changes are audited with actor kind `system`, the token's id as actor id and `scim` as the
+// actor email (the audit log has no actor kind of its own for directories yet).
 func (s *Server) scim(h func(http.ResponseWriter, *http.Request, uuid.UUID)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		actor := store.Actor{Kind: "scim", RequestID: requestID(r), IP: s.clientIP(r).String(), UserAgent: r.UserAgent()}
+		actor := store.Actor{Kind: "system", Email: "scim", RequestID: requestID(r), IP: s.clientIP(r).String(), UserAgent: r.UserAgent()}
 		w.Header().Set("X-Request-Id", actor.RequestID)
 		tid, err := uuid.Parse(r.PathValue("tid"))
 		if err != nil {

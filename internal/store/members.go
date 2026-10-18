@@ -10,12 +10,12 @@ import (
 var tenantRoles = map[string]bool{"owner": true, "admin": true, "billing": true, "member": true}
 
 const memberCols = `m.tenant_id, m.user_id, m.tenant_role, m.status, m.joined_at, m.version, m.updated_at,
-	u.email, u.display_name`
+	u.email, u.display_name, u.kind`
 
 func scanMember(row pgx.Row) (Membership, error) {
 	var m Membership
 	err := row.Scan(&m.TenantID, &m.UserID, &m.TenantRole, &m.Status, &m.JoinedAt, &m.Version, &m.UpdatedAt,
-		&m.Email, &m.DisplayName)
+		&m.Email, &m.DisplayName, &m.Kind)
 	return m, mapErr(err)
 }
 
@@ -40,6 +40,8 @@ func addMember(ctx context.Context, tx pgx.Tx, tenantID, userID uuid.UUID, role 
 	}
 	cur, err := getMember(ctx, tx, tenantID, userID, true)
 	switch {
+	case err == nil && cur.Kind != "human":
+		return cur, errAgentMember
 	case err == nil && cur.Status != "removed":
 		return cur, ErrConflict
 	case err != nil && err != ErrNotFound:
@@ -99,7 +101,7 @@ func (s *Store) ListMembers(ctx context.Context, sc Scope, tenantID uuid.UUID) (
 	var out []Membership
 	err := s.tx(ctx, sc.InTenant(tenantID), func(tx pgx.Tx) error {
 		rows, err := tx.Query(ctx, `SELECT `+memberCols+` FROM membership m JOIN app_user u ON u.id = m.user_id
-			WHERE m.tenant_id = $1 AND m.status <> 'removed' ORDER BY lower(u.email)`, tenantID)
+			WHERE m.tenant_id = $1 AND m.status <> 'removed' AND u.kind = 'human' ORDER BY lower(u.email)`, tenantID)
 		if err != nil {
 			return err
 		}
@@ -113,6 +115,9 @@ type MemberPatch struct {
 	TenantRole *string
 	Status     *string // active or deactivated
 }
+
+// errAgentMember refuses member changes to a service account or agent: they have their own endpoints (TS15).
+var errAgentMember = &InvalidError{Msg: "this is a service account or agent; change it under /v1/tenants/{tid}/agents"}
 
 // errLastOwner explains UM-4: a tenant always keeps at least one active owner.
 var errLastOwner = &InvalidError{Msg: "a tenant needs at least one active owner; make someone else owner first"}
@@ -147,6 +152,9 @@ func (s *Store) UpdateMember(ctx context.Context, sc Scope, tenantID, userID uui
 		cur, err := getMember(ctx, tx, tenantID, userID, true)
 		if err != nil || cur.Status == "removed" {
 			return ErrNotFound
+		}
+		if cur.Kind != "human" {
+			return errAgentMember
 		}
 		if p.TenantRole != nil && !tenantRoles[*p.TenantRole] {
 			return invalid("tenant role must be owner, admin, billing or member")
@@ -186,6 +194,9 @@ func (s *Store) RemoveMember(ctx context.Context, sc Scope, tenantID, userID uui
 		cur, err := getMember(ctx, tx, tenantID, userID, true)
 		if err != nil || cur.Status == "removed" {
 			return ErrNotFound
+		}
+		if cur.Kind != "human" {
+			return errAgentMember
 		}
 		if err := checkNotLastOwner(ctx, tx, tenantID, cur); err != nil {
 			return err

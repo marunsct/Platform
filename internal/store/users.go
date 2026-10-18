@@ -57,7 +57,9 @@ func (s *Store) UpsertUser(ctx context.Context, p UserProfile) (User, error) {
 		case err != nil:
 			return err
 		}
-		if cur.Status == "deleted" { // a deleted account is never brought back by an old token
+		// a deleted account is never brought back by an old token; agents' profiles are managed in Matura (their
+		// Keycloak service-account users have no name or email)
+		if cur.Status == "deleted" || cur.Kind != "human" {
 			out = cur
 			return nil
 		}
@@ -96,6 +98,15 @@ func (s *Store) GetUser(ctx context.Context, id uuid.UUID) (User, error) {
 		return err
 	})
 	return out, err
+}
+
+// UserActive reports whether the user (or agent) exists and is active.
+func (s *Store) UserActive(ctx context.Context, id uuid.UUID) (bool, error) {
+	u, err := s.GetUser(ctx, id)
+	if err == ErrNotFound {
+		return false, nil
+	}
+	return err == nil && u.Status == "active", err
 }
 
 func (s *Store) FindUserByEmail(ctx context.Context, email string) (User, error) {

@@ -13,7 +13,7 @@ import (
 
 // Entitlements (doc 10 §1, TS18): a plan's limits, overridden per tenant by operators. Limits are JSON:
 //
-//	{"max_members": 10, "max_workspaces": 3, "apps": ["devflow"], "features": {"sso": true}}
+//	{"max_members": 10, "max_workspaces": 3, "max_agents": 5, "apps": ["devflow"], "features": {"sso": true}}
 //
 // A missing limit, or a negative number, means no limit; a missing apps list allows every app ("*" in it does too).
 // Other keys are kept for apps and later meters. Overrides have the same shape and replace the plan's value key by
@@ -22,6 +22,7 @@ import (
 type Limits struct {
 	MaxMembers    *int            `json:"max_members,omitempty"`
 	MaxWorkspaces *int            `json:"max_workspaces,omitempty"`
+	MaxAgents     *int            `json:"max_agents,omitempty"` // service accounts and AI agents (TS15)
 	Apps          *[]string       `json:"apps,omitempty"`
 	Features      map[string]bool `json:"features,omitempty"`
 }
@@ -37,7 +38,7 @@ func ParseLimits(raw json.RawMessage) (Limits, error) {
 		if json.Unmarshal(raw, &obj) != nil {
 			return l, invalid("limits must be a JSON object")
 		}
-		return l, invalid("limits: max_members and max_workspaces are whole numbers, apps a list of app slugs, " +
+		return l, invalid("limits: max_members, max_workspaces and max_agents are whole numbers, apps a list of app slugs, " +
 			"features an object of true or false")
 	}
 	return l, nil
@@ -51,6 +52,9 @@ func (l Limits) merge(o Limits) Limits {
 	}
 	if o.MaxWorkspaces != nil {
 		out.MaxWorkspaces = o.MaxWorkspaces
+	}
+	if o.MaxAgents != nil {
+		out.MaxAgents = o.MaxAgents
 	}
 	if o.Apps != nil {
 		out.Apps = o.Apps
@@ -121,6 +125,10 @@ func effectiveLimits(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID) (Limits
 
 func atLimit(max *int, used int) bool { return max != nil && *max >= 0 && used >= *max }
 
+// humanMembers counts a tenant's people (agents have their own limit); deactivated members hold a seat.
+const humanMembers = `SELECT count(*) FROM membership m JOIN app_user u ON u.id = m.user_id
+	WHERE m.tenant_id = $1 AND m.status <> 'removed' AND u.kind = 'human'`
+
 // checkMemberLimit refuses a new member when the tenant has max_members members (deactivated ones hold a seat).
 // It locks the tenant row so concurrent additions are counted one after another.
 func checkMemberLimit(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID) error {
@@ -132,8 +140,7 @@ func checkMemberLimit(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID) error 
 		return err
 	}
 	var used int
-	if err := tx.QueryRow(ctx, `SELECT count(*) FROM membership WHERE tenant_id = $1 AND status <> 'removed'`,
-		tenantID).Scan(&used); err != nil {
+	if err := tx.QueryRow(ctx, humanMembers, tenantID).Scan(&used); err != nil {
 		return err
 	}
 	if atLimit(l.MaxMembers, used) {
@@ -179,6 +186,7 @@ type PlanRef struct {
 type Usage struct {
 	Members    int      `json:"members"`
 	Workspaces int      `json:"workspaces"`
+	Agents     int      `json:"agents"`
 	Apps       []string `json:"apps"` // enabled
 }
 
@@ -199,10 +207,10 @@ func entitlementsOf(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID) (Entitle
 	}
 	out := Entitlements{TenantID: tenantID, Plan: ref, Limits: plan.merge(over), PlanLimits: plan, Overrides: raw,
 		Usage: Usage{Apps: []string{}}}
-	if err := tx.QueryRow(ctx, `SELECT
-			(SELECT count(*) FROM membership WHERE tenant_id = $1 AND status <> 'removed'),
-			(SELECT count(*) FROM workspace WHERE tenant_id = $1 AND status <> 'deleted')`, tenantID).
-		Scan(&out.Usage.Members, &out.Usage.Workspaces); err != nil {
+	if err := tx.QueryRow(ctx, `SELECT (`+humanMembers+`),
+			(SELECT count(*) FROM workspace WHERE tenant_id = $1 AND status <> 'deleted'),
+			(SELECT count(*) FROM agent WHERE tenant_id = $1 AND status <> 'deleted')`, tenantID).
+		Scan(&out.Usage.Members, &out.Usage.Workspaces, &out.Usage.Agents); err != nil {
 		return out, err
 	}
 	rows, err := tx.Query(ctx, `SELECT a.slug FROM tenant_app ta JOIN app a ON a.id = ta.app_id

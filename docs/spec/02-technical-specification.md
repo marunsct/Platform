@@ -680,7 +680,8 @@ nosniff` and `Referrer-Policy: no-referrer`. `/trust.json` allows any origin.
 
 `internal/keycloak` is maturad's client for one realm's admin REST API. It signs in with the client-credentials grant
 of the confidential client `matura-admin` (realm export), whose service account holds only the realm-management
-roles `view-users`, `manage-users`, `view-identity-providers` and `manage-identity-providers`. The token is cached
+roles `view-users`, `manage-users`, `view-identity-providers`, `manage-identity-providers`, and `view-clients` and
+`manage-clients` for agent clients (§20). The token is cached
 until 30 s before it expires and fetched again once on a 401. Every call has a timeout (10 s); errors are typed
 (`ErrNotFound`, `ErrConflict`, `ErrForbidden`, `ErrUnavailable`, `*Error` with status and Keycloak's message). The API
 answers 503 `keycloak-unavailable` when Keycloak does not answer and 502 `keycloak-error` when it refuses.
@@ -828,3 +829,89 @@ its message), 501 `permissions-not-configured`, 503 `permissions-unavailable` wi
 not recorded in the audit log (they are app data, often high volume); Matura's own facts are audited where they
 change. Not built yet: per-tenant revision tokens, "who has access" views in the portal and access reviews
 (rest of TS11), conditions, `list-users`.
+
+## 20. Agent identity (TS15)
+
+Tenant **service accounts** (kind `service`, for scripts and integrations) and **AI agents** (kind `agent`) are
+principals of one tenant, managed by its owners and admins.
+
+```
+agent(id PK → app_user.id, tenant_id, kind service|agent, name, description, owner_id → app_user, client_id UNIQUE,
+      client_uuid, status active|deactivated|deleted, expires_at, secret_rotated_at, version, created_by,
+      created_at, updated_at)
+audit_event: actor_kind also agent|service; actor_on_behalf_of uuid
+```
+
+Forced RLS on `agent` (migration 0015).
+
+### 20.1 Creating and managing agents
+
+`POST /v1/tenants/{tid}/agents {kind, name, description?, owner_id?, expires_at?, grants?: [{app, role,
+workspace_id?}]}` checks the owner (a person who is an active member; default the caller) and the plan's
+`max_agents`, then has Keycloak create a confidential client `agent-<12 hex>` (or `svc-…`): client credentials only
+(no browser or password flow), `standard.token.exchange.enabled`, `fullScopeAllowed: false` (no realm roles in its
+tokens), the Matura token mapper, and attributes `matura.tenant_id` and `matura.kind`. The client's service-account
+user id becomes the agent's id: an `app_user` row of that kind (display name = the agent's name, no email) that is an
+active `member` of the tenant, so grants (`/grants` or `grants` here), tokens and contract events work as for
+people. Apps receive `user.created` (with `kind`), `membership.added` and `grant.added`; membership payloads carry the
+user's `kind` too. If saving fails after Keycloak created the client, maturad deletes the client again.
+
+The answer holds `client_secret` once (`Cache-Control: no-store`) and the realm's `token_endpoint`; Matura does not
+store the secret. `POST …/agents/{id}:rotate-secret` regenerates it in Keycloak (the old one stops at once).
+`PATCH …/agents/{id}` changes name, description, owner, `expires_at` (null removes it) and `status`. Deactivation
+is the kill switch: maturad refuses tokens for the agent and delegated tokens naming it at once (the mapper caches
+answers for 5 s), the Keycloak client is disabled, and the user becomes `deactivated` (`user.deactivated`). Tokens
+already issued run out within their lifetime (5 minutes). `DELETE` removes the Keycloak client and its service
+user, revokes the grants, removes the membership and marks the user `deleted`; the agent row stays for the audit
+trail. Actions are audited (`agent.created`, `agent.updated`, `agent.deactivated`, `agent.reactivated`,
+`agent.secret_rotated`, `agent.deleted`).
+
+Member endpoints and the member list are for people: changing an agent's membership through them answers 422, and
+`max_members` counts people only (`usage.agents` counts agents).
+
+### 20.2 Tokens
+
+The mapper sends maturad the client id and, on an agent's client, the audience the token request asked for: the
+`matura_app`, `audience` (RFC 8693) or `resource` (RFC 8707) form parameter. maturad looks the client id up in
+`agent`. For an app's client nothing changes except the new `kind` claim. For an agent's client:
+
+- the tenant is the agent's; the app is the one named (by client id, or by a URL in its manifest's
+  `auth.resources`), else the only app the agent holds grants in (otherwise `audience_required`); the app's client id
+  is added to the token's `aud`. Naming maturad's own audience (`MATURA_AUDIENCE`) gives a token with tenant claims
+  and no app roles;
+- **own token** (the user is the agent's service account; client credentials): `sub` = agent, `kind` = agent or
+  service, `troles: ["member"]`, the agent's roles and permissions;
+- **delegated token** (the user is a person; standard token exchange, or any other grant on the agent's client):
+  `sub` = the person, `kind: "human"`, `act: {sub, kind, client_id}` naming the agent, `roles` = roles both hold,
+  `perms` = the intersection of the person's and the agent's permissions (`*` on one side yields the other side's
+  list), `troles` = the tenant role both hold (so usually none: the agent is a member). The person must be an active
+  member of the agent's tenant (`not_a_member`), and the tenant's session limits apply to their session.
+
+Refusals: `agent_inactive`, `agent_expired`, `unknown_audience`, `audience_required`, `not_delegable` (an agent
+acting for another agent), plus the tenant refusals of §6. Standard token exchange needs the requesting agent to be
+in the subject token's audience: either the person's token was issued to the agent's client itself, or the app's
+client adds the agent as an audience (an `oidc-audience-mapper`). Consent screens and per-tool scopes are not
+built.
+
+### 20.3 maturad's own API and audit
+
+`JWTAuthenticator` reads `kind` and `act`. A delegated call is audited with `actor.kind` = the agent's kind,
+`actor.id` = the agent and `actor.on_behalf_of` = the person (stored in `actor_on_behalf_of`; the canonical form of
+§13.2 includes `on_behalf_of` only when set, so earlier hashes are unchanged). Filtering the audit log by a person's
+id also finds what agents did for them. Delegated calls and agents never manage a tenant (they are members at most)
+and are never operators, and a delegated call from a deactivated agent answers 403.
+
+### 20.4 MCP and protected-resource metadata
+
+maturad serves `GET /.well-known/oauth-protected-resource` (RFC 9728): `resource` = `MATURA_PUBLIC_URL`,
+`authorization_servers` = the realm's issuer. A 401 for a missing or invalid bearer token says
+`WWW-Authenticate: Bearer realm="matura", resource_metadata="<public URL>/.well-known/oauth-protected-resource"`.
+Apps that expose an MCP server do the same for their own resource with the SDK helpers
+(`protected_resource_metadata` / `www_authenticate` in Python, `protectedResourceMetadata` / `wwwAuthenticate` in
+TypeScript, `NewResourceMetadata` / `WWWAuthenticate` in Go) and list the server's URL in their manifest's
+`auth.resources`, so an agent asking Keycloak with `resource=<that URL>` gets a token for the app
+([agents guide](../guide/agents.md)).
+
+**Not built yet:** consent screens and per-tool scopes, Client ID Metadata Documents and dynamic registration for
+outside MCP clients, customer-IdP-issued agent grants, SCIM provisioning of agents, OpenFGA relations, step-up,
+human-approval events mapped to EU AI Act articles, agents in the portal.

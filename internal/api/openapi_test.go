@@ -19,6 +19,7 @@ var openAPIAliases = map[string]string{
 	"POST /v1/apps/{app}/placements/{tid}:ready":           "POST /v1/apps/{app}/placements/{tid}",
 	"POST /v1/apps/{app}/placements/{tid}:deleted":         "POST /v1/apps/{app}/placements/{tid}",
 	"POST /v1/tenants/{tid}/invitations/{id}:resend":       "POST /v1/tenants/{tid}/invitations/{id}",
+	"POST /v1/tenants/{tid}/agents/{id}:rotate-secret":     "POST /v1/tenants/{tid}/agents/{id}",
 	"POST /v1/tenants/{tid}:restore":                       "POST /v1/tenants/{tid}",
 	"POST /v1/tenants/{tid}/support-access/{id}:approve":   "POST /v1/tenants/{tid}/support-access/{id}",
 	"POST /v1/tenants/{tid}/support-access/{id}:deny":      "POST /v1/tenants/{tid}/support-access/{id}",

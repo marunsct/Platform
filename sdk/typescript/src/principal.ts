@@ -2,6 +2,35 @@
 
 export type Claims = Record<string, unknown>;
 
+/** What a principal is: a person, a tenant service account or an AI agent. */
+export type PrincipalKind = "human" | "service" | "agent";
+
+/** The agent acting for the token's subject in a delegated token (the `act` claim, RFC 8693 §4.1). */
+export interface Actor {
+  readonly sub: string;
+  readonly kind: "service" | "agent";
+  readonly clientId: string | null;
+}
+
+const KINDS: readonly string[] = ["human", "service", "agent"];
+
+function kindOf(c: Claims): PrincipalKind {
+  if (typeof c["kind"] === "string" && KINDS.includes(c["kind"])) return c["kind"] as PrincipalKind;
+  // tokens from before agent identity: a client-credentials token has client_id and no email
+  return "client_id" in c && !("email" in c) ? "service" : "human";
+}
+
+function actorOf(act: unknown): Actor | null {
+  if (!act || typeof act !== "object" || Array.isArray(act)) return null;
+  const a = act as Record<string, unknown>;
+  if (!a["sub"]) return null;
+  return Object.freeze({
+    sub: String(a["sub"]),
+    kind: a["kind"] === "service" ? "service" : "agent",
+    clientId: strOrNull(a["client_id"]),
+  });
+}
+
 export interface PrincipalInit {
   userId: string;
   tenantId: string | null;
@@ -20,6 +49,8 @@ export interface PrincipalInit {
   sessionId?: string | null;
   clientId?: string | null;
   isService?: boolean;
+  kind?: PrincipalKind;
+  actor?: Actor | null;
   claims?: Claims;
 }
 
@@ -36,6 +67,10 @@ function strings(v: unknown): string[] {
  *
  * Apps check `permissions` (the token's `perms`), never role names: roles are defined and edited in Matura,
  * permissions are what the app's code declares (ADR 0008).
+ *
+ * `kind` is what `userId` is: `human`, `service` (a tenant service account) or `agent` (an AI agent). `actor` is set
+ * on a delegated token: an agent acting for the person in `userId`, whose `permissions` are already only those both
+ * have. Record both in your audit log.
  */
 export class Principal {
   readonly userId: string;
@@ -55,6 +90,8 @@ export class Principal {
   readonly sessionId: string | null;
   readonly clientId: string | null;
   readonly isService: boolean;
+  readonly kind: PrincipalKind;
+  readonly actor: Actor | null;
   readonly claims: Claims;
 
   constructor(init: PrincipalInit) {
@@ -74,7 +111,9 @@ export class Principal {
     this.mfa = init.mfa ?? false;
     this.sessionId = init.sessionId ?? null;
     this.clientId = init.clientId ?? null;
-    this.isService = init.isService ?? false;
+    this.kind = init.kind ?? (init.isService ? "service" : "human");
+    this.isService = init.isService ?? this.kind !== "human";
+    this.actor = init.actor ?? null;
     this.claims = init.claims ?? {};
   }
 
@@ -104,9 +143,16 @@ export class Principal {
       mfa: amr.includes("mfa") || amr.includes("otp") || amr.includes("hwk") || acr === "2" || acr === "3",
       sessionId: strOrNull(c["sid"]),
       clientId: strOrNull(c["azp"] || c["client_id"] || null),
-      isService: "client_id" in c && !("email" in c),
+      isService: kindOf(c) !== "human",
+      kind: kindOf(c),
+      actor: actorOf(c["act"]),
       claims: c,
     });
+  }
+
+  /** True when an agent acts for the person in `userId` (the token has `act`). */
+  get isDelegated(): boolean {
+    return this.actor !== null;
   }
 
   /** True when the token grants `permission` (or `*`). With `permsRef` call {@link expand} first. */

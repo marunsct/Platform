@@ -60,6 +60,8 @@ func (s *Server) tokenContext(w http.ResponseWriter, r *http.Request) {
 		// Keycloak session start and the last token issued in it, in Unix milliseconds (0: unknown)
 		SessionStarted int64 `json:"session_started"`
 		SessionLastUse int64 `json:"session_last_use"`
+		// what an agent's client asked a token for (audience, resource or matura_app parameter)
+		Audience string `json:"audience"`
 	}
 	if !decode(w, r, &in) {
 		return
@@ -72,7 +74,8 @@ func (s *Server) tokenContext(w http.ResponseWriter, r *http.Request) {
 		User: store.UserProfile{ID: in.UserID, Email: in.Email, EmailVerified: in.EmailVerified, DisplayName: in.Name,
 			Locale: in.Locale},
 		ClientID: in.ClientID, Tenant: in.Tenant, Workspace: in.Workspace,
-		SessionStarted: unixMilli(in.SessionStarted), SessionLastUse: unixMilli(in.SessionLastUse)})
+		SessionStarted: unixMilli(in.SessionStarted), SessionLastUse: unixMilli(in.SessionLastUse),
+		App: in.Audience, APIAudience: s.apiAudience})
 	if refusal(w, err) {
 		return
 	}

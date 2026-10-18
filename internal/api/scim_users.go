@@ -454,7 +454,12 @@ func (s *Server) scimCreateUser(w http.ResponseWriter, r *http.Request, tid uuid
 			}
 		}
 	}
-	if _, err := s.store.GetUser(ctx, in.UserID); errors.Is(err, store.ErrNotFound) {
+	if u, err := s.store.GetUser(ctx, in.UserID); err == nil && u.Kind != "human" {
+		undo()
+		s.scimFail(w, r, scimErr(http.StatusConflict, "uniqueness", "this address belongs to an agent or service "+
+			"account, which SCIM does not manage"))
+		return
+	} else if errors.Is(err, store.ErrNotFound) {
 		if _, err := s.store.UpsertUser(ctx, store.UserProfile{ID: in.UserID, Email: in.Email, EmailVerified: true,
 			DisplayName: deref(in.DisplayName)}); err != nil {
 			undo()

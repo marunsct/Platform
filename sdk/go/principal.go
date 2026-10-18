@@ -32,7 +32,28 @@ type Claims struct {
 	ACR             string
 	AMR             []string
 	SessionID       string // sid
+	Kind            string // kind: human, service or agent; "" in tokens from before agent identity
+	Act             *Actor // act: the agent acting for sub in a delegated token (RFC 8693)
 	Raw             map[string]any
+}
+
+// Actor is the agent acting for the token's subject in a delegated token (the act claim, RFC 8693 §4.1).
+type Actor struct {
+	Sub      string // the agent's user id
+	Kind     string // service or agent
+	ClientID string // the agent's client id
+}
+
+func actorOf(v any) *Actor {
+	m, ok := v.(map[string]any)
+	if !ok || str(m["sub"]) == "" {
+		return nil
+	}
+	a := &Actor{Sub: str(m["sub"]), Kind: "agent", ClientID: str(m["client_id"])}
+	if m["kind"] == "service" {
+		a.Kind = "service"
+	}
+	return a
 }
 
 func claimsFrom(raw map[string]any) *Claims {
@@ -44,7 +65,8 @@ func claimsFrom(raw map[string]any) *Claims {
 		TenantID: str(raw["tid"]), Tenant: str(raw["tenant"]), WorkspaceID: str(raw["wid"]),
 		TenantRoles: strs(raw["troles"]), Roles: strs(raw["roles"]), Perms: strs(raw["perms"]),
 		PermsRef: str(raw["perms_ref"]), Versions: map[string]int64{}, PlacementMode: str(raw["pmode"]),
-		ACR: str(raw["acr"]), AMR: strs(raw["amr"]), SessionID: str(raw["sid"]), Raw: raw,
+		ACR: str(raw["acr"]), AMR: strs(raw["amr"]), SessionID: str(raw["sid"]), Kind: str(raw["kind"]),
+		Act: actorOf(raw["act"]), Raw: raw,
 	}
 	if s, ok := raw["aud"].(string); ok {
 		c.Audience = []string{s}
@@ -91,6 +113,10 @@ func num(v any) int64 {
 //
 // Apps check Permissions (the token's perms), never role names: roles are defined and edited in Matura, permissions
 // are what the app's code declares (ADR 0008). Absent claims are empty strings.
+//
+// Kind is what UserID is: human, service (a tenant service account) or agent (an AI agent). Actor is set on a
+// delegated token: an agent acting for the person in UserID, whose Permissions are already only those both have.
+// Record both in your audit log.
 type Principal struct {
 	UserID        string
 	TenantID      string
@@ -109,13 +135,26 @@ type Principal struct {
 	SessionID     string
 	ClientID      string
 	IsService     bool
+	Kind          string // human, service or agent
+	Actor         *Actor // nil unless an agent acts for UserID
 	Claims        *Claims
 }
+
+// IsDelegated reports whether an agent acts for the person in UserID (the token has act).
+func (p *Principal) IsDelegated() bool { return p.Actor != nil }
 
 // PrincipalFromClaims builds a principal with the same rules as the Python and TypeScript SDKs.
 func PrincipalFromClaims(c *Claims) *Principal {
 	_, hasClientID := c.Raw["client_id"]
 	_, hasEmail := c.Raw["email"]
+	kind := c.Kind
+	if kind != "human" && kind != "service" && kind != "agent" {
+		// tokens from before agent identity: a client-credentials token has client_id and no email
+		kind = "human"
+		if hasClientID && !hasEmail {
+			kind = "service"
+		}
+	}
 	client := c.AuthorizedParty
 	if client == "" {
 		client = c.ClientID
@@ -127,7 +166,7 @@ func PrincipalFromClaims(c *Claims) *Principal {
 		PlacementMode: c.PlacementMode,
 		MFA: slices.Contains(c.AMR, "mfa") || slices.Contains(c.AMR, "otp") || slices.Contains(c.AMR, "hwk") ||
 			c.ACR == "2" || c.ACR == "3",
-		SessionID: c.SessionID, ClientID: client, IsService: hasClientID && !hasEmail, Claims: c,
+		SessionID: c.SessionID, ClientID: client, IsService: kind != "human", Kind: kind, Actor: c.Act, Claims: c,
 	}
 }
 

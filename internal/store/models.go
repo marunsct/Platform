@@ -65,6 +65,7 @@ type Membership struct {
 	UpdatedAt   time.Time `json:"updated_at"`
 	Email       *string   `json:"email,omitempty"`
 	DisplayName *string   `json:"display_name,omitempty"`
+	Kind        string    `json:"kind"` // the user's: human, service or agent
 }
 
 type App struct {
