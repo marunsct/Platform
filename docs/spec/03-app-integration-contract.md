@@ -55,7 +55,14 @@ Issued by Keycloak with the Matura mapper (TS5). JWT, ES256 or RS256, 5-minute l
 | `pmode` | string | placement mode for this app and tenant: `shared`, `schema` or `database` (routing hint; the SDK still checks its placement cache) |
 | `acr`, `amr` | | MFA level and methods |
 | `sid` | string | session id, for back-channel logout |
-| `azp`, `client_id` | | for machine tokens; `sub` is then the service account |
+| `kind` | string | what `sub` is: `human`, `service` (a tenant service account) or `agent` (an AI agent); absent in tokens from before TS15, which count as `human` (or `service` when they have `client_id` and no `email`) |
+| `act` | object | delegated tokens only: `{"sub": <agent id>, "kind": "agent", "client_id": "agent-…"}`, the agent acting for `sub` (RFC 8693 §4.1); `perms` are then only those both the person and the agent have |
+| `azp`, `client_id` | | the client the token was issued to: for an agent's own token `sub` is the agent; for a delegated token `azp` is the agent's client |
+
+An agent's tokens (TS15, technical specification §18) have the app's client id in `aud` like any other. An app
+treats them like a person's: check `perms`. It should record `kind` and, for a delegated token, `act.sub` with `sub`
+in its own audit trail, so "the agent did this for Ana" stays visible. Agents appear in `matura_user` with their
+`kind`, and in `matura_membership` and `matura_role_grant` like people.
 
 Roles are defined and edited in Matura (ADR 0008), so the app does not know which permissions a role gives:
 Matura expands them into `perms`. An app checks `perms` and never needs role names, which is what makes a check
@@ -295,7 +302,9 @@ matura.on("placement.provisioned", run_migrations_for_tenant)
 ```
 
 `Principal`: `user_id`, `tenant_id`, `tenant_slug`, `workspace_id`, `tenant_roles`, `roles`, `permissions`,
-`mfa`, `session_id`, `is_service`. Helpers: `require_role`, `require_permission`, `require_tenant_role`,
+`mfa`, `session_id`, `is_service`, `kind` (`human`, `service`, `agent`), `actor` (the agent of a delegated token, or
+none). Helpers for apps that expose an MCP server or an API agents call: protected-resource metadata (RFC 9728) and
+the `WWW-Authenticate` challenge pointing to it. Helpers: `require_role`, `require_permission`, `require_tenant_role`,
 `require_mfa`.
 
 ## 9. Adopting the contract in an existing app
