@@ -9,6 +9,7 @@
 | [SCIM provisioning](scim.md) | tenant admins letting Okta, Microsoft Entra ID or another SCIM client create, update, deactivate and remove people and groups, and mapping groups to app roles |
 | [Agents and service accounts](agents.md) | tenant admins creating service accounts and AI agents; developers getting agent and delegated (on-behalf-of) tokens, checking them in an app, and exposing an MCP server with Keycloak as its authorisation server |
 | [Metering, quotas and billing](billing.md) | operators putting meters in plans and sending usage to Stripe, Lago or OpenMeter; developers consuming quota and reporting usage |
+| [Moving from Auth0, Clerk or Keycloak](migrating.md) | operators importing people, organisations and roles with `matura import` |
 | [Customer portal](portal.md) | anyone running, using or developing the customer admin portal served at `/portal/` |
 | [Readiness](readiness.md) | operators checking which security controls are in place (`matura check`), recording evidence, exporting OSCAL, turning on the trust page and filling the policy templates |
 | [Conformance kit](conformance.md) | anyone checking that an app, in any language, refuses bad tokens and missing permissions, keeps tenants apart and verifies signed events |

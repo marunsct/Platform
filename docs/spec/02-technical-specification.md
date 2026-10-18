@@ -175,6 +175,23 @@ The OpenAPI 3.1 document lives in `api/openapi.yaml` and is the source for gener
   (STARTTLS when offered; credentials only over TLS or to localhost) and retries with backoff (1, 2, 4 … 64 minutes)
   up to 8 attempts, then marks the row `failed`. Without `MATURA_SMTP_ADDR` mail is queued but not sent.
 
+### 5.1.1 User import (TS27)
+
+`POST /admin/v1/users:import {users: [{email, email_verified, first_name, last_name, disabled, source,
+external_id, tenants: [{slug, name, tenant_role, app_roles}]}], send_password_email}` (operators, at most 1000 per
+request) works in three passes:
+
+1. Each person's Keycloak account is found by email or created. A created account has the required action
+   `UPDATE_PASSWORD` and the attributes `matura_import_source` and `matura_import_id`, and gets an
+   execute-actions email when asked. The person's maturad user is recorded, and is deactivated when `disabled`.
+2. Tenants that do not exist are created by their first `owner` in the request.
+3. Everyone joins their tenants with their tenant role, and gets their app roles; an app that is not enabled for
+   the tenant is enabled first.
+
+Each result reports `created`, `existing` or `error`, plus the memberships and roles that could not be made. A
+rerun changes nothing it already made. `matura import auth0|clerk|keycloak` converts those systems' exports into
+this format ([migration guide](../guide/migrating.md)).
+
 ### 5.2 Customer portal (TS3, TS8)
 
 - **Serving:** the portal is a static single-page app (`web/portal`) whose build output is committed in

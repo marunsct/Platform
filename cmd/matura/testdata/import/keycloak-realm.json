@@ -1,0 +1,5 @@
+{"realm":"apps","users":[
+ {"id":"k1","username":"ana@acme.test","email":"ana@acme.test","emailVerified":true,"firstName":"Ana","enabled":true,
+  "groups":["/orgs/acme","/orgs/acme/admins","/staff"]},
+ {"id":"k2","username":"bo","email":"bo@acme.test","enabled":false,"groups":["/orgs/acme"]},
+ {"id":"k3","username":"service-account-ci","serviceAccountClientId":"ci"}]}

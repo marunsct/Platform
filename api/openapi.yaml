@@ -3478,6 +3478,114 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+  /admin/v1/users:import:
+    post:
+      operationId: importUsers
+      summary: Import people with their organisations and roles
+      description: |
+        Operators (§5.1.1). Accounts are found by email or created at Keycloak (with `UPDATE_PASSWORD`), tenants are
+        created by their first owner in the request, then everyone joins with their roles. A rerun changes nothing it
+        made. `matura import` converts Auth0, Clerk and Keycloak exports to this format.
+      tags: [operator]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [users]
+              properties:
+                send_password_email:
+                  type: boolean
+                users:
+                  type: array
+                  maxItems: 1000
+                  items:
+                    type: object
+                    required: [email]
+                    properties:
+                      email:
+                        type: string
+                      email_verified:
+                        type: boolean
+                      first_name:
+                        type: string
+                      last_name:
+                        type: string
+                      disabled:
+                        type: boolean
+                      source:
+                        type: string
+                      external_id:
+                        type: string
+                      tenants:
+                        type: array
+                        items:
+                          type: object
+                          required: [slug]
+                          properties:
+                            slug:
+                              type: string
+                            name:
+                              type: string
+                            tenant_role:
+                              $ref: '#/components/schemas/TenantRole'
+                            app_roles:
+                              type: array
+                              items:
+                                $ref: '#/components/schemas/InvitedRole'
+      responses:
+        '200':
+          description: One result per person.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [created, existing, failed, results]
+                properties:
+                  created:
+                    type: integer
+                  existing:
+                    type: integer
+                  failed:
+                    type: integer
+                  results:
+                    type: array
+                    items:
+                      type: object
+                      required: [email, status]
+                      properties:
+                        email:
+                          type: string
+                        status:
+                          type: string
+                          enum: [created, existing, error]
+                        user_id:
+                          type: string
+                          format: uuid
+                        error:
+                          type: string
+                        joined:
+                          type: array
+                          items:
+                            type: string
+                        created_tenants:
+                          type: array
+                          items:
+                            type: string
+                        issues:
+                          type: array
+                          items:
+                            type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '503':
+          $ref: '#/components/responses/IdentityUnavailable'
   /admin/v1/keys:rewrap:
     post:
       operationId: rewrapKeys

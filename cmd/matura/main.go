@@ -14,6 +14,7 @@ const usage = `usage: matura <command> [flags]
 
 commands:
   check    readiness score, gaps and fixes for an installation (matura check -h)
+  import   people, organisations and roles from Auth0, Clerk or Keycloak (matura import -h)
 
 environment:
   MATURA_URL     maturad's address (default http://localhost:8080)
@@ -28,6 +29,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 	switch args[0] {
 	case "check":
 		return check(args[1:], stdout, stderr)
+	case "import":
+		return importCmd(args[1:], stdout, stderr)
 	case "-h", "--help", "help":
 		fmt.Fprint(stdout, usage)
 		return 0

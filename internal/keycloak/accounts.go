@@ -116,3 +116,8 @@ func (c *Client) UpdateAccount(ctx context.Context, id string, ch AccountChange)
 	}
 	return c.do(ctx, http.MethodPut, "users/"+url.PathEscape(id), rep, nil)
 }
+
+// ExecuteActionsEmail emails the person a link to do the actions (UPDATE_PASSWORD, VERIFY_EMAIL…) at Keycloak.
+func (c *Client) ExecuteActionsEmail(ctx context.Context, id string, actions []string) error {
+	return c.do(ctx, http.MethodPut, "users/"+url.PathEscape(id)+"/execute-actions-email", actions, nil)
+}

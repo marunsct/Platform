@@ -1,0 +1,4 @@
+{"data":[{"role":"org:admin","organization":{"slug":"acme","name":"Acme"},"public_user_data":{"user_id":"user_1"}},
+         {"role":"org:member","organization":{"slug":"acme","name":"Acme"},"public_user_data":{"user_id":"user_2"}},
+         {"role":"org:member","organization":{"slug":"globex","name":"Globex"},"public_user_data":{"user_id":"user_1"}}],
+ "total_count":3}

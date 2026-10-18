@@ -220,6 +220,7 @@ func (s *Server) Handler() http.Handler {
 	s.handle(api, "DELETE /admin/v1/users/{uid}", s.deleteUser)
 	s.handle(api, "POST /admin/v1/users/{uid}", s.userAction) // {uid}:revoke-tokens
 	s.handle(api, "POST /admin/v1/keys:rewrap", s.rewrapKeys)
+	s.handle(api, "POST /admin/v1/users:import", s.importUsers)
 	s.handle(api, "GET /admin/v1/tenants/{tid}/billing", s.getBillingCustomer)
 	s.handle(api, "PUT /admin/v1/tenants/{tid}/billing", s.putBillingCustomer)
 	s.handle(api, "GET /admin/v1/billing/exports", s.billingExports)
