@@ -68,6 +68,14 @@ func (p *Purger) Round(ctx context.Context) (purged, finished int, err error) {
 	if purged > 0 {
 		p.Log.Info("tenants purged after their grace period", "count", purged)
 	}
-	finished, err = p.Store.FinishDeletedTenants(ctx)
-	return purged, finished, err
+	if finished, err = p.Store.FinishDeletedTenants(ctx); err != nil {
+		return purged, finished, err
+	}
+	// access reviews past their deadline are completed (un-decided items revoked unless the review keeps them)
+	if n, err := p.Store.CompleteDueAccessReviews(ctx); err != nil {
+		return purged, finished, err
+	} else if n > 0 {
+		p.Log.Info("access reviews completed at their deadline", "count", n)
+	}
+	return purged, finished, nil
 }

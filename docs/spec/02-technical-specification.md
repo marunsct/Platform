@@ -882,8 +882,21 @@ app (otherwise 404; suspended 403).
 `no-authorization-model`, 422 `invalid` (a name the namespace refuses, or a tuple OpenFGA's model refuses, with
 its message), 501 `permissions-not-configured`, 503 `permissions-unavailable` with `Retry-After`. Tuple writes are
 not recorded in the audit log (they are app data, often high volume); Matura's own facts are audited where they
-change. Not built yet: per-tenant revision tokens, "who has access" views in the portal and access reviews
-(rest of TS11), conditions, `list-users`.
+change. Not built yet: per-tenant revision tokens, "who has access" views in the portal, conditions, `list-users`.
+
+### 18.4 Access reviews
+
+Owners and admins review who has access (migration 0021). `POST /v1/tenants/{tid}/access-reviews {name, due_at,
+on_pending?, apps?, tenant_roles?}` snapshots the active app role grants of people and agents (of the apps given,
+else all) and the `owner`, `admin` and `billing` tenant roles as items. Each item is decided keep or revoke with
+`PATCH …/{id}/items/{item} {decision, note?}`; nobody decides on their own access (422).
+
+`POST …/{id}:complete` applies the review, and so does the lifecycle worker once `due_at` passes (`completed_by`
+null). Items marked revoke, and undecided items unless `on_pending` is `keep`, lose their grant (`grant.revoked`)
+or have their tenant role lowered to member (`membership.updated`, which revokes their tokens for the tenant,
+§21). Each item records its `outcome`: `revoked`, `kept`, `already_gone`, or `last_owner_kept` (the last owner is
+never lowered). `:cancel` closes a review without changes. Starts, completions and cancellations are audited. The
+newest completed review is the tenant's evidence for the readiness control `tenant-access-review`.
 
 ## 19. SCIM 2.0 provisioning (TS14)
 

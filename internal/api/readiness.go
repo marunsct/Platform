@@ -45,7 +45,8 @@ func (s *Server) readinessFacts(ctx context.Context) (readiness.Facts, error) {
 		t := readiness.Tenant{ID: p.Tenant.ID, Slug: p.Tenant.Slug, Kind: p.Tenant.Kind, Status: p.Tenant.Status,
 			PolicySet: p.Policy.Version > 0, RequireMFA: p.Policy.RequireMFA, SessionMaxAge: p.Policy.SessionMaxAge,
 			IdleTimeout: p.Policy.IdleTimeout, AllowedEmailDomains: len(p.Policy.AllowedEmailDomains),
-			IPAllowlist: len(p.Policy.IPAllowlist), SinksActive: p.SinksActive, SinksFailing: p.SinksFailing}
+			IPAllowlist: len(p.Policy.IPAllowlist), SinksActive: p.SinksActive, SinksFailing: p.SinksFailing,
+			LastAccessReview: p.LastAccessReview}
 		if t.Status == "active" {
 			v, err := s.store.VerifyAudit(ctx, op, t.ID)
 			if err != nil {

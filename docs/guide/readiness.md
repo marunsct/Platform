@@ -67,6 +67,7 @@ a large installation takes a while; the trust page keeps its result for five min
 | [install-access-review](#install-access-review) | Access is reviewed at least quarterly | installation | yes | CC6.2, CC6.3 | A.5.18 | |
 | [install-vulnerability-scan](#install-vulnerability-scan) | Images and dependencies are scanned for vulnerabilities | installation | yes | CC7.1 | A.8.8 | |
 | [tenant-audit-chain](#tenant-audit-chain) | Every tenant's audit log verifies | tenant | yes | CC7.2 | A.8.15 | |
+| [tenant-access-review](#tenant-access-review) | Organisations review who has access at least quarterly | tenant | | CC6.2, CC6.3 | A.5.18 | |
 | [tenant-security-policy](#tenant-security-policy) | Each organisation has a security policy | tenant | | CC6.1 | | |
 | [tenant-mfa](#tenant-mfa) | Organisations require multi-factor authentication | tenant | yes | CC6.1 | A.8.5 | |
 | [tenant-session-limits](#tenant-session-limits) | Organisations limit session length and idle time | tenant | | CC6.1 | A.8.5 | |
@@ -151,6 +152,13 @@ severity in `details`). "Passed" is your judgement against your own remediation 
 ### tenant-audit-chain
 
 The same verification for each active tenant's chain.
+
+### tenant-access-review
+
+Passes when the organisation completed an access review (technical specification §18.4) in the last 92 days.
+Owners and admins start one (`POST /v1/tenants/{tid}/access-reviews`), mark each grant and admin role keep or
+revoke, and complete it. At the deadline, anything nobody decided is revoked, unless the review was started with
+`on_pending: keep`. Personal tenants are not applicable.
 
 ### tenant-security-policy
 

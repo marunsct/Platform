@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/marunsct/Platform/internal/api"
 	"github.com/marunsct/Platform/internal/ids"
@@ -96,6 +97,9 @@ func TestReadinessDevVersusProduction(t *testing.T) {
 				"require_mfa": true, "session_max_age": 28800, "idle_timeout": 1800,
 				"allowed_email_domains": []string{"acme.example"}})
 			owner.must(http.StatusCreated, "POST", "/v1/tenants/"+aid+"/audit/sinks", map[string]any{"url": "http://siem.test/in"})
+			review := owner.must(http.StatusCreated, "POST", "/v1/tenants/"+aid+"/access-reviews", map[string]any{
+				"name": "Q4", "due_at": time.Now().Add(48 * time.Hour), "on_pending": "keep"})
+			owner.must(http.StatusOK, "POST", "/v1/tenants/"+aid+"/access-reviews/"+review["id"].(string)+":complete", nil)
 			for _, kind := range []string{"restore-test", "access-review", "vulnerability-scan"} {
 				op.must(http.StatusCreated, "POST", "/admin/v1/evidence", map[string]any{"kind": kind, "passed": true,
 					"details": map[string]any{"by": "test"}})
@@ -103,7 +107,7 @@ func TestReadinessDevVersusProduction(t *testing.T) {
 			rep = op.must(http.StatusOK, "GET", "/admin/v1/readiness", nil)
 			got = statuses(t, rep)
 			for _, id := range []string{"tenant-mfa", "tenant-security-policy", "tenant-session-limits",
-				"tenant-invite-domains", "tenant-audit-streaming", "install-restore-test", "install-access-review",
+				"tenant-invite-domains", "tenant-audit-streaming", "install-restore-test", "install-access-review", "tenant-access-review",
 				"install-vulnerability-scan", "install-audit-chain", "tenant-audit-chain"} {
 				if got[id] != "pass" {
 					t.Errorf("after fixes %s: %s", id, got[id])

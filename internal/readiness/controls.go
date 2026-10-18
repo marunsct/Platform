@@ -174,6 +174,22 @@ var Catalogue = []Control{
 		},
 	},
 	{
+		ID: "tenant-access-review", Title: "Organisations review who has access at least quarterly", Scope: scTen,
+		Fix:  "Owners or admins start one with POST /v1/tenants/{tid}/access-reviews and complete it; un-reviewed access is revoked at its deadline.",
+		Refs: refs(soc2, "CC6.2", soc2, "CC6.3", iso, "A.5.18"),
+		tenant: func(f Facts, t Tenant) (Status, string) {
+			if t.Kind == "personal" {
+				return NotApplicable, "personal tenant"
+			}
+			if t.LastAccessReview == nil {
+				return Fail, "no access review completed"
+			}
+			age := f.Now.Sub(*t.LastAccessReview)
+			return check(age <= 92*24*time.Hour, "access review completed "+t.LastAccessReview.Format("2006-01-02"),
+				"last access review "+t.LastAccessReview.Format("2006-01-02")+", over a quarter ago")
+		},
+	},
+	{
 		ID: "tenant-security-policy", Title: "Each organisation has a security policy", Scope: scTen,
 		Fix:  "Owners or admins set one in the portal (Security) or with PUT /v1/tenants/{tid}/security-policy.",
 		Refs: refs(soc2, "CC6.1"),

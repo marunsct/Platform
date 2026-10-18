@@ -12,7 +12,7 @@
     },
     "results": [
       {
-        "description": "12 of 19 applicable controls pass (63.2%). Readiness shows which controls are in place on this installation and the evidence for them. It is not an audit and does not certify compliance with any framework; mappings are indicative and an auditor decides.",
+        "description": "12 of 20 applicable controls pass (60.0%). Readiness shows which controls are in place on this installation and the evidence for them. It is not an audit and does not certify compliance with any framework; mappings are indicative and an auditor decides.",
         "end": "2026-10-17T09:30:00Z",
         "findings": [
           {
@@ -235,6 +235,23 @@
             },
             "title": "Every tenant's audit log verifies",
             "uuid": "7521e49f-a703-5dea-9785-6d2c8b57ed16"
+          },
+          {
+            "description": "1 of 2 tenants fail: globex. Fix: Owners or admins start one with POST /v1/tenants/{tid}/access-reviews and complete it; un-reviewed access is revoked at its deadline.",
+            "related-observations": [
+              {
+                "observation-uuid": "19378b40-463b-5853-8707-b28323f13176"
+              }
+            ],
+            "target": {
+              "status": {
+                "state": "not-satisfied"
+              },
+              "target-id": "tenant-access-review",
+              "type": "objective-id"
+            },
+            "title": "Organisations review who has access at least quarterly",
+            "uuid": "fba5957d-0923-5f1b-b423-a05725cf0b73"
           },
           {
             "description": "1 of 2 tenants fail: globex. Fix: Owners or admins set one in the portal (Security) or with PUT /v1/tenants/{tid}/security-policy.",
@@ -895,6 +912,53 @@
               "control-objective"
             ],
             "uuid": "4c5964ea-f00b-5f72-9b37-cc8a2d302c36"
+          },
+          {
+            "collected": "2026-10-17T09:30:00Z",
+            "description": "1 of 2 tenants fail: globex",
+            "links": [
+              {
+                "href": "https://github.com/marunsct/Platform/blob/main/docs/guide/readiness.md#tenant-access-review",
+                "rel": "reference"
+              }
+            ],
+            "methods": [
+              "TEST"
+            ],
+            "props": [
+              {
+                "name": "matura-status",
+                "ns": "https://matura.dev/ns/oscal",
+                "value": "fail"
+              },
+              {
+                "name": "framework-reference",
+                "ns": "https://matura.dev/ns/oscal",
+                "value": "SOC 2 CC6.2"
+              },
+              {
+                "name": "framework-reference",
+                "ns": "https://matura.dev/ns/oscal",
+                "value": "SOC 2 CC6.3"
+              },
+              {
+                "name": "framework-reference",
+                "ns": "https://matura.dev/ns/oscal",
+                "value": "ISO/IEC 27001:2022 A.5.18"
+              }
+            ],
+            "subjects": [
+              {
+                "subject-uuid": "169313e3-1e15-5a04-a747-ef1d7e5a5c55",
+                "title": "Acme Cloud",
+                "type": "component"
+              }
+            ],
+            "title": "Organisations review who has access at least quarterly",
+            "types": [
+              "control-objective"
+            ],
+            "uuid": "19378b40-463b-5853-8707-b28323f13176"
           },
           {
             "collected": "2026-10-17T09:30:00Z",

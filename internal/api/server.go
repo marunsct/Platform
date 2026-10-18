@@ -223,6 +223,11 @@ func (s *Server) Handler() http.Handler {
 	s.handle(api, "PUT /admin/v1/tenants/{tid}/billing", s.putBillingCustomer)
 	s.handle(api, "GET /admin/v1/billing/exports", s.billingExports)
 	s.handle(api, "GET /v1/tenants/{tid}/keys", s.getTenantKeys)
+	s.handle(api, "GET /v1/tenants/{tid}/access-reviews", s.listAccessReviews)
+	s.handle(api, "POST /v1/tenants/{tid}/access-reviews", s.startAccessReview)
+	s.handle(api, "GET /v1/tenants/{tid}/access-reviews/{id}", s.getAccessReview)
+	s.handle(api, "POST /v1/tenants/{tid}/access-reviews/{id}", s.accessReviewAction) // {id}:complete, :cancel
+	s.handle(api, "PATCH /v1/tenants/{tid}/access-reviews/{id}/items/{item}", s.decideAccessReviewItem)
 	s.handle(api, "POST /v1/tenants/{tid}/keys:rotate", s.rotateTenantKey)
 	s.handle(api, "PUT /v1/tenants/{tid}/keys/provider", s.putKeyProvider)
 	s.handle(api, "DELETE /v1/tenants/{tid}/keys/provider", s.deleteKeyProvider)

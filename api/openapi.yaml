@@ -4186,6 +4186,186 @@ paths:
           $ref: '#/components/responses/NotFound'
         '503':
           $ref: '#/components/responses/IdentityUnavailable'
+  /v1/tenants/{tid}/access-reviews:
+    parameters:
+      - $ref: '#/components/parameters/tid'
+    get:
+      operationId: listAccessReviews
+      summary: The tenant's access reviews
+      description: Owners and admins. Newest first, without items.
+      tags: [members]
+      responses:
+        '200':
+          description: The reviews.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AccessReview'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      operationId: startAccessReview
+      summary: Start an access review
+      description: |
+        Owners and admins (§18.4). Snapshots active app role grants (of `apps`, else all) and, unless
+        `tenant_roles` is false, owner, admin and billing tenant roles. At `due_at` undecided items are revoked
+        unless `on_pending` is `keep`.
+      tags: [members]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [name, due_at]
+              properties:
+                name:
+                  type: string
+                  maxLength: 200
+                due_at:
+                  type: string
+                  format: date-time
+                on_pending:
+                  type: string
+                  enum: [revoke, keep]
+                  default: revoke
+                apps:
+                  type: array
+                  items:
+                    type: string
+                tenant_roles:
+                  type: boolean
+                  default: true
+      responses:
+        '201':
+          description: The review with its items.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccessReview'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+  /v1/tenants/{tid}/access-reviews/{id}:
+    parameters:
+      - $ref: '#/components/parameters/tid'
+      - $ref: '#/components/parameters/id'
+    get:
+      operationId: getAccessReview
+      summary: An access review with its items
+      tags: [members]
+      responses:
+        '200':
+          description: The review.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccessReview'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /v1/tenants/{tid}/access-reviews/{id}:complete:
+    parameters:
+      - $ref: '#/components/parameters/tid'
+      - $ref: '#/components/parameters/id'
+    post:
+      operationId: completeAccessReview
+      summary: Apply an access review
+      description: Revokes items marked revoke, and undecided items unless the review keeps them; the last owner stays.
+      tags: [members]
+      responses:
+        '200':
+          description: The completed review with each item's outcome.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccessReview'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+  /v1/tenants/{tid}/access-reviews/{id}:cancel:
+    parameters:
+      - $ref: '#/components/parameters/tid'
+      - $ref: '#/components/parameters/id'
+    post:
+      operationId: cancelAccessReview
+      summary: Close an access review without changes
+      tags: [members]
+      responses:
+        '204':
+          description: Cancelled.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /v1/tenants/{tid}/access-reviews/{id}/items/{item}:
+    parameters:
+      - $ref: '#/components/parameters/tid'
+      - $ref: '#/components/parameters/id'
+      - name: item
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    patch:
+      operationId: decideAccessReviewItem
+      summary: Keep or revoke one item
+      description: Not on your own access (422). `pending` undoes a decision while the review is open.
+      tags: [members]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [decision]
+              properties:
+                decision:
+                  type: string
+                  enum: [keep, revoke, pending]
+                note:
+                  type: string
+      responses:
+        '200':
+          description: The item.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccessReviewItem'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
   /v1/tenants/{tid}/keys:
     parameters:
       - $ref: '#/components/parameters/tid'
@@ -8206,6 +8386,97 @@ components:
         updated_at:
           type: string
           format: date-time
+    AccessReview:
+      type: object
+      required: [id, tenant_id, name, status, on_pending, due_at, created_at, kept, revoked, pending, version]
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        status:
+          type: string
+          enum: [open, completed, cancelled]
+        on_pending:
+          type: string
+          enum: [revoke, keep]
+        due_at:
+          type: string
+          format: date-time
+        created_by:
+          type: [string, 'null']
+          format: uuid
+        created_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: [string, 'null']
+          format: date-time
+        completed_by:
+          type: [string, 'null']
+          format: uuid
+          description: Null when the deadline completed it.
+        kept:
+          type: integer
+        revoked:
+          type: integer
+        pending:
+          type: integer
+        version:
+          type: integer
+          format: int64
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AccessReviewItem'
+    AccessReviewItem:
+      type: object
+      required: [id, kind, user_id, user_kind, role, decision]
+      properties:
+        id:
+          type: string
+          format: uuid
+        kind:
+          type: string
+          enum: [grant, tenant_role]
+        grant_id:
+          type: [string, 'null']
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        user_kind:
+          type: string
+          enum: [human, service, agent]
+        email:
+          type: [string, 'null']
+        display_name:
+          type: [string, 'null']
+        app:
+          type: [string, 'null']
+        role:
+          type: string
+        workspace_id:
+          type: [string, 'null']
+          format: uuid
+        decision:
+          type: string
+          enum: [pending, keep, revoke]
+        decided_by:
+          type: [string, 'null']
+          format: uuid
+        decided_at:
+          type: [string, 'null']
+          format: date-time
+        note:
+          type: [string, 'null']
+        outcome:
+          type: [string, 'null']
+          enum: [kept, revoked, already_gone, last_owner_kept, null]
     SCIMGroupMapping:
       type: object
       required: [id, tenant_id, group, app, role, version, created_at]

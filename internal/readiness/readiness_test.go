@@ -30,7 +30,8 @@ func prodFacts() Facts {
 		f.Latest[kind] = &Evidence{Kind: kind, Passed: true, RecordedAt: now.Add(-48 * time.Hour)}
 		f.Recent[kind] = 4
 	}
-	f.Tenants = []Tenant{{ID: uuid.New(), Slug: "acme", Kind: "company", Status: "active", PolicySet: true,
+	reviewed := now.Add(-10 * 24 * time.Hour)
+	f.Tenants = []Tenant{{ID: uuid.New(), Slug: "acme", Kind: "company", Status: "active", PolicySet: true, LastAccessReview: &reviewed,
 		RequireMFA: true, SessionMaxAge: ptr(28800), IdleTimeout: ptr(1800), AllowedEmailDomains: 1, SinksActive: 1,
 		Audit: Chain{OK: true, Events: 12}}}
 	return f

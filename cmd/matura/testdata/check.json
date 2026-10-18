@@ -2,9 +2,9 @@
   "generated_at": "2026-10-17T09:30:00Z",
   "product": "Acme Cloud",
   "notice": "Readiness shows which controls are in place on this installation and the evidence for them. It is not an audit and does not certify compliance with any framework; mappings are indicative and an auditor decides.",
-  "score": 63.2,
+  "score": 60,
   "passed": 12,
-  "failed": 7,
+  "failed": 8,
   "not_applicable": 0,
   "controls": [
     {
@@ -297,6 +297,45 @@
           "slug": "globex",
           "status": "pass",
           "evidence": "14 events verified"
+        }
+      ]
+    },
+    {
+      "id": "tenant-access-review",
+      "title": "Organisations review who has access at least quarterly",
+      "scope": "tenant",
+      "status": "fail",
+      "evidence": "1 of 2 tenants fail: globex",
+      "fix": "Owners or admins start one with POST /v1/tenants/{tid}/access-reviews and complete it; un-reviewed access is revoked at its deadline.",
+      "docs": "https://github.com/marunsct/Platform/blob/main/docs/guide/readiness.md#tenant-access-review",
+      "public": false,
+      "optional": false,
+      "refs": [
+        {
+          "framework": "SOC 2",
+          "id": "CC6.2"
+        },
+        {
+          "framework": "SOC 2",
+          "id": "CC6.3"
+        },
+        {
+          "framework": "ISO/IEC 27001:2022",
+          "id": "A.5.18"
+        }
+      ],
+      "tenants": [
+        {
+          "tenant_id": "0192a000-0000-7000-8000-000000000001",
+          "slug": "acme",
+          "status": "pass",
+          "evidence": "access review completed 2026-09-17"
+        },
+        {
+          "tenant_id": "0192a000-0000-7000-8000-000000000002",
+          "slug": "globex",
+          "status": "fail",
+          "evidence": "no access review completed"
         }
       ]
     },

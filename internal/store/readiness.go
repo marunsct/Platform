@@ -11,10 +11,11 @@ import (
 
 // TenantPosture is a tenant with the settings readiness checks look at (TS24).
 type TenantPosture struct {
-	Tenant       Tenant
-	Policy       SecurityPolicy
-	SinksActive  int // audit destinations delivering
-	SinksFailing int
+	Tenant           Tenant
+	Policy           SecurityPolicy
+	SinksActive      int // audit destinations delivering
+	SinksFailing     int
+	LastAccessReview *time.Time // the newest completed access review (§18.4)
 }
 
 // TenantPostures reads every tenant that is not deleted, with its security policy and audit destinations, in one
@@ -27,7 +28,8 @@ func (s *Store) TenantPostures(ctx context.Context) ([]TenantPosture, error) {
 				coalesce(p.require_mfa, false), p.session_max_age, p.idle_timeout,
 				coalesce(p.allowed_email_domains, '{}'), coalesce(p.ip_allowlist, '{}'), coalesce(p.version, 0), p.updated_at,
 				(SELECT count(*) FROM audit_sink a WHERE a.tenant_id = t.id AND a.status = 'active'),
-				(SELECT count(*) FROM audit_sink a WHERE a.tenant_id = t.id AND a.status = 'failing')
+				(SELECT count(*) FROM audit_sink a WHERE a.tenant_id = t.id AND a.status = 'failing'),
+				(SELECT max(completed_at) FROM access_review r WHERE r.tenant_id = t.id AND r.status = 'completed')
 			FROM tenant t LEFT JOIN security_policy p ON p.tenant_id = t.id
 			WHERE t.status <> 'deleted' ORDER BY t.slug`)
 		if err != nil {
@@ -38,7 +40,7 @@ func (s *Store) TenantPostures(ctx context.Context) ([]TenantPosture, error) {
 			t, p := &tp.Tenant, &tp.Policy
 			err := r.Scan(&t.ID, &t.Slug, &t.Name, &t.Kind, &t.Status, &t.Plan, &t.DataModeDefault, &t.Version,
 				&t.CreatedAt, &t.UpdatedAt, &p.RequireMFA, &p.SessionMaxAge, &p.IdleTimeout, &p.AllowedEmailDomains,
-				&p.IPAllowlist, &p.Version, &p.UpdatedAt, &tp.SinksActive, &tp.SinksFailing)
+				&p.IPAllowlist, &p.Version, &p.UpdatedAt, &tp.SinksActive, &tp.SinksFailing, &tp.LastAccessReview)
 			p.TenantID = t.ID
 			return tp, err
 		})
