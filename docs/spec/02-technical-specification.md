@@ -441,6 +441,8 @@ client secret, audit stream secrets and placement passwords — are sealed under
 key version | nonce | AES-256-GCM(tenant key, value, aad + "|tenant:<id>")`. The ring hands format 3 to the
 tenant keys, so every place that opens secrets opens these too. Unwrapped tenant keys are cached for a minute.
 maturad turns tenant keys on by default (`MATURA_TENANT_KEYS=off` turns them off; existing secrets keep opening).
+Tenant export bundles (§19.5) are sealed under the tenant key at rest too (associated data `tenant_export:<id>`); the
+download opens them, and the recorded SHA-256 is of the plain bundle.
 
 - **Rotation:** owners `POST /v1/tenants/{tid}/keys:rotate`; earlier versions are retired and still open.
 - **Data keys for apps:** `POST /v1/apps/{app}/tenants/{tid}/data-keys` returns a fresh key and the same key sealed

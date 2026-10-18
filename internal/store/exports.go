@@ -129,7 +129,32 @@ func (s *Store) ExportBundle(ctx context.Context, sc Scope, tenantID, id uuid.UU
 		return audit(ctx, tx, tenantID, "tenant_export.downloaded", exportTarget(out),
 			map[string]any{"id": out.ID, "sha256": out.SHA256, "size_bytes": out.SizeBytes})
 	})
+	if err == nil {
+		bundle, err = s.openBundle(ctx, tenantID, id, bundle)
+	}
 	return out, bundle, err
+}
+
+func exportAAD(id uuid.UUID) string { return "tenant_export:" + id.String() }
+
+// sealBundle seals a bundle under the tenant's key when tenant keys are on (technical specification §9.2), so a
+// bundle at rest is shredded with the tenant's keys.
+func (s *Store) sealBundle(ctx context.Context, tid, id uuid.UUID, bundle []byte) ([]byte, error) {
+	if s.tenantKeys == nil {
+		return bundle, nil
+	}
+	return s.tenantKeys.Seal(ctx, tid, bundle, exportAAD(id))
+}
+
+// openBundle opens a sealed bundle; bundles stored before tenant keys were turned on are plain zip files.
+func (s *Store) openBundle(ctx context.Context, tid, id uuid.UUID, bundle []byte) ([]byte, error) {
+	if owner, _, sealed := TenantOf(bundle); !sealed || owner != tid {
+		return bundle, nil
+	}
+	if s.tenantKeys == nil {
+		return nil, errors.New("the export is sealed under the tenant's key and tenant keys are not configured")
+	}
+	return s.tenantKeys.OpenTenant(ctx, bundle, exportAAD(id))
 }
 
 // ClaimExport takes the oldest queued export (or one whose worker died while running it) for the privacy worker.
@@ -154,12 +179,16 @@ func (s *Store) FinishExport(ctx context.Context, e TenantExport, bundle []byte)
 			"log separately (GET /v1/tenants/{tid}/audit/export)", len(bundle), MaxExportBytes))
 	}
 	sum := sha256.Sum256(bundle)
+	stored, err := s.sealBundle(ctx, e.TenantID, e.ID, bundle)
+	if err != nil {
+		return TenantExport{}, err
+	}
 	var out TenantExport
-	err := s.tx(ctx, Scope{TenantID: e.TenantID}, func(tx pgx.Tx) (err error) {
+	err = s.tx(ctx, Scope{TenantID: e.TenantID}, func(tx pgx.Tx) (err error) {
 		out, err = scanExport(tx.QueryRow(ctx, `UPDATE tenant_export SET state = 'ready', bundle = $3,
 			size_bytes = $4, sha256 = $5, finished_at = now(), expires_at = now() + $6::interval, error = NULL
 			WHERE tenant_id = $1 AND id = $2 RETURNING `+exportCols,
-			e.TenantID, e.ID, bundle, len(bundle), sum[:], fmt.Sprintf("%d seconds", int(ExportTTL.Seconds()))))
+			e.TenantID, e.ID, stored, len(bundle), sum[:], fmt.Sprintf("%d seconds", int(ExportTTL.Seconds()))))
 		if err != nil {
 			return err
 		}
