@@ -106,3 +106,21 @@ a new token.
 SSO-only enforcement (no passwords for the domain, with a break-glass owner), group-to-role mapping from groups
 asserted at sign-in (groups provisioned by SCIM can be mapped: see [SCIM provisioning](scim.md)), certificate
 expiry warnings, a test-connection trace, the guided setup in the customer portal and a mock IdP for CI.
+
+## Testing sign-in in CI: the mock identity provider
+
+`cmd/matura-mockidp` is a small OpenID Connect provider for tests and CI, so you can connect a tenant's SSO, or
+have an app sign in, without a real Okta or Entra. It signs RS256 tokens with a key made at start, supports the
+authorization code flow (with PKCE, S256) and client credentials, and asks nothing: the authorization endpoint signs
+in the person named by `login_hint`, or the first person, at once. With `-choose` it shows a pick list instead.
+
+```sh
+go run ./cmd/matura-mockidp -issuer http://localhost:9400 \
+  -user 'ana@acme.test:Ana Example:engineering,admins' -user 'bo@acme.test:Bo' \
+  -client 'matura:matura-secret'
+```
+
+Then connect it as the tenant's OIDC connection: the discovery URL is
+`http://localhost:9400/.well-known/openid-configuration`, the client is `matura` with secret `matura-secret`, and the
+groups claim is `groups`. It keeps everything in memory and has no sign-in security at all: never run it where real
+people sign in. It does not speak SAML; test SAML against a real IdP's free developer tenant.
