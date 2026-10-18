@@ -2,8 +2,11 @@ package api_test
 
 import (
 	"bytes"
+	"context"
+	"encoding/base64"
 	"encoding/json"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -12,8 +15,18 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/uuid"
+
+	"github.com/marunsct/Platform/internal/access"
+	"github.com/marunsct/Platform/internal/api"
+	"github.com/marunsct/Platform/internal/fga"
+	"github.com/marunsct/Platform/internal/fga/fgatest"
 	"github.com/marunsct/Platform/internal/ids"
+	"github.com/marunsct/Platform/internal/keycloak"
 	"github.com/marunsct/Platform/internal/keycloak/keycloaktest"
+	"github.com/marunsct/Platform/internal/secrets"
+	"github.com/marunsct/Platform/internal/store"
+	"github.com/marunsct/Platform/internal/testdb"
 )
 
 // scimClient calls a tenant's SCIM endpoint with a bearer token, as an identity provider does.
@@ -587,5 +600,69 @@ func TestSCIMCrossTenant(t *testing.T) {
 	gina.must(http.StatusNotFound, "GET", "/v1/tenants/"+e.tid+"/scim/group-mappings", nil)
 	if memberStatus(t, e.owner, e.tid, uid) != "active" {
 		t.Fatal("acme's user changed")
+	}
+}
+
+// TestSCIMGroupsInOpenFGA: SCIM group membership is mirrored as group#member tuples by the permissions syncer.
+func TestSCIMGroupsInOpenFGA(t *testing.T) {
+	fake := fgatest.New(t)
+	kcFake := keycloaktest.New(t)
+	kc, err := keycloak.New(keycloak.Config{BaseURL: kcFake.URL, Realm: keycloaktest.Realm,
+		ClientID: keycloaktest.ClientID, ClientSecret: keycloaktest.ClientSecret})
+	if err != nil {
+		t.Fatal(err)
+	}
+	keys, _ := secrets.NewLocal(base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{7}, 32)))
+	st := store.New(testdb.New(t))
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	server := api.New(st, api.DevAuthenticator{}, keys, log)
+	svc := &access.Service{Client: &fga.Client{URL: fake.URL}, Store: st, StoreName: "matura-" + ids.New().String()[:8], Log: log}
+	server.SetAccess(svc)
+	server.SetKeycloak(kc, kcFake.Issuer())
+	dns := &fakeDNS{txt: map[string][]string{}}
+	server.SetResolver(dns)
+	srv := httptest.NewServer(server.Handler())
+	t.Cleanup(srv.Close)
+	syncer := &access.Syncer{Service: svc}
+	round := func() {
+		t.Helper()
+		if err := syncer.Round(context.Background()); err != nil {
+			t.Fatalf("sync round: %v", err)
+		}
+	}
+
+	alice := client{t: t, srv: srv, user: ids.New()}
+	tid := alice.must(http.StatusCreated, "POST", "/v1/tenants", map[string]any{"slug": "acme", "name": "Acme"})["id"].(string)
+	verifyDomain(t, alice, dns, tid, "acme.test")
+	tok := alice.must(http.StatusCreated, "POST", "/v1/tenants/"+tid+"/scim/tokens", map[string]any{"name": "idp"})
+	c := scimClient{t: t, base: tok["scim_base_url"].(string), token: tok["token"].(string)}
+	round()
+	uid := c.must(http.StatusCreated, "POST", "/Users", map[string]any{"userName": "ann@acme.test"})["id"].(string)
+	gid := c.must(http.StatusCreated, "POST", "/Groups", map[string]any{"displayName": "Staff",
+		"members": []any{map[string]any{"value": uid}}})["id"].(string)
+	round()
+	tuple := func() bool {
+		return fake.Has(fga.UserSubject(uuid.MustParse(tid), uuid.MustParse(uid)), "member",
+			fga.GroupObject(uuid.MustParse(tid), uuid.MustParse(gid)))
+	}
+	if !tuple() {
+		t.Fatalf("group member not mirrored: %v", fake.Tuples())
+	}
+	c.must(http.StatusNoContent, "PATCH", "/Groups/"+gid, map[string]any{
+		"schemas":    []string{"urn:ietf:params:scim:api:messages:2.0:PatchOp"},
+		"Operations": []any{map[string]any{"op": "remove", "path": `members[value eq "` + uid + `"]`}}})
+	round()
+	if tuple() {
+		t.Fatal("removed member still mirrored")
+	}
+	// a full resync writes current group members again
+	c.must(http.StatusNoContent, "PATCH", "/Groups/"+gid, map[string]any{
+		"schemas":    []string{"urn:ietf:params:scim:api:messages:2.0:PatchOp"},
+		"Operations": []any{map[string]any{"op": "add", "path": "members", "value": []any{map[string]any{"value": uid}}}}})
+	fake.Wipe()
+	_ = syncer.Round(context.Background()) // finds the store gone; the next round sets it up and writes every fact
+	round()
+	if !tuple() {
+		t.Fatalf("resync lost the group member: %v", fake.Tuples())
 	}
 }

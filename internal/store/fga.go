@@ -144,6 +144,7 @@ type AccessFacts struct {
 	Members    []Membership // active
 	Workspaces []Workspace  // not deleted
 	Grants     []Grant      // active
+	Groups     []SCIMGroupMember
 }
 
 // FGAFacts reads the current facts of every tenant that is not deleted. The cursor is taken first, so replaying the
@@ -174,7 +175,19 @@ func (s *Store) FGAFacts(ctx context.Context) (AccessFacts, error) {
 		if out.Workspaces, err = pgx.CollectRows(rows, func(r pgx.CollectableRow) (Workspace, error) { return scanWorkspace(r) }); err != nil {
 			return err
 		}
-		out.Grants, err = activeGrants(ctx, tx, uuid.Nil)
+		if out.Grants, err = activeGrants(ctx, tx, uuid.Nil); err != nil {
+			return err
+		}
+		rows, err = tx.Query(ctx, `SELECT m.tenant_id, m.group_id, m.user_id FROM scim_group_member m
+			JOIN tenant t ON t.id = m.tenant_id WHERE t.status NOT IN ('deleting', 'deleted')
+			ORDER BY m.tenant_id, m.group_id, m.user_id`)
+		if err != nil {
+			return err
+		}
+		out.Groups, err = pgx.CollectRows(rows, func(r pgx.CollectableRow) (SCIMGroupMember, error) {
+			var g SCIMGroupMember
+			return g, r.Scan(&g.TenantID, &g.GroupID, &g.UserID)
+		})
 		return err
 	})
 	return out, err

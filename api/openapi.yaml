@@ -66,6 +66,10 @@ tags:
     description: Called by app backends with their client credentials.
   - name: permissions
     description: Fine-grained resource permissions on OpenFGA (optional component).
+  - name: scim-setup
+    description: SCIM tokens and group-to-role mappings, managed by tenant owners and admins.
+  - name: scim
+    description: SCIM 2.0 service provider per tenant (RFC 7643/7644), called by the tenant's identity provider.
   - name: internal
     description: Called by Keycloak's Matura extension.
 
@@ -3981,6 +3985,637 @@ paths:
               schema:
                 $ref: '#/components/schemas/TokenRefusal'
 
+  /v1/tenants/{tid}/scim/tokens:
+    parameters:
+      - $ref: '#/components/parameters/tid'
+    get:
+      operationId: listSCIMTokens
+      summary: The tenant's SCIM tokens
+      description: Owners only. Live tokens (not revoked, not expired), without the token itself, and the SCIM base URL.
+      tags: [scim-setup]
+      responses:
+        '200':
+          description: Tokens.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, scim_base_url]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SCIMToken'
+                  scim_base_url:
+                    type: string
+                    format: uri
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      operationId: createSCIMToken
+      summary: Create a SCIM token
+      description: |
+        Owners of a company tenant. The token (`scim_…`) is shown once; only its SHA-256 is stored. At most five live
+        tokens. Rotate by creating a new token, configuring it in the identity provider, then revoking the old one.
+        Audited (`scim.token_created`).
+      tags: [scim-setup]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [name]
+              properties:
+                name:
+                  type: string
+                  maxLength: 100
+                expires_at:
+                  type: [string, 'null']
+                  format: date-time
+      responses:
+        '201':
+          description: The token, shown this once.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SCIMToken'
+                  - type: object
+                    required: [token, scim_base_url]
+                    properties:
+                      token:
+                        type: string
+                      scim_base_url:
+                        type: string
+                        format: uri
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+  /v1/tenants/{tid}/scim/tokens/{id}:
+    parameters:
+      - $ref: '#/components/parameters/tid'
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    delete:
+      operationId: revokeSCIMToken
+      summary: Revoke a SCIM token
+      description: Owners only. The token stops working at once. Audited (`scim.token_revoked`).
+      tags: [scim-setup]
+      responses:
+        '204':
+          description: Revoked.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /v1/tenants/{tid}/scim/group-mappings:
+    parameters:
+      - $ref: '#/components/parameters/tid'
+    get:
+      operationId: listSCIMGroupMappings
+      summary: Group-to-role mappings
+      description: Owners and admins.
+      tags: [scim-setup]
+      responses:
+        '200':
+          description: Mappings.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SCIMGroupMapping'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      operationId: createSCIMGroupMapping
+      summary: Map a SCIM group to an app role
+      description: |
+        Owners and admins. Members of every SCIM group whose displayName equals `group` (ignoring case) get the app
+        role for the whole tenant while they are active members and the app is enabled; the grant is revoked when
+        they leave the group, the group or mapping is deleted, or they are deactivated. Grants made by hand are never
+        touched. Existing members get the role at once (`grant.added` events).
+      tags: [scim-setup]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [group, app, role]
+              properties:
+                group:
+                  type: string
+                app:
+                  type: string
+                role:
+                  type: string
+      responses:
+        '201':
+          description: The mapping.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SCIMGroupMapping'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+  /v1/tenants/{tid}/scim/group-mappings/{id}:
+    parameters:
+      - $ref: '#/components/parameters/tid'
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    delete:
+      operationId: deleteSCIMGroupMapping
+      summary: Remove a group-to-role mapping
+      description: Owners and admins. The grants the mapping made are revoked.
+      tags: [scim-setup]
+      responses:
+        '204':
+          description: Removed.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /scim/v2/tenants/{tid}/ServiceProviderConfig:
+    parameters:
+      - $ref: '#/components/parameters/tid'
+    get:
+      operationId: scimServiceProviderConfig
+      summary: SCIM service provider configuration
+      description: RFC 7644 §4. PATCH, filter (eq and `and`, at most 200 results) and ETags are supported; bulk, sort and password changes are not.
+      tags: [scim]
+      security:
+        - scimToken: []
+      responses:
+        '200':
+          description: The configuration.
+          content:
+            application/scim+json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/SCIMError'
+  /scim/v2/tenants/{tid}/ResourceTypes:
+    parameters:
+      - $ref: '#/components/parameters/tid'
+    get:
+      operationId: scimResourceTypes
+      summary: SCIM resource types
+      description: User (with the enterprise extension) and Group.
+      tags: [scim]
+      security:
+        - scimToken: []
+      responses:
+        '200':
+          description: A ListResponse of resource types.
+          content:
+            application/scim+json:
+              schema:
+                $ref: '#/components/schemas/SCIMListResponse'
+        '401':
+          $ref: '#/components/responses/SCIMError'
+  /scim/v2/tenants/{tid}/Schemas:
+    parameters:
+      - $ref: '#/components/parameters/tid'
+    get:
+      operationId: scimSchemas
+      summary: SCIM schemas
+      description: The User, EnterpriseUser and Group schemas with the attributes Matura supports.
+      tags: [scim]
+      security:
+        - scimToken: []
+      responses:
+        '200':
+          description: A ListResponse of schemas.
+          content:
+            application/scim+json:
+              schema:
+                $ref: '#/components/schemas/SCIMListResponse'
+        '401':
+          $ref: '#/components/responses/SCIMError'
+  /scim/v2/tenants/{tid}/Users:
+    parameters:
+      - $ref: '#/components/parameters/tid'
+    get:
+      operationId: scimListUsers
+      summary: List or find provisioned users
+      description: |
+        Filters: `userName eq`, `externalId eq`, `id eq`, `active eq`, `emails[type eq "work"].value eq`,
+        `emails.value eq`, joined with `and` (others answer 400 invalidFilter). Oldest first.
+      tags: [scim]
+      security:
+        - scimToken: []
+      parameters:
+        - $ref: '#/components/parameters/scimFilter'
+        - $ref: '#/components/parameters/scimStartIndex'
+        - $ref: '#/components/parameters/scimCount'
+        - $ref: '#/components/parameters/scimAttributes'
+        - $ref: '#/components/parameters/scimExcludedAttributes'
+      responses:
+        '200':
+          description: A ListResponse of User resources.
+          content:
+            application/scim+json:
+              schema:
+                $ref: '#/components/schemas/SCIMListResponse'
+        '400':
+          $ref: '#/components/responses/SCIMError'
+        '401':
+          $ref: '#/components/responses/SCIMError'
+        '403':
+          $ref: '#/components/responses/SCIMError'
+    post:
+      operationId: scimCreateUser
+      summary: Provision a user
+      description: |
+        The account email (primary, else work, else first email, else a userName that is an address) must be in one
+        of the tenant's verified domains (400 invalidValue). A Keycloak account with that email is linked, otherwise
+        one is created (email verified, no password: sign-in goes through the tenant's SSO). Someone already in the
+        tenant (say, who joined through SSO) is adopted; anyone else joins with the SSO connection's default role (else
+        member) and the enabled apps' default roles, within the plan's member limit (403). A userName or externalId
+        already provisioned answers 409 uniqueness; `Idempotency-Key` replays a retried create.
+      tags: [scim]
+      security:
+        - scimToken: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/scim+json:
+            schema:
+              $ref: '#/components/schemas/SCIMUser'
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SCIMUser'
+      responses:
+        '201':
+          description: The user, with `Location` and `ETag`.
+          headers:
+            ETag:
+              schema:
+                type: string
+            Location:
+              schema:
+                type: string
+          content:
+            application/scim+json:
+              schema:
+                $ref: '#/components/schemas/SCIMUser'
+        '400':
+          $ref: '#/components/responses/SCIMError'
+        '401':
+          $ref: '#/components/responses/SCIMError'
+        '403':
+          $ref: '#/components/responses/SCIMError'
+        '409':
+          $ref: '#/components/responses/SCIMError'
+        '503':
+          $ref: '#/components/responses/SCIMError'
+  /scim/v2/tenants/{tid}/Users/{id}:
+    parameters:
+      - $ref: '#/components/parameters/tid'
+      - $ref: '#/components/parameters/scimId'
+    get:
+      operationId: scimGetUser
+      summary: Read a provisioned user
+      description: '`If-None-Match` with the current ETag answers 304.'
+      tags: [scim]
+      security:
+        - scimToken: []
+      parameters:
+        - $ref: '#/components/parameters/scimAttributes'
+        - $ref: '#/components/parameters/scimExcludedAttributes'
+      responses:
+        '200':
+          description: The user.
+          content:
+            application/scim+json:
+              schema:
+                $ref: '#/components/schemas/SCIMUser'
+        '304':
+          description: Not modified.
+        '401':
+          $ref: '#/components/responses/SCIMError'
+        '404':
+          $ref: '#/components/responses/SCIMError'
+    put:
+      operationId: scimReplaceUser
+      summary: Replace a provisioned user
+      description: |
+        Replaces the user. A replacement that changes nothing keeps the version. `active: false` deactivates the
+        membership (never the last owner's, 400), revokes group-made grants and signs the person out everywhere in
+        Keycloak. Name, email, employeeNumber and department follow on the Keycloak account. `If-Match` mismatch: 412.
+      tags: [scim]
+      security:
+        - scimToken: []
+      requestBody:
+        required: true
+        content:
+          application/scim+json:
+            schema:
+              $ref: '#/components/schemas/SCIMUser'
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SCIMUser'
+      responses:
+        '200':
+          description: The user.
+          content:
+            application/scim+json:
+              schema:
+                $ref: '#/components/schemas/SCIMUser'
+        '400':
+          $ref: '#/components/responses/SCIMError'
+        '401':
+          $ref: '#/components/responses/SCIMError'
+        '404':
+          $ref: '#/components/responses/SCIMError'
+        '409':
+          $ref: '#/components/responses/SCIMError'
+        '412':
+          $ref: '#/components/responses/SCIMError'
+        '503':
+          $ref: '#/components/responses/SCIMError'
+    patch:
+      operationId: scimPatchUser
+      summary: Change a provisioned user
+      description: |
+        RFC 7644 PATCH (add, replace, remove; paths with sub-attributes, value filters and the enterprise extension
+        prefix; path-less values). Applied to the current resource and saved like PUT. Accepts Entra ID's forms
+        (`"False"` strings, capitalised ops, manager as a plain id).
+      tags: [scim]
+      security:
+        - scimToken: []
+      requestBody:
+        required: true
+        content:
+          application/scim+json:
+            schema:
+              $ref: '#/components/schemas/SCIMPatchOp'
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SCIMPatchOp'
+      responses:
+        '200':
+          description: The user.
+          content:
+            application/scim+json:
+              schema:
+                $ref: '#/components/schemas/SCIMUser'
+        '400':
+          $ref: '#/components/responses/SCIMError'
+        '401':
+          $ref: '#/components/responses/SCIMError'
+        '404':
+          $ref: '#/components/responses/SCIMError'
+        '409':
+          $ref: '#/components/responses/SCIMError'
+        '412':
+          $ref: '#/components/responses/SCIMError'
+        '503':
+          $ref: '#/components/responses/SCIMError'
+    delete:
+      operationId: scimDeleteUser
+      summary: Deprovision a user
+      description: |
+        Removes the membership (grants revoked, contract events) and SCIM group memberships, and signs the person out.
+        The account is erased (as `DELETE /v1/me` would) only when SCIM created it, the email domain is verified by
+        the tenant and the person belongs to no other tenant (personal ones included); otherwise it stays.
+      tags: [scim]
+      security:
+        - scimToken: []
+      responses:
+        '204':
+          description: Deprovisioned.
+        '400':
+          $ref: '#/components/responses/SCIMError'
+        '401':
+          $ref: '#/components/responses/SCIMError'
+        '404':
+          $ref: '#/components/responses/SCIMError'
+        '412':
+          $ref: '#/components/responses/SCIMError'
+  /scim/v2/tenants/{tid}/Groups:
+    parameters:
+      - $ref: '#/components/parameters/tid'
+    get:
+      operationId: scimListGroups
+      summary: List or find groups
+      description: |
+        Filters: `displayName eq`, `externalId eq`, `id eq`, `members[value eq "…"]`, `members.value eq`, joined with
+        `and`. `excludedAttributes=members` skips loading members.
+      tags: [scim]
+      security:
+        - scimToken: []
+      parameters:
+        - $ref: '#/components/parameters/scimFilter'
+        - $ref: '#/components/parameters/scimStartIndex'
+        - $ref: '#/components/parameters/scimCount'
+        - $ref: '#/components/parameters/scimAttributes'
+        - $ref: '#/components/parameters/scimExcludedAttributes'
+      responses:
+        '200':
+          description: A ListResponse of Group resources.
+          content:
+            application/scim+json:
+              schema:
+                $ref: '#/components/schemas/SCIMListResponse'
+        '400':
+          $ref: '#/components/responses/SCIMError'
+        '401':
+          $ref: '#/components/responses/SCIMError'
+    post:
+      operationId: scimCreateGroup
+      summary: Create a group
+      description: Members must be users provisioned in this tenant (400 otherwise). Mapped roles are granted to them.
+      tags: [scim]
+      security:
+        - scimToken: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/scim+json:
+            schema:
+              $ref: '#/components/schemas/SCIMGroup'
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SCIMGroup'
+      responses:
+        '201':
+          description: The group.
+          content:
+            application/scim+json:
+              schema:
+                $ref: '#/components/schemas/SCIMGroup'
+        '400':
+          $ref: '#/components/responses/SCIMError'
+        '401':
+          $ref: '#/components/responses/SCIMError'
+        '409':
+          $ref: '#/components/responses/SCIMError'
+  /scim/v2/tenants/{tid}/Groups/{id}:
+    parameters:
+      - $ref: '#/components/parameters/tid'
+      - $ref: '#/components/parameters/scimId'
+    get:
+      operationId: scimGetGroup
+      summary: Read a group
+      tags: [scim]
+      security:
+        - scimToken: []
+      parameters:
+        - $ref: '#/components/parameters/scimAttributes'
+        - $ref: '#/components/parameters/scimExcludedAttributes'
+      responses:
+        '200':
+          description: The group.
+          content:
+            application/scim+json:
+              schema:
+                $ref: '#/components/schemas/SCIMGroup'
+        '304':
+          description: Not modified.
+        '401':
+          $ref: '#/components/responses/SCIMError'
+        '404':
+          $ref: '#/components/responses/SCIMError'
+    put:
+      operationId: scimReplaceGroup
+      summary: Replace a group
+      description: Sets name, externalId and the full member list; mapped roles follow.
+      tags: [scim]
+      security:
+        - scimToken: []
+      requestBody:
+        required: true
+        content:
+          application/scim+json:
+            schema:
+              $ref: '#/components/schemas/SCIMGroup'
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SCIMGroup'
+      responses:
+        '200':
+          description: The group.
+          content:
+            application/scim+json:
+              schema:
+                $ref: '#/components/schemas/SCIMGroup'
+        '400':
+          $ref: '#/components/responses/SCIMError'
+        '401':
+          $ref: '#/components/responses/SCIMError'
+        '404':
+          $ref: '#/components/responses/SCIMError'
+        '409':
+          $ref: '#/components/responses/SCIMError'
+        '412':
+          $ref: '#/components/responses/SCIMError'
+    patch:
+      operationId: scimPatchGroup
+      summary: Change a group
+      description: |
+        Rename, add members, remove members (`members[value eq "…"]`, or Entra ID's value list). Answers 204 (with
+        the new ETag); with `attributes=` it answers 200 with the group. Re-adding a member is a no-op.
+      tags: [scim]
+      security:
+        - scimToken: []
+      requestBody:
+        required: true
+        content:
+          application/scim+json:
+            schema:
+              $ref: '#/components/schemas/SCIMPatchOp'
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SCIMPatchOp'
+      responses:
+        '200':
+          description: The group (only when attributes= is given).
+          content:
+            application/scim+json:
+              schema:
+                $ref: '#/components/schemas/SCIMGroup'
+        '204':
+          description: Changed.
+        '400':
+          $ref: '#/components/responses/SCIMError'
+        '401':
+          $ref: '#/components/responses/SCIMError'
+        '404':
+          $ref: '#/components/responses/SCIMError'
+        '409':
+          $ref: '#/components/responses/SCIMError'
+        '412':
+          $ref: '#/components/responses/SCIMError'
+    delete:
+      operationId: scimDeleteGroup
+      summary: Delete a group
+      description: Its members lose the roles it gave them.
+      tags: [scim]
+      security:
+        - scimToken: []
+      responses:
+        '204':
+          description: Deleted.
+        '401':
+          $ref: '#/components/responses/SCIMError'
+        '404':
+          $ref: '#/components/responses/SCIMError'
+        '412':
+          $ref: '#/components/responses/SCIMError'
 components:
   securitySchemes:
     bearer:
@@ -3998,8 +4633,51 @@ components:
       type: http
       scheme: bearer
       description: The shared `MATURA_INTERNAL_TOKEN`.
+    scimToken:
+      type: http
+      scheme: bearer
+      description: A tenant's SCIM token (`POST /v1/tenants/{tid}/scim/tokens`); valid only under that tenant's path.
 
   parameters:
+    scimId:
+      name: id
+      in: path
+      required: true
+      description: The resource id (a user's id is their Matura user id).
+      schema:
+        type: string
+    scimFilter:
+      name: filter
+      in: query
+      description: 'A SCIM filter: `eq` comparisons joined by `and`.'
+      schema:
+        type: string
+    scimStartIndex:
+      name: startIndex
+      in: query
+      description: 1-based index of the first result.
+      schema:
+        type: integer
+        default: 1
+    scimCount:
+      name: count
+      in: query
+      description: Page size (at most 200; 0 returns only totalResults).
+      schema:
+        type: integer
+        default: 100
+    scimAttributes:
+      name: attributes
+      in: query
+      description: Comma-separated top-level attributes to return (id, schemas and meta always are).
+      schema:
+        type: string
+    scimExcludedAttributes:
+      name: excludedAttributes
+      in: query
+      description: Comma-separated top-level attributes to leave out.
+      schema:
+        type: string
     tid:
       name: tid
       in: path
@@ -4142,6 +4820,12 @@ components:
         type: string
 
   responses:
+    SCIMError:
+      description: A SCIM error (RFC 7644 §3.12).
+      content:
+        application/scim+json:
+          schema:
+            $ref: '#/components/schemas/SCIMError'
     BadRequest:
       description: Malformed request (invalid JSON, unknown field, bad query parameter or header).
       content:
@@ -5996,3 +6680,198 @@ components:
         updated_at:
           type: [string, 'null']
           format: date-time
+    SCIMToken:
+      type: object
+      required: [id, tenant_id, name, prefix, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        prefix:
+          type: string
+          description: The token's first characters, to tell tokens apart.
+        created_by:
+          type: [string, 'null']
+          format: uuid
+        created_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: [string, 'null']
+          format: date-time
+        last_used_at:
+          type: [string, 'null']
+          format: date-time
+    SCIMGroupMapping:
+      type: object
+      required: [id, tenant_id, group, app, role, version, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        group:
+          type: string
+          description: SCIM group displayName, matched ignoring case.
+        app:
+          type: string
+        role:
+          type: string
+        version:
+          type: integer
+          format: int64
+        created_at:
+          type: string
+          format: date-time
+    SCIMUser:
+      type: object
+      description: |
+        A SCIM User (urn:ietf:params:scim:schemas:core:2.0:User) with the enterprise extension. Other core attributes
+        (title, phoneNumbers, addresses, locale, roles…) are kept as sent; passwords and unknown extensions are
+        ignored.
+      required: [userName]
+      additionalProperties: true
+      properties:
+        schemas:
+          type: array
+          items:
+            type: string
+        id:
+          type: string
+          readOnly: true
+        externalId:
+          type: string
+        userName:
+          type: string
+        name:
+          type: object
+          additionalProperties: true
+        displayName:
+          type: string
+        active:
+          type: boolean
+        emails:
+          type: array
+          items:
+            type: object
+            properties:
+              value:
+                type: string
+              type:
+                type: string
+              primary:
+                type: boolean
+        groups:
+          type: array
+          readOnly: true
+          items:
+            type: object
+        urn:ietf:params:scim:schemas:extension:enterprise:2.0:User:
+          type: object
+          properties:
+            employeeNumber:
+              type: string
+            department:
+              type: string
+            costCenter:
+              type: string
+            organization:
+              type: string
+            division:
+              type: string
+            manager:
+              type: object
+        meta:
+          type: object
+          readOnly: true
+    SCIMGroup:
+      type: object
+      required: [displayName]
+      additionalProperties: true
+      properties:
+        schemas:
+          type: array
+          items:
+            type: string
+        id:
+          type: string
+          readOnly: true
+        externalId:
+          type: string
+        displayName:
+          type: string
+        members:
+          type: array
+          items:
+            type: object
+            required: [value]
+            properties:
+              value:
+                type: string
+              display:
+                type: string
+                readOnly: true
+        meta:
+          type: object
+          readOnly: true
+    SCIMPatchOp:
+      type: object
+      required: [Operations]
+      properties:
+        schemas:
+          type: array
+          items:
+            type: string
+        Operations:
+          type: array
+          items:
+            type: object
+            required: [op]
+            properties:
+              op:
+                type: string
+                description: add, replace or remove (any case).
+              path:
+                type: string
+              value: {}
+    SCIMListResponse:
+      type: object
+      required: [schemas, totalResults, startIndex, itemsPerPage, Resources]
+      properties:
+        schemas:
+          type: array
+          items:
+            type: string
+        totalResults:
+          type: integer
+        startIndex:
+          type: integer
+        itemsPerPage:
+          type: integer
+        Resources:
+          type: array
+          items:
+            type: object
+    SCIMError:
+      type: object
+      required: [schemas, status, detail]
+      properties:
+        schemas:
+          type: array
+          items:
+            type: string
+        status:
+          type: string
+          description: The HTTP status, as a string.
+        scimType:
+          type: string
+          description: invalidFilter, invalidSyntax, invalidPath, invalidValue, noTarget, uniqueness or mutability.
+        detail:
+          type: string

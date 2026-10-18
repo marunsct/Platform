@@ -155,6 +155,33 @@ func checkSCIMMembers(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, member
 	return nil
 }
 
+// SCIMGroupMember is one person in a SCIM group, as the change event `matura.scim_group.member_added` (or
+// `_removed`) carries it. These events are for the OpenFGA syncer (group#member tuples); apps do not get them.
+type SCIMGroupMember struct {
+	TenantID uuid.UUID `json:"tenant_id"`
+	GroupID  uuid.UUID `json:"group_id"`
+	UserID   uuid.UUID `json:"user_id"`
+}
+
+// emitGroupMembers records membership changes in the outbox.
+func emitGroupMembers(ctx context.Context, tx pgx.Tx, tenantID, groupID uuid.UUID, users []uuid.UUID, added bool) error {
+	typ := "scim_group.member_removed"
+	if added {
+		typ = "scim_group.member_added"
+	}
+	for _, uid := range users {
+		v, err := nextVersion(ctx, tx)
+		if err != nil {
+			return err
+		}
+		if err := emit(ctx, tx, v, tenantID, typ, scimGroupTarget(tenantID, groupID)+"/members/"+uid.String(),
+			SCIMGroupMember{TenantID: tenantID, GroupID: groupID, UserID: uid}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func memberIDs(refs []SCIMRef) []uuid.UUID {
 	out := make([]uuid.UUID, 0, len(refs))
 	seen := map[uuid.UUID]bool{}
@@ -191,6 +218,9 @@ func (s *Store) CreateSCIMGroup(ctx context.Context, in SCIMGroup) (SCIMGroup, e
 		if _, err := tx.Exec(ctx, `INSERT INTO scim_group_member (tenant_id, group_id, user_id)
 			SELECT $1, $2, unnest($3::uuid[])`, tid, id, members); err != nil {
 			return mapErr(err)
+		}
+		if err := emitGroupMembers(ctx, tx, tid, id, members, true); err != nil {
+			return err
 		}
 		if err := reconcileGroupGrants(ctx, tx, tid, members); err != nil {
 			return err
@@ -262,6 +292,12 @@ func (s *Store) ReplaceSCIMGroup(ctx context.Context, in SCIMGroup, ifVersion in
 			SELECT $1, $2, unnest($3::uuid[])`, tid, in.ID, added); err != nil {
 			return mapErr(err)
 		}
+		if err := emitGroupMembers(ctx, tx, tid, in.ID, added, true); err != nil {
+			return err
+		}
+		if err := emitGroupMembers(ctx, tx, tid, in.ID, removed, false); err != nil {
+			return err
+		}
 		affected := append(append([]uuid.UUID{}, added...), removed...)
 		if renamed { // mappings go by name
 			affected = append(affected, want...)
@@ -289,6 +325,9 @@ func (s *Store) DeleteSCIMGroup(ctx context.Context, tenantID, id uuid.UUID, ifV
 			return ErrVersion
 		}
 		if _, err := tx.Exec(ctx, `DELETE FROM scim_group WHERE tenant_id = $1 AND id = $2`, tenantID, id); err != nil {
+			return err
+		}
+		if err := emitGroupMembers(ctx, tx, tenantID, id, memberIDs(cur.Members), false); err != nil {
 			return err
 		}
 		if err := reconcileGroupGrants(ctx, tx, tenantID, memberIDs(cur.Members)); err != nil {

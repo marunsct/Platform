@@ -494,6 +494,11 @@ func (s *Store) DeleteSCIMUser(ctx context.Context, tenantID, userID uuid.UUID, 
 				return err
 			}
 		}
+		for _, g := range cur.Groups {
+			if err := emitGroupMembers(ctx, tx, tenantID, g.ID, []uuid.UUID{userID}, false); err != nil {
+				return err
+			}
+		}
 		if _, err := tx.Exec(ctx, `DELETE FROM scim_managed_grant WHERE tenant_id = $1 AND user_id = $2`,
 			tenantID, userID); err != nil {
 			return err
