@@ -35,6 +35,16 @@ type NewGrant struct {
 func (s *Store) CreateGrant(ctx context.Context, sc Scope, tenantID uuid.UUID, in NewGrant) (Grant, error) {
 	var out Grant
 	err := s.tx(ctx, sc.InTenant(tenantID), func(tx pgx.Tx) error {
+		var err error
+		out, err = createGrant(ctx, tx, tenantID, in)
+		return err
+	})
+	return out, err
+}
+
+func createGrant(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, in NewGrant) (Grant, error) {
+	var out Grant
+	err := func() error {
 		app, err := getAppBySlug(ctx, tx, in.App)
 		if err != nil {
 			if err == ErrNotFound {
@@ -86,8 +96,40 @@ func (s *Store) CreateGrant(ctx context.Context, sc Scope, tenantID uuid.UUID, i
 			return err
 		}
 		return emit(ctx, tx, v, tenantID, "grant.added", grantSubject(out), out)
-	})
+	}()
 	return out, err
+}
+
+// grantDefaults gives a new member each enabled app's default role for the whole tenant (RL-4), except apps in
+// skip (an invitation that named roles for them) and apps where the member already has an active grant.
+func grantDefaults(ctx context.Context, tx pgx.Tx, tenantID, userID uuid.UUID, skip map[string]bool) error {
+	rows, err := tx.Query(ctx, `SELECT a.slug, r.name FROM tenant_app ta
+		JOIN app a ON a.id = ta.app_id AND a.status = 'active'
+		JOIN app_role r ON r.app_id = a.id AND r.is_default
+		WHERE ta.tenant_id = $1 AND ta.status = 'enabled'
+		  AND NOT EXISTS (SELECT 1 FROM role_grant g WHERE g.tenant_id = $1 AND g.app_id = a.id
+		                  AND g.subject_type = 'user' AND g.subject_id = $2 AND g.status = 'active')
+		ORDER BY a.slug`, tenantID, userID)
+	if err != nil {
+		return err
+	}
+	type def struct{ app, role string }
+	defs, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (def, error) {
+		var d def
+		return d, r.Scan(&d.app, &d.role)
+	})
+	if err != nil {
+		return err
+	}
+	for _, d := range defs {
+		if skip[d.app] {
+			continue
+		}
+		if _, err := createGrant(ctx, tx, tenantID, NewGrant{App: d.app, UserID: userID, Role: d.role}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func getGrant(ctx context.Context, tx pgx.Tx, tenantID, id uuid.UUID) (Grant, error) {

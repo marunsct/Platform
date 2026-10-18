@@ -33,10 +33,50 @@ self-hosted, open standards, nothing phones home).
   any language. ADR 0008 (permission catalogue in the manifest, roles created/edited/deleted in Matura, `perms`
   claim, `matura_app_role` contract table) and ADR 0009 (levels 0–3 over OIDC, JWT, SQL, HTTPS, CloudEvents; SDKs
   optional; conformance kit; sprint TS7e) are written, and role management is built (migration 0002, role API).
-- **Left in TS2:** idempotency keys, OpenAPI document, outbox relay (TS7c), operator endpoints for users, plans and
-  database servers.
-- **Next:** TS4-lite sign-in on Keycloak, TS5 token mapper, TS6 invitations, TS7 Python SDK, TS7b provisioning,
-  TS7c contract sync, TS7d DevFlow (doc 20 §3).
+- 2026-10-16: PRs #1 and #2 merged into `main`; development continues in a new PR from `claude/project-thread-nhbr1g`.
+  It adds operator endpoints for plans and database servers (`/admin/v1/plans`, `/admin/v1/db-servers`, with a
+  connection test), envelope-encrypted secrets (`internal/secrets`, AES-256-GCM under `MATURA_KEK`; the admin
+  password is never returned, only a fingerprint), and `Idempotency-Key` on every POST (migration 0003).
+- 2026-10-17: the owner asked to plan and build the rest of the product and for an app design guide. Added
+  `docs/plan/21` (what finished means and the M1 build sequence) and `docs/guide/designing-apps-for-matura.md`.
+  Owner decision: **AgentCanvas is the first app (TS9a in M1); DevFlow moves to M2.**
+- **Built 2026-10-17:** `/v1/me/tenants`; operator users (search, deactivate, delete with anonymisation); app
+  secrets (HTTP Basic for app backends); outbox sequencer (`seq` in commit order), change feed and snapshot per app
+  with per-app filtering; webhook endpoints with an in-order, signed relay (one leader, backoff, give-up after 24 h);
+  migration 0004; `internal/events` (CloudEvents envelope, `Matura-Signature`).
+- **Also built 2026-10-17:** token claims (`POST /internal/v1/token-context`) and the Keycloak mapper
+  (`keycloak/extensions`, `make keycloak-ext`); realm client `agentcanvas` with the mapper on the client (not a realm client scope: listing scopes in the import drops Keycloak's built-in `basic`, `profile`, `email`, `web-origins`); Python SDK
+  (`sdk/python`, `uv run pytest` there; Postgres too with `MATURA_TEST_DATABASE_URL`); shared test vectors;
+  `scripts/e2e_python_sdk.py` (passes against a local maturad).
+- **OpenAPI:** `api/openapi.yaml` covers every route; `TestOpenAPIMatchesRoutes` keeps it in step with the router.
+- **AgentCanvas on Matura (TS9a), 2026-10-17:** draft marunsct/AgentCanvas#49 (v0.27.0, branch
+  `claude/project-thread-nhbr1g`): `AGENTCANVAS_AUTH_MODE=matura`, permissions `canvas.read`/`inbox.review`/
+  `workflow.build`/`org.admin` mapped onto its four roles, webhooks at `/v1/matura/events`, change feed, vendored SDK,
+  `matura/manifest.json`. Ask the owner before merging it (not covered by AgentCanvas's sprint merge grant).
+- **Data placement (TS7b), 2026-10-17:** `internal/placement` provisioner (run by maturad), placement endpoints, migration
+  0006; `TestPlatformManagedPlacements` provisions all three modes on the test server and checks tenants cannot
+  reach each other's schema or database.
+- **Invitations and email (TS6), 2026-10-17:** invitation API and accept page (`internal/api/invitations.go`,
+  `accept.html`), default roles on joining (RL-4), email outbox and SMTP mailer (`internal/mail`), migration 0007;
+  `TestInvitations`. Temporary-password delivery and bulk CSV are not built yet (doc 13 TS6 extras).
+- **End to end, 2026-10-17:** `scripts/e2e_invite_signup.mjs` (Playwright) passed against Keycloak 26.4 with the
+  extension, maturad (OIDC) and Mailpit: owner invites, invitee signs up on the accept page, verifies email, joins
+  with the invited AgentCanvas role, and the AgentCanvas token carries `tid`, `roles`, `perms`.
+- **Conformance kit, 2026-10-17:** `matura-conformance` with a sample notes app in its tests (honest passes all 21 checks; each leak fails its check). Not yet checked: feed catch-up, version ordering, `tenant-not-ready`.
+- **TypeScript SDK, 2026-10-17:** `sdk/typescript` (`npm test`: 67 tests incl. all vectors on node:sqlite; Postgres
+  dialect not yet run against a server). Known gap in both SDKs: placement events set `data_mode` without a version
+  check, so a late replay of an older placement could overwrite a newer mode.
+- **Conformance on AgentCanvas, 2026-10-17:** 19/19 pass after fixing `role_for` in AgentCanvas#49 (a role skipping a rung no longer maps upward).
+- **2026-10-17/18, owner grant:** build the complete product without waiting for permission (merging included);
+  **do not touch DevFlow**. Built and merged on `claude/project-thread-nhbr1g`: Go SDK, Helm chart, backups,
+  metrics, audit log, operator console backend, portal, data rights, readiness and trust page, MFA and sessions,
+  tenant SSO, OpenFGA, SCIM, agent identity (migrations 0008–0015; spec 02 §13–§20). AgentCanvas#50 (workspaces,
+  RLS, portal links, audit sink, v0.28.0) merged into AgentCanvas `main`. Full status and gaps: doc 21 §5.
+- **End to end, 2026-10-18:** onboarding, identity (sessions, MFA, SSO) and AgentCanvas conformance all pass against a
+  real Keycloak. The run found pool starvation (fixed in `store.Open`) and the realm's hard-coded SMTP host (now env).
+- **Next:** the gaps in doc 21 §5; DevFlow (TS7d) only when the owner asks.
+- **Was next:** doc 21 §3: any-language kit
+  (TS7e: OpenAPI, TypeScript SDK, conformance CLI, contract SQL for other databases).
 - `main` holds LICENSE, SECURITY.md, CONTRIBUTING.md.
 
 ## 3. Where to read

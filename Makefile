@@ -1,4 +1,4 @@
-.PHONY: build test test-db vet up down
+.PHONY: build test test-db vet up down keycloak-ext portal portal-test
 
 build:
 	go build ./...
@@ -18,3 +18,14 @@ up:
 
 down:
 	docker compose -f deploy/compose/compose.yaml down
+
+# Keycloak extension (token mapper): Java 21 and Maven
+keycloak-ext:
+	cd keycloak/extensions && mvn -q -B package
+
+# customer portal (web/portal): rebuilds internal/portal/dist, which is committed so go build needs no Node
+portal:
+	cd web/portal && npm ci && npm run build
+
+portal-test:
+	cd web/portal && npm ci && npm run typecheck && npm test

@@ -1,0 +1,143 @@
+{{- $fullname := include "matura.fullname" . -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $fullname }}
+  labels:
+    {{- include "matura.labels" . | nindent 4 }}
+    app.kubernetes.io/component: maturad
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels: {{- include "matura.selector" (dict "root" . "component" "maturad") | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "matura.selector" (dict "root" . "component" "maturad") | nindent 8 }}
+      annotations:
+        checksum/config: {{ toJson .Values.maturad | sha256sum | trunc 16 }}
+    spec:
+      automountServiceAccountToken: false
+      securityContext: {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels: {{- include "matura.selector" (dict "root" . "component" "maturad") | nindent 14 }}
+      containers:
+        - name: maturad
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext: {{- toYaml .Values.securityContext | nindent 12 }}
+          ports:
+            - { name: http, containerPort: 8080 }
+            - { name: metrics, containerPort: 9090 }
+          env:
+            - { name: MATURA_ENV, value: {{ .Values.env | quote }} }
+            - { name: MATURA_AUTH, value: {{ .Values.maturad.auth | quote }} }
+            - { name: MATURA_ISSUER, value: {{ include "matura.issuer" . | quote }} }
+            {{- if .Values.keycloak.enabled }}
+            - { name: MATURA_JWKS_URL, value: "http://{{ $fullname }}-keycloak:8080/realms/matura/protocol/openid-connect/certs" }
+            {{- end }}
+            - { name: MATURA_AUDIENCE, value: {{ .Values.maturad.audience | quote }} }
+            - { name: MATURA_OPERATOR_ROLE, value: {{ .Values.maturad.operatorRole | quote }} }
+            - { name: MATURA_PORTAL_CLIENT_ID, value: {{ .Values.maturad.portalClientID | quote }} }
+            - { name: MATURA_PUBLIC_URL, value: {{ .Values.publicURL | quote }} }
+            - { name: MATURA_RUNTIME_ROLE, value: {{ .Values.database.runtimeRole | quote }} }
+            - { name: MATURA_EVENT_SOURCE, value: {{ .Values.maturad.eventSource | default (printf "matura://installation/%s" .Release.Name) | quote }} }
+            - name: MATURA_DATABASE_URL
+              valueFrom: { secretKeyRef: { name: {{ include "matura.dbSecret" . }}, key: url } }
+            - name: MATURA_MIGRATE_DATABASE_URL
+              valueFrom: { secretKeyRef: { name: {{ include "matura.dbSecret" . }}, key: migrateUrl } }
+            - name: MATURA_KEK
+              valueFrom: { secretKeyRef: { name: {{ include "matura.secrets" . }}, key: kek } }
+            - name: MATURA_INTERNAL_TOKEN
+              valueFrom: { secretKeyRef: { name: {{ include "matura.secrets" . }}, key: internalToken } }
+            - name: MATURA_KEYCLOAK_CLIENT_SECRET
+              valueFrom: { secretKeyRef: { name: {{ include "matura.secrets" . }}, key: keycloakClientSecret, optional: true } }
+            {{- with .Values.smtp }}
+            {{- if .addr }}
+            - { name: MATURA_SMTP_ADDR, value: {{ .addr | quote }} }
+            - { name: MATURA_SMTP_FROM, value: {{ .from | quote }} }
+            {{- if .existingSecret }}
+            - name: MATURA_SMTP_USER
+              valueFrom: { secretKeyRef: { name: {{ .existingSecret }}, key: user } }
+            - name: MATURA_SMTP_PASSWORD
+              valueFrom: { secretKeyRef: { name: {{ .existingSecret }}, key: password } }
+            {{- end }}
+            {{- end }}
+            {{- end }}
+            {{- if or .Values.openfga.enabled .Values.openfga.url }}
+            - { name: MATURA_OPENFGA_URL, value: {{ .Values.openfga.url | default (printf "http://%s-openfga:8080" $fullname) | quote }} }
+            - { name: MATURA_OPENFGA_STORE, value: {{ .Values.openfga.storeName | quote }} }
+            {{- if .Values.openfga.presharedKeySecret }}
+            - name: MATURA_OPENFGA_TOKEN
+              valueFrom: { secretKeyRef: { name: {{ .Values.openfga.presharedKeySecret }}, key: key } }
+            {{- end }}
+            {{- end }}
+            {{- with .Values.maturad.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          readinessProbe:
+            httpGet: { path: /healthz/ready, port: http }
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /healthz/live, port: http }
+            periodSeconds: 10
+          startupProbe:                         # migrations run at start-up
+            httpGet: { path: /healthz/live, port: http }
+            failureThreshold: 60
+            periodSeconds: 2
+          resources: {{- toYaml .Values.maturad.resources | nindent 12 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity: {{- toYaml . | nindent 8 }}
+      {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $fullname }}
+  labels: {{- include "matura.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.service.type }}
+  selector: {{- include "matura.selector" (dict "root" . "component" "maturad") | nindent 4 }}
+  ports:
+    - { name: http, port: {{ .Values.service.port }}, targetPort: http }
+    - { name: metrics, port: 9090, targetPort: metrics }
+{{- if .Values.podDisruptionBudget.enabled }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ $fullname }}
+  labels: {{- include "matura.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels: {{- include "matura.selector" (dict "root" . "component" "maturad") | nindent 6 }}
+{{- end }}
+{{- if .Values.autoscaling.enabled }}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ $fullname }}
+  labels: {{- include "matura.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: {{ $fullname }} }
+  minReplicas: {{ .Values.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.autoscaling.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target: { type: Utilization, averageUtilization: {{ .Values.autoscaling.targetCPUUtilizationPercentage }} }
+{{- end }}

@@ -13,28 +13,45 @@
   "revokeRefreshToken": true,
   "refreshTokenMaxReuse": 0,
   "passwordPolicy": "length(12) and notUsername and notEmail",
-  "smtpServer": { "host": "mailpit", "port": "1025", "from": "no-reply@matura.local" },
+  "browserFlow": "matura browser",
+  "otpPolicyType": "totp",
+  "otpPolicyAlgorithm": "HmacSHA1",
+  "otpPolicyDigits": 6,
+  "otpPolicyPeriod": 30,
+  "webAuthnPolicyRpEntityName": "Matura",
+  "webAuthnPolicyUserVerificationRequirement": "preferred",
+  "webAuthnPolicyPasswordlessRpEntityName": "Matura",
+  "webAuthnPolicyPasswordlessUserVerificationRequirement": "required",
+  "webAuthnPolicyPasswordlessRequireResidentKey": "Yes",
+  "webAuthnPolicyPasswordlessPasskeysEnabled": true,
+  "smtpServer": {
+    "host": "${env.MATURA_KEYCLOAK_SMTP_HOST:mailpit}",
+    "port": "${env.MATURA_KEYCLOAK_SMTP_PORT:1025}",
+    "from": "${env.MATURA_KEYCLOAK_SMTP_FROM:no-reply@matura.local}"
+  },
   "roles": {
     "realm": [
-      { "name": "matura-operator", "description": "Runs this Matura installation (operator console and /admin API)" }
+      {
+        "name": "matura-operator",
+        "description": "Runs this Matura installation (operator console and /admin API)"
+      }
     ]
   },
-  "clientScopes": [
-    {
-      "name": "matura-api-audience",
-      "protocol": "openid-connect",
-      "attributes": { "include.in.token.scope": "false" },
-      "protocolMappers": [
-        {
-          "name": "audience matura-api",
-          "protocol": "openid-connect",
-          "protocolMapper": "oidc-audience-mapper",
-          "config": { "included.client.audience": "matura-api", "access.token.claim": "true" }
-        }
-      ]
-    }
-  ],
   "clients": [
+    {
+      "clientId": "matura-admin",
+      "name": "Matura control plane (admin API)",
+      "description": "maturad's service account: sessions, second factors, tenant identity providers and agent clients",
+      "enabled": true,
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "${env.MATURA_KEYCLOAK_CLIENT_SECRET:matura-admin-development-secret-0001}",
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "implicitFlowEnabled": false,
+      "frontchannelLogout": false
+    },
     {
       "clientId": "matura-api",
       "name": "Matura API",
@@ -48,10 +65,360 @@
       "publicClient": true,
       "standardFlowEnabled": true,
       "directAccessGrantsEnabled": false,
-      "redirectUris": ["http://localhost:5173/*"],
-      "webOrigins": ["http://localhost:5173"],
-      "attributes": { "pkce.code.challenge.method": "S256", "post.logout.redirect.uris": "http://localhost:5173/*" },
-      "defaultClientScopes": ["profile", "email", "roles", "matura-api-audience"]
+      "redirectUris": [
+        "http://localhost:5173/*",
+        "http://localhost:8080/invitations/accept",
+        "http://localhost:8080/portal/*"
+      ],
+      "webOrigins": [
+        "http://localhost:5173",
+        "http://localhost:8080"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost:5173/*##http://localhost:8080/portal/*"
+      },
+      "protocolMappers": [
+        {
+          "name": "audience matura-api",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.client.audience": "matura-api",
+            "access.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "agentcanvas",
+      "name": "AgentCanvas",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "redirectUris": [
+        "http://localhost:7777/*",
+        "http://localhost:5173/*"
+      ],
+      "webOrigins": [
+        "http://localhost:7777",
+        "http://localhost:5173"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost:7777/*##http://localhost:5173/*"
+      },
+      "protocolMappers": [
+        {
+          "name": "audience agentcanvas",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.client.audience": "agentcanvas",
+            "access.token.claim": "true"
+          }
+        },
+        {
+          "name": "matura tenant and permissions",
+          "protocol": "openid-connect",
+          "protocolMapper": "matura-token-mapper",
+          "config": {}
+        }
+      ]
+    }
+  ],
+  "identityProviders": [
+    {
+      "alias": "google",
+      "providerId": "google",
+      "enabled": false,
+      "trustEmail": true,
+      "firstBrokerLoginFlowAlias": "first broker login",
+      "config": {
+        "clientId": "${env.MATURA_GOOGLE_CLIENT_ID:set-me}",
+        "clientSecret": "${env.MATURA_GOOGLE_CLIENT_SECRET:set-me}",
+        "syncMode": "IMPORT"
+      },
+      "postBrokerLoginFlowAlias": "matura post broker login"
+    },
+    {
+      "alias": "github",
+      "providerId": "github",
+      "enabled": false,
+      "trustEmail": false,
+      "firstBrokerLoginFlowAlias": "first broker login",
+      "config": {
+        "clientId": "${env.MATURA_GITHUB_CLIENT_ID:set-me}",
+        "clientSecret": "${env.MATURA_GITHUB_CLIENT_SECRET:set-me}",
+        "syncMode": "IMPORT"
+      },
+      "postBrokerLoginFlowAlias": "matura post broker login"
+    }
+  ],
+  "users": [
+    {
+      "username": "service-account-matura-admin",
+      "enabled": true,
+      "serviceAccountClientId": "matura-admin",
+      "clientRoles": {
+        "realm-management": [
+          "view-users",
+          "manage-users",
+          "view-identity-providers",
+          "manage-identity-providers",
+          "view-clients",
+          "manage-clients"
+        ]
+      }
+    }
+  ],
+  "components": {
+    "org.keycloak.userprofile.UserProfileProvider": [
+      {
+        "providerId": "declarative-user-profile",
+        "subComponents": {},
+        "config": {
+          "kc.user.profile.config": [
+            "{\"attributes\":[{\"name\":\"username\",\"displayName\":\"${username}\",\"validations\":{\"length\":{\"min\":3,\"max\":255},\"username-prohibited-characters\":{},\"up-username-not-idn-homograph\":{}},\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]},\"multivalued\":false},{\"name\":\"email\",\"displayName\":\"${email}\",\"validations\":{\"email\":{},\"length\":{\"max\":255}},\"required\":{\"roles\":[\"user\"]},\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]},\"multivalued\":false},{\"name\":\"firstName\",\"displayName\":\"${firstName}\",\"validations\":{\"length\":{\"max\":255},\"person-name-prohibited-characters\":{}},\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]},\"multivalued\":false},{\"name\":\"lastName\",\"displayName\":\"${lastName}\",\"validations\":{\"length\":{\"max\":255},\"person-name-prohibited-characters\":{}},\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]},\"multivalued\":false},{\"name\":\"employeeNumber\",\"displayName\":\"Employee number\",\"group\":\"enterprise\",\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\"]},\"validations\":{\"length\":{\"max\":255}},\"multivalued\":false},{\"name\":\"department\",\"displayName\":\"Department\",\"group\":\"enterprise\",\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\"]},\"validations\":{\"length\":{\"max\":255}},\"multivalued\":false}],\"groups\":[{\"name\":\"user-metadata\",\"displayHeader\":\"User metadata\",\"displayDescription\":\"Attributes, which refer to user metadata\"},{\"name\":\"enterprise\",\"displayHeader\":\"Organisation\",\"displayDescription\":\"Set by the organisation's directory (SCIM)\"}]}"
+          ]
+        }
+      }
+    ]
+  },
+  "authenticationFlows": [
+    {
+      "alias": "matura browser",
+      "description": "Browser sign-in with Matura's MFA policy",
+      "providerId": "basic-flow",
+      "topLevel": true,
+      "builtIn": false,
+      "authenticationExecutions": [
+        {
+          "requirement": "ALTERNATIVE",
+          "priority": 10,
+          "userSetupAllowed": false,
+          "authenticator": "auth-cookie",
+          "authenticatorFlow": false
+        },
+        {
+          "requirement": "ALTERNATIVE",
+          "priority": 25,
+          "userSetupAllowed": false,
+          "authenticator": "identity-provider-redirector",
+          "authenticatorFlow": false
+        },
+        {
+          "requirement": "ALTERNATIVE",
+          "priority": 30,
+          "userSetupAllowed": false,
+          "authenticatorFlow": true,
+          "flowAlias": "matura browser forms"
+        }
+      ]
+    },
+    {
+      "alias": "matura browser forms",
+      "description": "Password (or passkey), then a second factor when the user has one or a tenant requires one",
+      "providerId": "basic-flow",
+      "topLevel": false,
+      "builtIn": false,
+      "authenticationExecutions": [
+        {
+          "requirement": "REQUIRED",
+          "priority": 10,
+          "userSetupAllowed": false,
+          "authenticator": "auth-username-password-form",
+          "authenticatorFlow": false
+        },
+        {
+          "requirement": "CONDITIONAL",
+          "priority": 20,
+          "userSetupAllowed": false,
+          "authenticatorFlow": true,
+          "flowAlias": "matura browser second factor"
+        },
+        {
+          "requirement": "REQUIRED",
+          "priority": 30,
+          "userSetupAllowed": false,
+          "authenticator": "matura-mfa-policy",
+          "authenticatorFlow": false
+        }
+      ]
+    },
+    {
+      "alias": "matura browser second factor",
+      "description": "Second factor for users who have one: TOTP, security key, passkey or recovery code",
+      "providerId": "basic-flow",
+      "topLevel": false,
+      "builtIn": false,
+      "authenticationExecutions": [
+        {
+          "requirement": "REQUIRED",
+          "priority": 10,
+          "userSetupAllowed": false,
+          "authenticator": "conditional-user-configured",
+          "authenticatorFlow": false
+        },
+        {
+          "requirement": "ALTERNATIVE",
+          "priority": 20,
+          "userSetupAllowed": false,
+          "authenticator": "auth-otp-form",
+          "authenticatorFlow": false
+        },
+        {
+          "requirement": "ALTERNATIVE",
+          "priority": 30,
+          "userSetupAllowed": false,
+          "authenticator": "webauthn-authenticator",
+          "authenticatorFlow": false
+        },
+        {
+          "requirement": "ALTERNATIVE",
+          "priority": 40,
+          "userSetupAllowed": false,
+          "authenticator": "webauthn-authenticator-passwordless",
+          "authenticatorFlow": false
+        },
+        {
+          "requirement": "ALTERNATIVE",
+          "priority": 50,
+          "userSetupAllowed": false,
+          "authenticator": "auth-recovery-authn-code-form",
+          "authenticatorFlow": false
+        }
+      ]
+    },
+    {
+      "alias": "matura post broker login",
+      "description": "After a social sign-in: second factor and Matura's MFA policy",
+      "providerId": "basic-flow",
+      "topLevel": true,
+      "builtIn": false,
+      "authenticationExecutions": [
+        {
+          "requirement": "CONDITIONAL",
+          "priority": 10,
+          "userSetupAllowed": false,
+          "authenticatorFlow": true,
+          "flowAlias": "matura post broker second factor"
+        },
+        {
+          "requirement": "REQUIRED",
+          "priority": 20,
+          "userSetupAllowed": false,
+          "authenticator": "matura-mfa-policy",
+          "authenticatorFlow": false
+        }
+      ]
+    },
+    {
+      "alias": "matura post broker second factor",
+      "description": "Second factor for users who have one: TOTP, security key, passkey or recovery code",
+      "providerId": "basic-flow",
+      "topLevel": false,
+      "builtIn": false,
+      "authenticationExecutions": [
+        {
+          "requirement": "REQUIRED",
+          "priority": 10,
+          "userSetupAllowed": false,
+          "authenticator": "conditional-user-configured",
+          "authenticatorFlow": false
+        },
+        {
+          "requirement": "ALTERNATIVE",
+          "priority": 20,
+          "userSetupAllowed": false,
+          "authenticator": "auth-otp-form",
+          "authenticatorFlow": false
+        },
+        {
+          "requirement": "ALTERNATIVE",
+          "priority": 30,
+          "userSetupAllowed": false,
+          "authenticator": "webauthn-authenticator",
+          "authenticatorFlow": false
+        },
+        {
+          "requirement": "ALTERNATIVE",
+          "priority": 40,
+          "userSetupAllowed": false,
+          "authenticator": "webauthn-authenticator-passwordless",
+          "authenticatorFlow": false
+        },
+        {
+          "requirement": "ALTERNATIVE",
+          "priority": 50,
+          "userSetupAllowed": false,
+          "authenticator": "auth-recovery-authn-code-form",
+          "authenticatorFlow": false
+        }
+      ]
+    },
+    {
+      "alias": "matura sso first login",
+      "description": "First sign-in through a tenant's identity provider: verified-domain check, then create the account or link it by email",
+      "providerId": "basic-flow",
+      "topLevel": true,
+      "builtIn": false,
+      "authenticationExecutions": [
+        {
+          "requirement": "REQUIRED",
+          "priority": 10,
+          "userSetupAllowed": false,
+          "authenticator": "matura-sso",
+          "authenticatorFlow": false
+        },
+        {
+          "requirement": "REQUIRED",
+          "priority": 20,
+          "userSetupAllowed": false,
+          "authenticatorFlow": true,
+          "flowAlias": "matura sso account"
+        }
+      ]
+    },
+    {
+      "alias": "matura sso account",
+      "description": "Create the user, or link the existing user with the same (verified-domain) email",
+      "providerId": "basic-flow",
+      "topLevel": false,
+      "builtIn": false,
+      "authenticationExecutions": [
+        {
+          "requirement": "ALTERNATIVE",
+          "priority": 10,
+          "userSetupAllowed": false,
+          "authenticator": "idp-create-user-if-unique",
+          "authenticatorFlow": false
+        },
+        {
+          "requirement": "ALTERNATIVE",
+          "priority": 20,
+          "userSetupAllowed": false,
+          "authenticator": "idp-auto-link",
+          "authenticatorFlow": false
+        }
+      ]
+    },
+    {
+      "alias": "matura sso post login",
+      "description": "Every sign-in through a tenant's identity provider: verified-domain check and just-in-time membership",
+      "providerId": "basic-flow",
+      "topLevel": true,
+      "builtIn": false,
+      "authenticationExecutions": [
+        {
+          "requirement": "REQUIRED",
+          "priority": 10,
+          "userSetupAllowed": false,
+          "authenticator": "matura-sso",
+          "authenticatorFlow": false
+        }
+      ]
     }
   ]
 }

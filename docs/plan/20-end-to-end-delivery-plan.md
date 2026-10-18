@@ -8,6 +8,9 @@ contents.*
 Specifications: [functional](../spec/01-functional-specification.md) ·
 [technical](../spec/02-technical-specification.md) · [app integration contract](../spec/03-app-integration-contract.md).
 
+> **2026-10-17:** the owner asked to start with AgentCanvas, not DevFlow. AgentCanvas (TS9a) becomes the first app
+> in M1 and DevFlow (TS7d) moves to M2; doc 21 has the build order.
+
 ## 1. What changes against doc 13
 
 Doc 13 reaches its first real app (AgentCanvas) in TS26, after 25 sprints. The owner's two products need sign-in,

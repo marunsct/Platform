@@ -2,18 +2,22 @@ package api_test
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/marunsct/Platform/internal/api"
 	"github.com/marunsct/Platform/internal/ids"
+	"github.com/marunsct/Platform/internal/secrets"
 	"github.com/marunsct/Platform/internal/store"
 	"github.com/marunsct/Platform/internal/testdb"
 )
@@ -23,6 +27,7 @@ type client struct {
 	srv  *httptest.Server
 	user uuid.UUID
 	op   bool
+	name string // X-Matura-Dev-Name, when set
 }
 
 func (c client) do(method, path string, body any) (int, map[string]any) {
@@ -36,6 +41,9 @@ func (c client) do(method, path string, body any) (int, map[string]any) {
 	if c.user != uuid.Nil {
 		req.Header.Set("X-Matura-Dev-User", c.user.String())
 		req.Header.Set("X-Matura-Dev-Email", c.user.String()[24:]+"@example.test")
+		if c.name != "" {
+			req.Header.Set("X-Matura-Dev-Name", c.name)
+		}
 	}
 	if c.op {
 		req.Header.Set("X-Matura-Dev-Operator", "true")
@@ -59,12 +67,38 @@ func (c client) must(want int, method, path string, body any) map[string]any {
 	return out
 }
 
+const internalToken = "internal-test-token-0123456789abcdef"
+
 func setup(t *testing.T) *httptest.Server {
-	pool := testdb.New(t)
-	srv := httptest.NewServer(api.New(store.New(pool), api.DevAuthenticator{},
-		slog.New(slog.NewTextHandler(io.Discard, nil))).Handler())
-	t.Cleanup(srv.Close)
+	srv, _, _ := setupFull(t)
 	return srv
+}
+
+// setupFull also returns the store and keys, for tests that run the relay or the provisioner.
+func setupFull(t *testing.T) (*httptest.Server, *store.Store, secrets.KeyManager) {
+	srv, st, keys, _ := setupPool(t)
+	return srv, st, keys
+}
+
+// setupPool also returns the runtime role's pool, for tests that change rows directly (say, to expire them).
+func setupPool(t *testing.T) (*httptest.Server, *store.Store, secrets.KeyManager, *pgxpool.Pool) {
+	pool := testdb.New(t)
+	keys, err := secrets.NewLocal(base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{7}, 32)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	st := store.New(pool)
+	var logs io.Writer = io.Discard
+	if os.Getenv("MATURA_TEST_LOG") != "" {
+		logs = os.Stderr
+	}
+	server := api.New(st, api.DevAuthenticator{}, keys, slog.New(slog.NewTextHandler(logs, nil)))
+	server.EnableInternal(internalToken)
+	server.SetInvitations(api.Invitations{PublicURL: "http://matura.test", Issuer: "http://keycloak.test/realms/matura",
+		ClientID: "matura-console"})
+	srv := httptest.NewServer(server.Handler())
+	t.Cleanup(srv.Close)
+	return srv, st, keys, pool
 }
 
 var manifest = map[string]any{
@@ -102,6 +136,14 @@ func TestCrossTenant(t *testing.T) {
 	grant := alice.must(http.StatusCreated, "POST", "/v1/tenants/"+aid+"/grants",
 		map[string]any{"app": "devflow", "user_id": alice.user, "role": "admin"})
 	gid := grant["id"].(string)
+	inv := alice.must(http.StatusCreated, "POST", "/v1/tenants/"+aid+"/invitations",
+		map[string]any{"email": "carol@example.test"})
+	iid := inv["id"].(string)
+	said := op.must(http.StatusCreated, "POST", "/admin/v1/tenants/"+aid+"/support-access",
+		map[string]any{"reason": "ticket", "duration_minutes": 10})["id"].(string)
+	sink := alice.must(http.StatusCreated, "POST", "/v1/tenants/"+aid+"/audit/sinks",
+		map[string]any{"url": "https://siem.example.test/in"})
+	sid := sink["id"].(string)
 
 	routes := []struct {
 		method, path string
@@ -123,6 +165,34 @@ func TestCrossTenant(t *testing.T) {
 		{"GET", "/v1/tenants/" + aid + "/grants", nil},
 		{"POST", "/v1/tenants/" + aid + "/grants", map[string]any{"app": "devflow", "user_id": bob.user, "role": "admin"}},
 		{"DELETE", "/v1/tenants/" + aid + "/grants/" + gid, nil},
+		{"GET", "/v1/tenants/" + aid + "/invitations", nil},
+		{"POST", "/v1/tenants/" + aid + "/invitations", map[string]any{"email": "x@example.test"}},
+		{"POST", "/v1/tenants/" + aid + "/invitations/" + iid + ":resend", nil},
+		{"DELETE", "/v1/tenants/" + aid + "/invitations/" + iid, nil},
+		{"POST", "/v1/tenants/" + aid + ":restore", nil},
+		{"GET", "/v1/tenants/" + aid + "/entitlements", nil},
+		{"GET", "/v1/tenants/" + aid + "/support-access", nil},
+		{"POST", "/v1/tenants/" + aid + "/support-access/" + said + ":approve", nil},
+		{"POST", "/v1/tenants/" + aid + "/support-access/" + said + ":revoke", nil},
+		{"GET", "/v1/tenants/" + aid + "/audit", nil},
+		{"GET", "/v1/tenants/" + aid + "/audit/export", nil},
+		{"GET", "/v1/tenants/" + aid + "/audit:verify", nil},
+		{"GET", "/v1/tenants/" + aid + "/audit/sinks", nil},
+		{"POST", "/v1/tenants/" + aid + "/audit/sinks", map[string]any{"url": "https://x.example.test"}},
+		{"PATCH", "/v1/tenants/" + aid + "/audit/sinks/" + sid, map[string]any{"status": "disabled"}},
+		{"DELETE", "/v1/tenants/" + aid + "/audit/sinks/" + sid, nil},
+		{"GET", "/v1/tenants/" + aid + "/security-policy", nil},
+		{"PUT", "/v1/tenants/" + aid + "/security-policy", map[string]any{"require_mfa": true}},
+		{"GET", "/v1/tenants/" + aid + "/members/" + alice.user.String() + "/sessions", nil},
+		{"POST", "/v1/tenants/" + aid + "/members/" + alice.user.String() + ":sign-out", nil},
+		{"POST", "/v1/tenants/" + aid + "/members/" + alice.user.String() + ":reset-mfa", nil},
+		{"GET", "/v1/tenants/" + aid + "/domains", nil},
+		{"POST", "/v1/tenants/" + aid + "/domains", map[string]any{"domain": "x.test"}},
+		{"POST", "/v1/tenants/" + aid + "/domains/x.test:verify", nil},
+		{"DELETE", "/v1/tenants/" + aid + "/domains/x.test", nil},
+		{"GET", "/v1/tenants/" + aid + "/sso", nil},
+		{"POST", "/v1/tenants/" + aid + "/sso", map[string]any{"protocol": "saml", "metadata_url": "https://x.test/m"}},
+		{"DELETE", "/v1/tenants/" + aid + "/sso", nil},
 	}
 	for _, rt := range routes {
 		if got, out := bob.do(rt.method, rt.path, rt.body); got != http.StatusNotFound {

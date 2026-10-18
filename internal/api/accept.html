@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Accept invitation · {{.Product}}</title>
+<style>
+  :root { color-scheme: light dark; --fg: #1d1d1f; --muted: #6e6e73; --bg: #f5f5f7; --card: #fff; --accent: #2f5bea; }
+  @media (prefers-color-scheme: dark) { :root { --fg: #f5f5f7; --muted: #a1a1a6; --bg: #111113; --card: #1c1c1f; --accent: #7c9cff; } }
+  body { margin: 0; font: 16px/1.5 system-ui, sans-serif; color: var(--fg); background: var(--bg); }
+  main { max-width: 28rem; margin: 12vh auto; padding: 2rem; background: var(--card); border-radius: 12px; }
+  h1 { font-size: 1.4rem; margin: 0 0 .75rem; }
+  p { margin: .5rem 0; } .muted { color: var(--muted); font-size: .9rem; }
+  .actions { display: flex; gap: .75rem; margin-top: 1.25rem; flex-wrap: wrap; }
+  button { font: inherit; padding: .55rem 1rem; border-radius: 8px; border: 1px solid var(--accent); cursor: pointer;
+           background: var(--accent); color: #fff; } button.secondary { background: none; color: var(--accent); }
+  [hidden] { display: none; }
+</style>
+</head>
+<body>
+<main>
+  <h1 id="title">Checking your invitation…</h1>
+  <p id="message"></p>
+  <p id="note" class="muted"></p>
+  <div class="actions" id="actions" hidden>
+    <button id="signin">Sign in and accept</button>
+    <button id="signup" class="secondary">Create an account</button>
+  </div>
+</main>
+<script nonce="{{.Nonce}}">
+const cfg = {{.Config}};
+const KEY = "matura.invitation";
+const $ = (id) => document.getElementById(id);
+const redirectUri = location.origin + location.pathname;
+
+function show(title, message, note) {
+  $("title").textContent = title;
+  $("message").textContent = message || "";
+  $("note").textContent = note || "";
+}
+
+function b64url(bytes) {
+  return btoa(String.fromCharCode(...new Uint8Array(bytes))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+async function signIn(token, email, tenant, extra) {
+  const verifier = b64url(crypto.getRandomValues(new Uint8Array(32)));
+  const state = b64url(crypto.getRandomValues(new Uint8Array(16)));
+  const challenge = b64url(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier)));
+  sessionStorage.setItem(KEY, JSON.stringify({ token, email, tenant, verifier, state }));
+  const q = new URLSearchParams({ response_type: "code", client_id: cfg.client_id, redirect_uri: redirectUri,
+    scope: "openid email profile", code_challenge: challenge, code_challenge_method: "S256", state,
+    login_hint: email, ...extra });
+  location.assign(cfg.issuer.replace(/\/$/, "") + "/protocol/openid-connect/auth?" + q);
+}
+
+function gone() {
+  show("This invitation is no longer valid", "Ask your admin for a new invitation.",
+    "Invitations stop working once accepted, revoked or after their expiry date.");
+}
+
+async function preview(token) {
+  const res = await fetch("/invitations/preview?token=" + encodeURIComponent(token));
+  if (res.status === 410) return gone();
+  if (!res.ok) return show("Something went wrong", "Try the link again in a moment.");
+  const inv = await res.json();
+  if (inv.state !== "pending") return gone();
+  history.replaceState(null, "", redirectUri); // keep the token out of the address bar and history
+  show("Join " + inv.tenant_name, "You were invited as " + inv.email + ".",
+    "Sign in with that address, or create an account for it. The invitation works until " +
+    new Date(inv.expires_at).toLocaleString() + ".");
+  if (!cfg.issuer || !cfg.client_id) {
+    $("note").textContent = "Sign-in is not configured on this server; ask your admin to finish setting it up.";
+    return;
+  }
+  $("actions").hidden = false;
+  $("signin").onclick = () => signIn(token, inv.email, inv.tenant_name, {});
+  $("signup").onclick = () => signIn(token, inv.email, inv.tenant_name, { prompt: "create" });
+}
+
+async function finish(params) {
+  const saved = JSON.parse(sessionStorage.getItem(KEY) || "null");
+  history.replaceState(null, "", redirectUri);
+  if (!saved || saved.state !== params.get("state")) {
+    return show("Sign-in did not complete", "Open the invitation link from your email again.");
+  }
+  show("Accepting your invitation…");
+  const tokenRes = await fetch(cfg.issuer.replace(/\/$/, "") + "/protocol/openid-connect/token", {
+    method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ grant_type: "authorization_code", code: params.get("code"), client_id: cfg.client_id,
+      redirect_uri: redirectUri, code_verifier: saved.verifier }),
+  });
+  if (!tokenRes.ok) return show("Sign-in did not complete", "Open the invitation link from your email again.");
+  const { access_token } = await tokenRes.json();
+  const res = await fetch("/v1/invitations:accept", {
+    method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + access_token },
+    body: JSON.stringify({ token: saved.token }),
+  });
+  if (res.status === 410) { sessionStorage.removeItem(KEY); return gone(); }
+  if (res.status === 403) {
+    show("Wrong account", "This invitation is for " + saved.email + ". Sign in with that address.");
+    $("actions").hidden = false;
+    $("signin").onclick = () => signIn(saved.token, saved.email, saved.tenant, { prompt: "login" });
+    $("signup").onclick = () => signIn(saved.token, saved.email, saved.tenant, { prompt: "create" });
+    return;
+  }
+  if (!res.ok) return show("Something went wrong", "Open the invitation link from your email again.");
+  sessionStorage.removeItem(KEY);
+  show("You're in", "You joined " + saved.tenant + " with the roles your admin chose.",
+    "You can close this page and open your apps; they will show the new organisation.");
+}
+
+const params = new URLSearchParams(location.search);
+if (params.has("code")) finish(params).catch(() => show("Something went wrong", "Open the invitation link again."));
+else if (params.has("error")) show("Sign-in did not complete", "Open the invitation link from your email again.");
+else if (params.has("token")) preview(params.get("token")).catch(() => show("Something went wrong", "Try again."));
+else show("No invitation here", "Open the link from your invitation email.");
+</script>
+</body>
+</html>

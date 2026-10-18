@@ -82,7 +82,7 @@ func New(t *testing.T) *pgxpool.Pool {
 	if err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
-	pool, err := pgxpool.New(ctx, withUser(admin, runtimeRole, db))
+	pool, err := store.Open(ctx, withUser(admin, runtimeRole, db))
 	if err != nil {
 		t.Fatalf("runtime pool: %v", err)
 	}

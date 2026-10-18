@@ -1,0 +1,66 @@
+Acme Cloud readiness: 11 of 18 applicable controls pass (61.1%), 0 not applicable
+
+STATUS  CONTROL                     EVIDENCE
+pass    install-kek                 MATURA_KEK is set; secrets are sealed with AES-256-GCM envelope encryption
+pass    install-oidc                MATURA_AUTH=oidc: bearer tokens are verified against the issuer's keys
+pass    install-production          MATURA_ENV=production
+pass    install-tls                 MATURA_PUBLIC_URL is https://id.acme.example
+pass    install-smtp                MATURA_SMTP_ADDR is set; invitation emails are sent
+pass    install-metrics             MATURA_METRICS_ADDR is set: /metrics is served on its own listener
+pass    install-audit-chain         212 events, every hash and link recomputed
+FAIL    install-webhooks            2 active endpoints, 1 failing, 3 events dropped after 24 h in total
+pass    install-restore-test        restore test passed on 2026-10-09 (2 in the last 90 days)
+FAIL    install-access-review       no access review recorded
+pass    install-vulnerability-scan  vulnerability scan passed on 2026-10-15 (1 in the last 90 days)
+pass    tenant-audit-chain          2 of 2 tenants
+FAIL    tenant-security-policy      1 of 2 tenants fail: globex
+FAIL    tenant-mfa                  1 of 2 tenants fail: globex
+FAIL    tenant-session-limits       1 of 2 tenants fail: globex
+FAIL    tenant-invite-domains       1 of 2 tenants fail: globex
+FAIL    tenant-audit-streaming      1 of 2 tenants fail: acme
+pass    tenant-ip-allowlist         1 of 1 tenants
+
+Gaps:
+
+1. Webhook deliveries to apps are healthy (install-webhooks)
+   2 active endpoints, 1 failing, 3 events dropped after 24 h in total
+   fix:  Check the failing endpoints (GET /admin/v1/apps/{slug}/webhooks): fix the receiver or its URL, then send a test event.
+   docs: https://github.com/marunsct/Platform/blob/main/docs/guide/readiness.md#install-webhooks
+
+2. Access is reviewed at least quarterly (install-access-review)
+   no access review recorded
+   fix:  Review operators, tenant owners and admins, then record it: POST /admin/v1/evidence {"kind":"access-review","passed":true,"details":{...}}.
+   docs: https://github.com/marunsct/Platform/blob/main/docs/guide/readiness.md#install-access-review
+   maps to: SOC 2 CC6.2; SOC 2 CC6.3; ISO/IEC 27001:2022 A.5.18
+
+3. Each organisation has a security policy (tenant-security-policy)
+   1 of 2 tenants fail: globex
+   fix:  Owners or admins set one in the portal (Security) or with PUT /v1/tenants/{tid}/security-policy.
+   docs: https://github.com/marunsct/Platform/blob/main/docs/guide/readiness.md#tenant-security-policy
+   maps to: SOC 2 CC6.1
+
+4. Organisations require multi-factor authentication (tenant-mfa)
+   1 of 2 tenants fail: globex
+   fix:  Set require_mfa: true in the tenant's security policy.
+   docs: https://github.com/marunsct/Platform/blob/main/docs/guide/readiness.md#tenant-mfa
+   maps to: SOC 2 CC6.1; ISO/IEC 27001:2022 A.8.5
+
+5. Organisations limit session length and idle time (tenant-session-limits)
+   1 of 2 tenants fail: globex
+   fix:  Set session_max_age and idle_timeout in the tenant's security policy.
+   docs: https://github.com/marunsct/Platform/blob/main/docs/guide/readiness.md#tenant-session-limits
+   maps to: SOC 2 CC6.1; ISO/IEC 27001:2022 A.8.5
+
+6. Company invitations are limited to the company's domains (tenant-invite-domains)
+   1 of 2 tenants fail: globex
+   fix:  Set allowed_email_domains in the tenant's security policy.
+   docs: https://github.com/marunsct/Platform/blob/main/docs/guide/readiness.md#tenant-invite-domains
+   maps to: SOC 2 CC6.2; ISO/IEC 27001:2022 A.5.16
+
+7. Company audit logs stream to the company's own systems (tenant-audit-streaming)
+   1 of 2 tenants fail: acme
+   fix:  Add an audit destination in the portal (Audit) or with POST /v1/tenants/{tid}/audit/sinks, and keep it delivering.
+   docs: https://github.com/marunsct/Platform/blob/main/docs/guide/readiness.md#tenant-audit-streaming
+   maps to: SOC 2 CC7.2; ISO/IEC 27001:2022 A.8.15
+
+Readiness shows which controls are in place on this installation and the evidence for them. It is not an audit and does not certify compliance with any framework; mappings are indicative and an auditor decides.

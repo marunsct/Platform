@@ -47,6 +47,24 @@ type Store struct {
 
 func New(pool *pgxpool.Pool) *Store { return &Store{pool: pool} }
 
+// LeaderConns is how many connections the background loops can hold at once: each leader keeps its advisory lock
+// on a connection of its own for as long as it leads (TryLeader).
+const LeaderConns = 9
+
+// Open connects a pool sized for maturad. pgx defaults to max(4, CPUs) connections, which the leader loops alone
+// can exhaust on a small machine and leave no connection for requests; unless the URL sets pool_max_conns, the
+// pool gets LeaderConns more than that default.
+func Open(ctx context.Context, url string) (*pgxpool.Pool, error) {
+	cfg, err := pgxpool.ParseConfig(url)
+	if err != nil {
+		return nil, err
+	}
+	if !strings.Contains(url, "pool_max_conns") {
+		cfg.MaxConns += LeaderConns
+	}
+	return pgxpool.NewWithConfig(ctx, cfg)
+}
+
 func (s *Store) Ping(ctx context.Context) error { return s.pool.Ping(ctx) }
 
 func uuidSetting(id uuid.UUID) string {
@@ -57,19 +75,23 @@ func uuidSetting(id uuid.UUID) string {
 }
 
 func (s *Store) tx(ctx context.Context, sc Scope, fn func(pgx.Tx) error) error {
-	scope := "tenant"
-	if sc.Operator {
-		scope = "operator"
-	}
 	return pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
-		if _, err := tx.Exec(ctx,
-			`SELECT set_config('matura.tenant_id', $1, true), set_config('matura.user_id', $2, true),
-			        set_config('matura.scope', $3, true)`,
-			uuidSetting(sc.TenantID), uuidSetting(sc.UserID), scope); err != nil {
+		if err := setScope(ctx, tx, sc); err != nil {
 			return err
 		}
 		return fn(tx)
 	})
+}
+
+// setScope is the first statement of tx, so row-level security sees who acts.
+func setScope(ctx context.Context, tx pgx.Tx, sc Scope) error {
+	scope := "tenant"
+	if sc.Operator {
+		scope = "operator"
+	}
+	_, err := tx.Exec(ctx, `SELECT set_config('matura.tenant_id', $1, true), set_config('matura.user_id', $2, true),
+		set_config('matura.scope', $3, true)`, uuidSetting(sc.TenantID), uuidSetting(sc.UserID), scope)
+	return err
 }
 
 // setTenant switches the tenant setting inside a transaction, used when the tenant is created in it.
@@ -84,7 +106,8 @@ func nextVersion(ctx context.Context, tx pgx.Tx) (int64, error) {
 	return v, err
 }
 
-// emit records a change in the outbox, in the same transaction as the change (technical specification §8).
+// emit records a change in the outbox and the audit log, in the same transaction as the change (technical
+// specification §8, §13).
 func emit(ctx context.Context, tx pgx.Tx, version int64, tenantID uuid.UUID, typ, subject string, payload any) error {
 	body, err := json.Marshal(payload)
 	if err != nil {
@@ -94,9 +117,11 @@ func emit(ctx context.Context, tx pgx.Tx, version int64, tenantID uuid.UUID, typ
 	if tenantID != uuid.Nil {
 		tid = tenantID
 	}
-	_, err = tx.Exec(ctx, `INSERT INTO outbox (version, tenant_id, type, subject, payload) VALUES ($1, $2, $3, $4, $5)`,
-		version, tid, "matura."+typ, subject, body)
-	return err
+	if _, err = tx.Exec(ctx, `INSERT INTO outbox (version, tenant_id, type, subject, payload) VALUES ($1, $2, $3, $4, $5)`,
+		version, tid, "matura."+typ, subject, body); err != nil {
+		return err
+	}
+	return audit(ctx, tx, tenantID, typ, subject, json.RawMessage(body))
 }
 
 // mapErr turns driver errors into the package's errors.
@@ -122,4 +147,21 @@ func mapErr(err error) error {
 		}
 	}
 	return err
+}
+
+// TryLeader takes a session-level advisory lock on a connection of its own, so one replica runs a background loop.
+// release unlocks and returns the connection; ok is false when another replica holds the lock.
+func (s *Store) TryLeader(ctx context.Context, key int64) (release func(), ok bool, err error) {
+	conn, err := s.pool.Acquire(ctx)
+	if err != nil {
+		return nil, false, err
+	}
+	if err := conn.QueryRow(ctx, `SELECT pg_try_advisory_lock($1)`, key).Scan(&ok); err != nil || !ok {
+		conn.Release()
+		return nil, false, err
+	}
+	return func() {
+		_, _ = conn.Exec(context.WithoutCancel(ctx), `SELECT pg_advisory_unlock($1)`, key)
+		conn.Release()
+	}, true, nil
 }

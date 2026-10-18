@@ -1,0 +1,13 @@
+Matura is starting. maturad runs its database migrations on start-up.
+
+  maturad:  {{ .Values.publicURL }}
+  portal:   {{ .Values.publicURL }}/portal/
+  issuer:   {{ include "matura.issuer" . }}
+
+Make yourself an operator: give your Keycloak user the realm role "{{ .Values.maturad.operatorRole }}".
+Register an app:  PUT {{ .Values.publicURL }}/admin/v1/apps/<slug> with its manifest (docs/guide).
+{{- if or .Values.openfga.enabled .Values.openfga.url }}
+Fine-grained permissions: on (OpenFGA {{ .Values.openfga.url | default "deployed with this release" }}).
+{{- else }}
+Fine-grained permissions: off (set openfga.enabled=true or openfga.url to turn them on).
+{{- end }}

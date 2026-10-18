@@ -17,7 +17,7 @@ what is built first and how. The app-facing part is in the [app integration cont
     │  └── events (webhooks) ◄───┘  │  └── provisioner ──► registered Postgres servers
     │                               │                      (shared db / schemas / databases)
     └── change feed, placements ◄───┘
-  Consoles (React, M2) ──► maturad /v1, /admin/v1
+  Consoles (React, /portal/) ──► maturad /v1, /admin/v1
 ```
 
 | Component | Built in | Responsibility now | Later |
@@ -26,10 +26,10 @@ what is built first and how. The app-facing part is in the [app integration cont
 | Postgres 16 `matura` | SQL migrations (embedded, applied at start) | control-plane data, RLS, outbox, jobs | CloudNativePG (M5) |
 | Keycloak 26 | realm-as-code JSON, Java SPI | sign-in, sign-up, social login, sessions, tokens | MFA, passkeys, SSO brokering (M3–M4) |
 | Python SDK | `sdk/python`, FastAPI first | verify, principal, contract tables, sync, routing | Django, TypeScript, Go SDKs |
-| Consoles | React (doc 18) | M2 | |
+| Consoles | React 19, Vite, Tailwind 4, TanStack Router and Query (`web/portal`, embedded in maturad at `/portal/`) | customer portal I (TS8): members, invitations, app access, workspaces, roles, My account | portal II and operator console (TS9–TS10) |
 
-Deferred until first needed: NATS (webhooks suffice until M5), Temporal (jobs table with `SKIP LOCKED` until
-tier moves in M5), OpenFGA (M4), OpenBao (secrets encrypted by a local key-encryption key behind a `KeyManager`
+OpenFGA is an optional component since TS11 (§18). Deferred until first needed: NATS (webhooks suffice until M5), Temporal (jobs table with `SKIP LOCKED` until
+tier moves in M5), OpenBao (secrets encrypted by a local key-encryption key behind a `KeyManager`
 interface until TS17).
 
 ## 2. Identifiers and conventions
@@ -49,7 +49,8 @@ with it, and `FORCE ROW LEVEL SECURITY` with the policy below. `maturad` connect
 migrations run as `matura_owner`.
 
 ```
-tenant(id, slug UNIQUE, name, kind, status, plan, data_mode_default, home_region, version, created_at, updated_at)
+tenant(id, slug UNIQUE, name, kind, status, plan, data_mode_default, home_region, status_reason, purge_after,
+       restore_status, entitlement_overrides jsonb, support_access approval|allowed|off, version, created_at, updated_at)
 workspace(id, tenant_id → tenant, name, status, is_default, version, …)          UNIQUE(tenant_id, id)
 app_user(id = keycloak id, email UNIQUE (citext), email_verified, display_name, avatar_url, locale,
          kind, status, version, …)
@@ -73,6 +74,8 @@ webhook_delivery(endpoint_id, outbox_id, attempts, next_attempt_at, last_status,
 job(id, kind, payload jsonb, run_after, attempts, locked_by, locked_until, last_error, done_at)
 idempotency_key(key, principal, request_hash, response jsonb, created_at)          pruned after 24 h
 deletion_confirmation(tenant_id, app_id, confirmed_by, confirmed_at, note)
+support_access(id, tenant_id → tenant, operator_id → app_user, reason, duration_minutes ≤ 480, state, auto_approved,
+               requested_at, decided_by, decided_at, starts_at, expires_at, ended_by, ended_at, last_used_at, uses)
 ```
 
 RLS policy on tenant-owned tables:
@@ -107,22 +110,137 @@ that mode unless `MATURA_ENV=development`.
 
 | Area | Endpoints |
 |---|---|
-| Tenants | `POST/GET /v1/tenants`, `GET/PATCH/DELETE /v1/tenants/{tid}`, `POST /v1/tenants/{tid}:restore` |
-| Workspaces | `GET/POST /v1/tenants/{tid}/workspaces`, `PATCH/DELETE …/{wid}` |
-| Members | `GET /v1/tenants/{tid}/members`, `PATCH/DELETE …/{uid}` |
-| Invitations | `POST/GET /v1/tenants/{tid}/invitations`, `POST …/{id}:resend`, `DELETE …/{id}`, `POST /v1/invitations:accept` |
-| Apps | `PUT /admin/v1/apps/{slug}` (apply manifest), `GET /v1/apps`, `POST/DELETE /v1/tenants/{tid}/apps/{app}` |
+| Tenants | `POST/GET /v1/tenants`, `GET/PATCH/DELETE /v1/tenants/{tid}`, `POST /v1/tenants/{tid}:restore`; operators: `GET /admin/v1/tenants`, `POST /admin/v1/tenants/{tid}:suspend`, `:resume`, `:restore`, `DELETE /admin/v1/tenants/{tid}`, `GET /admin/v1/stats` (§5.3) |
+| Entitlements | `GET /v1/tenants/{tid}/entitlements`; operators: `PUT /admin/v1/tenants/{tid}/plan`, `GET/PUT /admin/v1/plans…` (§5.3) |
+| Support access | operators: `POST/GET /admin/v1/tenants/{tid}/support-access`, `POST …/{id}:end`; tenant: `GET /v1/tenants/{tid}/support-access`, `POST …/{id}:approve`, `:deny`, `:revoke` (§5.3) |
+| Workspaces | `GET/POST /v1/tenants/{tid}/workspaces`, `PATCH …/{wid}` (archive by status) |
+| Members | `GET/POST /v1/tenants/{tid}/members`, `PATCH/DELETE …/{uid}` |
+| Invitations | `POST/GET /v1/tenants/{tid}/invitations`, `POST …/{id}:resend`, `DELETE …/{id}`, `POST /v1/invitations:accept`; unauthenticated: `GET /invitations/accept` (page), `GET /invitations/preview?token=` (§5.1) |
+| Apps | `PUT /admin/v1/apps/{slug}` (apply manifest), `GET /v1/apps`, `GET /v1/tenants/{tid}/apps`, `PUT/DELETE /v1/tenants/{tid}/apps/{app}` |
 | App roles | `GET /v1/apps/{slug}/roles`; operators: `POST /admin/v1/apps/{slug}/roles`, `PATCH/DELETE /admin/v1/apps/{slug}/roles/{name}` (RL-8 to RL-11) |
 | Grants | `GET/POST /v1/tenants/{tid}/grants`, `DELETE …/{id}` |
-| Users | `GET/PATCH /v1/me`, `GET /v1/me/tenants`, `GET/PATCH/DELETE /admin/v1/users/{uid}` |
-| Database servers | `POST/GET /admin/v1/db-servers`, `PATCH/DELETE …/{id}`, `POST …/{id}:test` |
+| Users | `GET /v1/me`, `GET /v1/me/tenants`, `GET /v1/me/export`, `DELETE /v1/me` (§14.2), `GET/PATCH/DELETE /admin/v1/users/{uid}` |
+| Database servers | `POST/GET /admin/v1/db-servers`, `PATCH/DELETE …/{id}`, `POST …/{id}/test` |
 | Placements | `GET /v1/tenants/{tid}/placements`; app: `GET /v1/apps/{app}/placements/{tid}`, `PUT` (app-managed register), `POST …:ready`, `POST …:deleted`; app: `POST /v1/apps/{app}/placements/{tid}/credentials` (short-lived connection) |
 | Sync | `GET /v1/apps/{app}/changes`, `GET /v1/apps/{app}/snapshot?tenant=` |
-| Webhooks | `POST/GET /admin/v1/apps/{app}/webhooks`, `POST …/{id}:test` |
-| Internal (Keycloak) | `GET /internal/v1/token-context?user=&client=&tenant=` → claims for the mapper; `POST /internal/v1/events` |
+| Permissions | app: `POST /v1/apps/{app}/tenants/{tid}/relations`, `POST …/tenants/{tid}:check`, `:batch-check`, `:list-objects` (§18; 501 without OpenFGA) |
+| Webhooks | `POST/GET /admin/v1/apps/{app}/webhooks`, `PATCH/DELETE …/{id}`, `POST …/{id}/test` |
+| Audit | `GET /v1/tenants/{tid}/audit`, `GET …/audit/export` (NDJSON), `GET …/audit:verify`, `GET/POST …/audit/sinks`, `PATCH/DELETE …/audit/sinks/{id}`; operators: `GET /admin/v1/audit`, `GET /admin/v1/audit:verify` (§13) |
+| Security policy | `GET/PUT /v1/tenants/{tid}/security-policy` (§13.4) |
+| Sessions and MFA | `GET /v1/me/sessions`, `DELETE /v1/me/sessions[?keep_current=true]`, `DELETE /v1/me/sessions/{id}`, `GET /v1/me/mfa`; owners and admins: `GET /v1/tenants/{tid}/members/{uid}/sessions`, `POST …/members/{uid}:sign-out`, `POST …/members/{uid}:reset-mfa` (§16) |
+| Enterprise SSO | `GET/POST /v1/tenants/{tid}/domains`, `POST …/domains/{domain}:verify`, `DELETE …/domains/{domain}`, `GET/POST/DELETE /v1/tenants/{tid}/sso`; public: `GET /v1/sso/discover?email=` (§17) |
+| Privacy | `GET/POST /v1/tenants/{tid}/exports`, `GET …/exports/{id}`, `GET …/exports/{id}/download` (§14.1); `GET/PUT /v1/tenants/{tid}/retention` (§14.4) |
+| Readiness | operators: `GET /admin/v1/readiness`, `GET/POST /admin/v1/evidence`; unauthenticated, off by default: `GET /trust`, `GET /trust.json` (§15) |
+| Internal (Keycloak) | `POST /internal/v1/token-context` `{user_id, email, email_verified, name, locale, client_id, tenant, workspace, session_started, session_last_use}` → claims for the mapper, or `403 {error: access_denied, error_description}`; `POST /internal/v1/mfa-policy {user_id}` → `{required, tenants}`; `POST /internal/v1/sso-login {alias, email, user_id?, name}` → `{tid, tenant, joined}` or 403; bearer `MATURA_INTERNAL_TOKEN` |
 | Health | `GET /healthz/live`, `GET /healthz/ready` |
 
-The OpenAPI 3.1 document lives in `api/openapi.yaml` and is the source for generated clients.
+The OpenAPI 3.1 document lives in `api/openapi.yaml` and is the source for generated clients;
+`TestOpenAPIMatchesRoutes` fails when a served route is missing from it or a documented one is not served.
+
+### 5.1 Invitations and email (TS6)
+
+- **Invite** (owners and admins; only owners invite owners): `{email, tenant_role (default member), app_roles:
+  [{app, role, workspace_id?}], delivery: "link", deliver_to?}`. App roles are checked up front (app enabled, role
+  exists, workspace in the tenant). An active member's address answers 409; an earlier pending invitation to the
+  same address is revoked. `delivery: temp_password` answers 422 until it is built.
+- **Token:** 32 random bytes, base64url, in the link `MATURA_INVITE_ACCEPT_URL?token=…`; only its SHA-256 is stored.
+  Links expire after 7 days (`expires_at`; a pending invitation past it lists as `expired`). The create and resend
+  responses carry `accept_url` (not stored) so an admin can pass a link on when email is not set up.
+- **Resend** issues a new token and expiry (the old link stops working) and works on pending and expired invitations;
+  **revoke** ends a pending one.
+- **Accept** (`POST /v1/invitations:accept {token}`, signed in): the token is looked up in operator scope, then the
+  rest runs in the invitation's tenant. Refused with **410** when the invitation is accepted, revoked, expired, the
+  tenant is not active or the token is unknown ("ask your admin for a new invitation"), and **403** when the
+  signed-in email is not the invited one. Otherwise: membership with the tenant role (an existing member keeps theirs),
+  the invitation's app roles (one that can no longer be granted is skipped), each other enabled app's default role
+  (RL-4), and the invitation marked accepted. Members added directly (`POST …/members`) get default roles too.
+  Membership and grant changes reach apps as usual; invitations themselves are not contract events.
+- **Accept page:** `GET /invitations/accept` is a self-contained page served by maturad. It shows the tenant and
+  address (`/invitations/preview`), signs in or registers (`prompt=create`) at Keycloak with authorization code + PKCE
+  as the public client `MATURA_PORTAL_CLIENT_ID` (default `matura-console`, whose redirect URIs must include the
+  page), then accepts. It sends no referrer and removes the token from the address bar. The customer portal (TS8)
+  can replace it via `MATURA_INVITE_ACCEPT_URL`.
+- **Email outbox:** `email_outbox` rows are written in the same transaction as the invitation (anyone may insert;
+  only operator scope reads). The mailer (one active replica, advisory lock 7351005) sends due rows over SMTP
+  (STARTTLS when offered; credentials only over TLS or to localhost) and retries with backoff (1, 2, 4 … 64 minutes)
+  up to 8 attempts, then marks the row `failed`. Without `MATURA_SMTP_ADDR` mail is queued but not sent.
+
+### 5.2 Customer portal (TS3, TS8)
+
+- **Serving:** the portal is a static single-page app (`web/portal`) whose build output is committed in
+  `internal/portal/dist` and embedded with `go:embed`, so `go build` needs no Node. maturad serves it at `/portal/`
+  (`/portal` redirects there): built files as they are, hashed `assets/` with a one-year immutable cache, and
+  `index.html` (`no-cache`) for any other path without an extension so the browser router can show it. Missing
+  files with an extension answer 404.
+- **Runtime configuration:** `GET /portal/config.json` gives `auth` (`oidc` or `dev`), `issuer` (`MATURA_ISSUER`),
+  `client_id` (`MATURA_PORTAL_CLIENT_ID`) and `product`, with `Cache-Control: no-store`.
+- **Headers:** every portal response carries `Content-Security-Policy: default-src 'none'; script-src 'self';
+  style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self' <issuer origin>; manifest-src 'self';
+  base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'`, plus `nosniff`,
+  `Referrer-Policy: no-referrer`, `X-Frame-Options: DENY` and `Cross-Origin-Opener-Policy: same-origin`.
+- **Sign-in:** authorization code with PKCE (S256) as the public client, redirect URI `<origin>/portal/callback`
+  (the realm export allows `http://localhost:8080/portal/*`). Endpoints come from the issuer's discovery document.
+  Tokens are kept in memory only; session storage holds just the in-flight verifier, state and return path. The
+  access token is refreshed 30 s before expiry (one refresh for concurrent callers); when refreshing fails, or the
+  API answers 401, or the page is reloaded, the browser goes back through Keycloak, which signs the user straight
+  in while its session lasts. Only paths under `/portal/` are followed after sign-in. Sign-out uses the end-session
+  endpoint with `id_token_hint`. With `MATURA_AUTH=dev` the portal instead asks which user to act as and sends the
+  `X-Matura-Dev-*` headers.
+- **API use:** same origin, `/v1` and `/admin/v1` only; every POST carries an `Idempotency-Key`; renaming a tenant
+  sends `If-Match`. A 403 shows a "you need admin access" state rather than an error.
+
+### 5.3 Operator console: tenant lifecycle, entitlements and support access (TS10)
+
+- **Lifecycle.** `active ⇄ suspended` (`:suspend` with a `reason`, `:resume`; also `PATCH status`), operators only.
+  `DELETE` (owners and operators) makes the tenant `pending_deletion` with `purge_after = now + grace` (default 30
+  days, `MATURA_TENANT_DELETE_GRACE`; operators may pass `?grace_days=0…365` and `?reason=`); repeating it changes
+  nothing. `:restore` (owners and operators) returns it to the status it had before (`restore_status`), so a
+  suspended tenant stays suspended. The **purger** (`internal/lifecycle`, one active replica, advisory lock 7351007,
+  every minute) moves due tenants to `deleting` — `tenant.deleting` to every app, placements `retiring` (§7.3 step
+  5), pending invitations revoked, support access ended — and marks a `deleting` tenant `deleted` (`tenant.deleted`)
+  once none of its placements holds data. Events: `tenant.suspended`, `tenant.reactivated`, `tenant.updated` (plan,
+  name, settings, restore to suspended), `tenant.deleting`, `tenant.deleted`; every payload is the tenant with its
+  status. In events and snapshots a `pending_deletion` tenant appears as `suspended` (contract statuses are
+  unchanged) with `purge_after`, and the operator's `status_reason` is left out; `GET /v1/me/tenants` and member
+  reads leave it out too.
+- **Refusals.** The token mapper refuses a suspended tenant (`tenant_suspended`) and one pending deletion
+  (`tenant_pending_deletion`) to everyone, owners included; without a named tenant it picks an active one first.
+  Tokens already issued expire within their lifetime (5 min). The API answers members of a suspended tenant 403
+  `tenant-suspended` on every tenant route, and members of a tenant pending deletion 403 `tenant-pending-deletion`
+  except `GET /v1/tenants/{tid}`, `DELETE` and `:restore`. A `deleting` or `deleted` tenant is 404 to members.
+- **Operators inside tenants.** Operators keep operator scope on the tenant record (`GET/PATCH/DELETE
+  /v1/tenants/{tid}`, `:restore`), its placements, its entitlements and its security policy (to lift an IP
+  allow-list that locked the tenant out). Every other tenant route (members,
+  workspaces, apps, grants, invitations, support access) needs active support access (403
+  `support-access-required`), runs in the tenant's own scope (not operator scope) and is read-only (403
+  `support-access-read-only` for anything but GET). An operator who is a member of the tenant acts as that member.
+- **Entitlements.** `plan.limits` and `tenant.entitlement_overrides` share one shape: `max_members`,
+  `max_workspaces` (integers; missing or negative: no limit), `apps` (slugs; missing or containing `"*"`: every
+  app), `features` (`{name: bool}`); other keys are kept for apps. Overrides replace the plan's values key by key,
+  features flag by flag; `PUT /admin/v1/tenants/{tid}/plan {plan, overrides}` sets both (overrides left out: kept;
+  null: cleared). Checks run in the writing transaction after `SELECT … FOR UPDATE` on the tenant row, so racing
+  requests are counted one after another: adding a member and accepting an invitation (members not `removed`, so
+  deactivated ones hold a seat), creating a workspace (workspaces not `deleted`), enabling an app. Over the limit:
+  **402** `plan-limit` with `limit`, `max`, `used`. Lowering a limit keeps existing usage. `GET
+  /v1/tenants/{tid}/entitlements` returns `plan`, effective `limits`, `plan_limits`, `overrides` and `usage`
+  (members, workspaces, enabled apps).
+- **Support access.** `POST /admin/v1/tenants/{tid}/support-access {reason, duration_minutes ≤ 480}`. The tenant's
+  `support_access` setting (owners set it with `PATCH /v1/tenants/{tid}`): `approval` (default) — the request is
+  `pending` until an owner approves (`:approve`; the window starts then) or denies it, and lapses after 24 hours;
+  `allowed` — it starts at once (`auto_approved`); `off` — 403 `support-access-off`. Owners `:revoke`, the operator
+  who asked `:end`s; it expires at `expires_at`. Listed states: `pending`, `active`, `expired`, `denied`,
+  `revoked`, `ended`. Each request made with it increments `uses` and sets `last_used_at`, so the tenant (owners and
+  admins: `GET /v1/tenants/{tid}/support-access`) sees what was asked, who decided and when it was used. The rows
+  are tenant-owned under RLS and never deleted. No token is issued and nobody is impersonated: the operator keeps
+  their own identity, and the access only opens the GET routes above.
+- **Audit (§13).** Besides the contract events, `tenant.status.changed` records each lifecycle action with the real
+  status, the operator's reason and `purge_after`; `tenant.plan.changed` the plan and overrides;
+  `support_access.requested`, `.auto_approved`, `.approved`, `.denied`, `.revoked` and `.ended` each request and
+  decision, in the tenant's chain. Refusals for `support-access-required`, `support-access-read-only` and
+  `support-access-off` are `authz.denied`.
+- **Operator lists.** `GET /admin/v1/tenants?q=&status=a,b&cursor=&limit=` (by slug; `next_cursor` while more
+  remain; default every status but `deleted`) with `member_count`; `GET /admin/v1/stats` (tenants and users by
+  status with `total`, apps with the number of tenants that enabled each).
 
 ## 6. Token mapper (TS5)
 
@@ -130,11 +248,17 @@ Besides `roles`, the mapper adds `perms`: the union of the permissions of the us
 app in the token's tenant and workspace, sorted, `["*"]` if any role has `*`. Above 40 entries it adds
 `perms_ref: "matura_app_role"` instead (contract §2).
 
-The Java mapper calls `/internal/v1/token-context` once per token issue (cached in Infinispan for 30 s, invalidated
-by `maturad` through the internal event endpoint) and adds the claims in contract §2. Tenant choice comes from the
-authorisation request parameter `matura_tenant=<slug|id>`, else the user's last-used tenant. A user without a
+The Java mapper (`keycloak/extensions`, provider id `matura-token-mapper`, attached to each app's client as a
+protocol mapper; a realm import that lists its own client scopes would replace Keycloak's built-in ones, such as
+`basic`, which carries `sub`) calls `POST /internal/v1/token-context` once per token issue (5-second in-memory cache)
+and adds the claims in contract §2. It fails closed: if `maturad` cannot be reached, no token is issued. Tenant
+choice comes from the authorisation request parameter `matura_tenant=<slug|id>`, else the user's last-used tenant;
+`matura_workspace=<id>` picks a workspace, else the tenant's default. A user without a
 membership in the requested tenant gets `access_denied`. A tenant that has not enabled the app gets
-`access_denied` with `error_description=app_not_enabled`.
+`access_denied` with `error_description=app_not_enabled`. A suspended tenant gets `tenant_suspended`, one pending deletion `tenant_pending_deletion` (§5.3). The mapper also sends the Keycloak session's start and the
+time it last issued a token in that session (user-session note `matura.last_token`); when the chosen tenant's
+`session_max_age` or `idle_timeout` (§13.4) is exceeded maturad refuses with `session_expired` and the mapper ends
+the session, so the next authorisation request signs in again.
 
 ### 6.1 Roles in the manifest and in Matura (ADR 0008)
 
@@ -167,6 +291,12 @@ next apply unless the manifest drops it too.
 
 Names are lower-case, at most 63 bytes, built only from slugs and ids that `maturad` validates, and always quoted
 with `pgx.Identifier` when used in DDL.
+
+As built (TS7b, `internal/placement`): database mode names the database `<app>_t_<tenant-slug>` (so a tenant slug can
+never collide with `<app>_shared` or `<app>_bridge`). A new placement goes to the active, non-dedicated server with
+the fewest placements; shared mode reuses the server that already holds the app's shared database. Dedicated servers
+are assigned by operators (M5 moves). A failed step records `error`, sets `failed` and is retried after 1 minute,
+doubling to 1 hour. One `maturad` replica provisions at a time (advisory lock 7351004).
 
 ### 7.2 Manifest section
 
@@ -205,8 +335,10 @@ requested ─► provisioning ─► provisioned ─► migrating ─► ready �
 
 ### 7.4 Credentials
 
-`POST /v1/apps/{app}/placements/{tid}/credentials` returns `{host, port, database, user, password, search_path,
-expires_at}` for the runtime role. In M1 the password is the placement's stored one and `expires_at` is when the
+`POST /v1/apps/{app}/placements/{tid}/credentials` returns `{host, port, sslmode, database, user, password,
+search_path, mode, expires_at}` for the runtime role; `{"purpose": "migrate"}` returns the role that owns the tables
+(`<app>_owner` in shared mode; in schema and database mode the tenant's role owns its schema or database, so it is the
+same role). In M1 the password is the placement's stored one and `expires_at` is when the
 SDK should ask again (1 h); in M5 OpenBao's database secrets engine issues per-request dynamic roles. The SDK keeps
 credentials in memory only.
 
@@ -249,8 +381,9 @@ and reports `ready`. Expand-and-contract migrations are required, since tenants 
   ids; no user-supplied SQL ever reaches a server.
 - Invitation tokens: 32 random bytes, only the SHA-256 is stored, single use.
 - Rate limits per tenant and per IP on invitation and sign-up endpoints.
-- All operator actions and membership, grant and placement changes are recorded in the outbox (the audit module in
-  M3 consumes it).
+- Every change, operator action and refused request is recorded in the tenant's hash-chained audit log (§13).
+- Behind a reverse proxy, `MATURA_TRUSTED_PROXIES` names the proxies whose `X-Forwarded-For` is believed; the
+  client address (for IP allow-lists and the audit log) is the right-most hop that is not one of them.
 
 ## 10. Configuration
 
@@ -260,10 +393,26 @@ and reports `ready`. Expand-and-contract migrations are required, since tenants 
 | `MATURA_DATABASE_URL` | control-plane database, runtime role |
 | `MATURA_MIGRATE_DATABASE_URL` | same database, owner role (migrations at start-up) |
 | `MATURA_HTTP_ADDR` | default `:8080` |
+| `MATURA_METRICS_ADDR` | default `:9090`; serves Prometheus `/metrics` (request counts and latency by route, queue backlogs) on its own listener; empty turns it off |
 | `MATURA_ISSUER` | Keycloak realm URL |
 | `MATURA_AUTH` | `oidc` (default) or `dev` |
 | `MATURA_KEK` | base64 key-encryption key |
-| `MATURA_PUBLIC_URL` | for links in emails |
+| `MATURA_PUBLIC_URL` | where people reach maturad, for links in emails (default `http://localhost:8080`) |
+| `MATURA_INVITE_ACCEPT_URL` | page invitation links open (default `<MATURA_PUBLIC_URL>/invitations/accept`) |
+| `MATURA_PORTAL_CLIENT_ID` | public Keycloak client the portal and the accept page sign in with (default `matura-console`) |
+| `MATURA_SMTP_ADDR` | `host:port` of the mail relay; unset: emails are queued, not sent |
+| `MATURA_SMTP_FROM`, `MATURA_SMTP_USER`, `MATURA_SMTP_PASSWORD` | sender address (default `no-reply@matura.local`) and optional login |
+| `MATURA_KEYCLOAK_CLIENT_SECRET` | secret of the realm's `matura-admin` client; unset: the session, MFA and SSO endpoints answer 503 and erasure does not delete Keycloak accounts |
+| `MATURA_KEYCLOAK_CLIENT_ID` | default `matura-admin` |
+| `MATURA_KEYCLOAK_URL` | Keycloak base URL maturad calls (default: from `MATURA_ISSUER`; the realm is always the issuer's) |
+| `MATURA_TENANT_DELETE_GRACE` | how long a deleted tenant can be restored before it is purged (Go duration, default `720h`) |
+| `MATURA_TRUSTED_PROXIES` | comma-separated addresses or CIDR ranges of reverse proxies whose `X-Forwarded-For` is believed; unset: the connection's address is the client's |
+| `MATURA_PRODUCT_NAME` | name on the trust page and in readiness reports (default `Matura`) |
+| `MATURA_TRUST_PAGE` | `on` serves the public trust page at `/trust` and `/trust.json`; `off` (default) answers 404 |
+| `MATURA_SECURITY_CONTACT` | optional address the trust page gives for security reports |
+| `MATURA_OPENFGA_URL` | OpenFGA's HTTP API, e.g. `http://openfga:8080`; unset: fine-grained permissions are off (§18) |
+| `MATURA_OPENFGA_TOKEN` | OpenFGA preshared key, sent as a bearer token, when OpenFGA requires one |
+| `MATURA_OPENFGA_STORE` | name of the installation's OpenFGA store (default `matura`) |
 
 ## 11. Testing
 
@@ -275,7 +424,9 @@ and reports `ready`. Expand-and-contract migrations are required, since tenants 
 | Cross-tenant | every tenant route called as tenant B with tenant A's ids returns 404 |
 | Provisioner | creates and drops a shared database, a schema and a database on the test server; the runtime role cannot read another tenant's schema or database |
 | SDK | fake issuer, contract apply with shuffled duplicated events, routing in all three modes |
-| End to end | Compose stack with Keycloak and the example app (TS7) |
+| Permissions | `internal/fga` unit tests and an in-memory fake (`fga/fgatest`); the same client and API suites run against a real OpenFGA when `MATURA_TEST_OPENFGA_URL` is set (`openfga run --datastore-engine memory`) |
+| Keycloak | `internal/keycloak` against an in-memory fake (`keycloaktest`, also used by the API tests); with `MATURA_TEST_KEYCLOAK_URL` against a real Keycloak 26.4 in a throwaway realm (sessions, credentials, identity providers, the realm export when the server has the extension) |
+| End to end | Compose stack with Keycloak and the example app (TS7); `scripts/e2e_identity.py` (MFA enrolment and challenge, member MFA reset, tenant OIDC IdP with JIT join, auto-link and a refused foreign domain) |
 
 ## 12. Repository layout (first sprints)
 
@@ -288,9 +439,580 @@ internal/ids/           UUIDv7, slugs
 internal/secrets/       KeyManager, AES-GCM envelope
 internal/placement/     provisioner (TS7b)
 internal/events/        outbox relay, webhooks, feed (TS7c)
+internal/audit/         audit streaming to tenant destinations (TS9)
+internal/privacy/       tenant exports and audit retention worker (TS17)
+internal/fga/           OpenFGA HTTP client, DSL parser, models and tenant namespacing (TS11)
+internal/access/        OpenFGA store and models, sync worker (TS11)
+internal/readiness/     control catalogue, evaluation, OSCAL and trust-page view (TS24, TS25)
+cmd/matura/             operator CLI: `matura check` (TS24)
 keycloak/realm/         realm-as-code
 keycloak/extensions/    Java SPIs (TS5)
+internal/portal/        embedded portal build and its handler (TS8)
+web/portal/             customer portal source: React, Vite, Tailwind (TS3, TS8)
 sdk/python/             matura SDK (TS7)
+sdk/typescript/         @matura/sdk (TS7e)
+sdk/go/                 Go SDK, its own module (TS7e)
+docs/templates/         policy templates filled by `matura check --policies` (TS25)
 deploy/compose/         docker compose
 api/openapi.yaml
 ```
+
+## 13. Audit log and security policies (TS9)
+
+### 13.1 Recording
+
+- **One hook.** `emit()` writes the outbox row and calls `audit()` in the same transaction, so every contract change
+  (tenants, workspaces, members, grants, apps, roles, placements, users) is recorded with the change or not at all.
+  Changes that are not contract events call `audit()` directly: invitations created, resent, revoked and accepted;
+  app secrets created and revoked; webhook endpoints created, changed and deleted; plans; database servers; security
+  policies; audit destinations; exports (`audit.exported`); tenant lifecycle actions, plan changes and support
+  access (§5.3). A request refused with 403 (`forbidden`,
+  `ip-not-allowed`, `operator-only`) is recorded as `authz.denied` in its own transaction.
+- **Actor.** `authenticate` puts a `store.Actor` in the request context: kind (`user`, `operator`, `app`), id, email,
+  request id (the caller's `X-Request-Id` when short and printable, otherwise a new one; echoed in the response), client
+  address and user agent. Work with no actor (the provisioner) is recorded as `system`.
+- **Action and target.** For changes from `emit()` the action is the event type without `matura.` (for example
+  `membership.added`) and the target its subject; `data` is the changed object. Secrets never appear in `data`.
+
+### 13.2 Hash chain
+
+- `audit_event` holds one chain per tenant and one for installation events (`tenant_id` null: apps, roles, plans,
+  database servers, users, refused operator calls). `seq` is the position in the chain, from 1; `id` orders events
+  across chains and is the list cursor.
+- `hash = SHA-256(canonical JSON)`; `prev_hash` is the previous event's hash in the chain (32 zero bytes for the
+  first). The canonical JSON is an object with the keys `action`, `actor` {`email`, `id`, `kind`}, `data`, `ip`,
+  `prev_hash` (hex), `request_id`, `seq`, `target`, `tenant_id`, `time`, `user_agent`: keys sorted bytewise, no
+  insignificant whitespace, HTML characters not escaped, missing strings and ids as `""`, `time` in UTC with six
+  fractional digits (`2006-01-02T15:04:05.000000Z`), and numbers in `data` written as integers when they are
+  integers and in shortest round-trip float form otherwise. `store.AuditEvent.Canonical` is the reference and
+  `TestAuditCanonical` pins it, so a verifier in any language can recompute exported hashes.
+- `audit_chain` keeps each chain's head (`seq`, `hash`). A writer locks the head row (`INSERT … ON CONFLICT DO
+  UPDATE … RETURNING`), so a chain grows one event at a time; the lock is held until the change commits. This
+  serialises writers per tenant, which suits M3 volumes; doc 17's audit throughput target (TS21) needs batching.
+- **Append-only.** `audit_event` has forced RLS with a SELECT policy (own tenant, or operator scope) and an INSERT
+  policy (own tenant, installation events, or operator scope) and no UPDATE or DELETE policy; `Migrate` also revokes
+  UPDATE, DELETE and TRUNCATE from the runtime role. Only a database superuser or the owner role can change history,
+  and verification shows it.
+- **Verify** (`GET …/audit:verify`, operators `GET /admin/v1/audit:verify?tenant=`) walks the chain in `seq` order,
+  recomputes each hash, checks `prev_hash` links and that no position is missing, and that the last event matches
+  the head (a removed tail). It answers `{ok, events, head_seq, head_hash, first_break: {seq, id, reason} | null}`.
+- Verification starts at the chain's **anchor** (`audit_chain.anchor_seq`/`anchor_hash`; the genesis until
+  retention first purges, §14.4) and answers `anchor_seq` and `anchor_hash` too. It reads the stored events, never
+  the pseudonymised view (§14.3).
+- Not yet: signed hourly checkpoints anchored to WORM storage or a transparency log (doc 07 §3).
+
+### 13.3 Reading, export and streaming
+
+- **List** (owners and admins; operators across chains with `?tenant=<id>|installation`): newest first, `limit`
+  (default 100, at most 1000), `cursor` (`next_cursor` of the previous page, null on the last), filters `actor`
+  (user or app id, or email, case-insensitive), `action` (prefix), `from`/`to` (RFC 3339, `to` exclusive).
+- **Export** (`GET …/audit/export?from=&to=`): the chain oldest first as `application/x-ndjson`, one event per line
+  with its hashes, streamed in pages of 1000.
+- **Streaming destinations** (`audit_sink`, at most 10 per tenant, `kind: webhook`, HTTPS): the streamer (one active
+  replica, advisory lock 7351006) POSTs new events in chain order, up to 100 per request, as NDJSON with
+  `Matura-Signature` (same scheme as webhooks, secret sealed with the `KeyManager` under `audit_sink:<id>`),
+  `Matura-Audit-Sink`, `Matura-Audit-Tenant` and `Matura-Audit-Seq: <first>-<last>`. A 2xx moves the destination's
+  cursor to the last `seq`; anything else marks it `failing` and retries the same batch with backoff (1 s doubling
+  to 1 h) without ever skipping events. Delivery is at least once: receivers de-duplicate on (`tenant_id`, `seq`).
+  A new destination starts after the newest event, or at `seq` 1 with `backfill: true`. Syslog over TLS, S3, Splunk
+  HEC and the other doc 07 destinations are later kinds.
+
+### 13.4 Security policies
+
+`security_policy` (one row per tenant, forced RLS; absent means the default with version 0):
+
+| Field | Enforced by | Meaning |
+|---|---|---|
+| `require_mfa` | Keycloak (TS12) | members must use a second factor |
+| `session_max_age`, `idle_timeout` | Keycloak (TS12) | seconds (300 s–90 days, 60 s–30 days, idle ≤ max age); null is the installation default |
+| `allowed_email_domains` | maturad | new invitations only to these domains or their subdomains (422 otherwise) |
+| `ip_allowlist` | maturad | CIDR ranges; a member's tenant API call (every route that checks tenant access) from elsewhere gets 403 `ip-not-allowed`. Operators are exempt; non-members still get 404 |
+
+`PUT` replaces the whole policy (owners and admins, `If-Match` optional), normalises domains (lower case, no `@`)
+and ranges (masked), and refuses an allow-list that excludes the caller's own address. Each replica caches a
+tenant's policy for 5 s (cleared at once on the replica that took the `PUT`). Changes are audited
+(`security_policy.updated` with before and after); they are not contract events.
+
+Keycloak enforces `require_mfa` through the extension (§16.2) and the session limits through the token mapper (§6).
+
+## 14. Privacy: export, erasure, retention (TS17)
+
+The parts of TS17 that need no key service. OpenBao transit keys per tenant, SDK field encryption,
+customer-managed keys and crypto-shredding are not built yet; until they are, erasure in the audit log is a
+pseudonymised view (§14.3), not destruction of the stored bytes.
+
+### 14.1 Tenant data export
+
+- `POST /v1/tenants/{tid}/exports` (owners and operators; admins get 403) queues a `tenant_export` row
+  (forced RLS, one `queued` or `running` export per tenant, 409 otherwise) and records `tenant_export.requested`.
+- The **privacy worker** (`internal/privacy`, one active replica, advisory lock 7351008) claims queued exports
+  (`FOR UPDATE SKIP LOCKED`; one left `running` for 15 minutes is taken again), reads the tenant in a single
+  repeatable-read, read-only transaction in the tenant's scope and stores the bundle in the row (`bytea`, at most
+  `store.MaxExportBytes`, 64 MiB; a larger one fails with a message pointing at the audit NDJSON export).
+  Success and failure are audited (`tenant_export.completed`, `tenant_export.failed`).
+- The bundle (`format: matura.tenant-export/v1`) holds `tenant`, `workspaces` (not deleted), `members` (not
+  removed), `invitations`, active `grants` and the app `roles` they use, `placements` (never credentials),
+  `security_policy`, `retention`, and `audit`: `{anchor_seq, anchor_hash, head_seq, head_hash, events}`, the chain
+  from its anchor, each event with `prev_hash` and `hash`, so the receiver can check it. Each section is the same
+  JSON the API returns for it (`TestTenantExport` compares them).
+- `GET …/exports/{id}` shows `state` (`queued`, `running`, `ready`, `failed`, `expired`), `size_bytes`, `sha256`
+  and `expires_at`. `GET …/exports/{id}/download` serves a ready bundle with `Matura-Export-SHA256`, records
+  `tenant_export.downloaded` each time, and works for `store.ExportTTL` (24 h); then the worker deletes the bundle
+  and the download answers 410 `export-expired`.
+
+### 14.2 A user's own data: export and erasure
+
+- `GET /v1/me/export` (`format: matura.user-export/v1`): the profile, memberships in every tenant in any state
+  (with tenant slug and name), app role grants active and revoked, invitations to the user's address or accepted
+  by them, and the audit events whose actor is the user (newest 50 000, `truncated` beyond). It reads with
+  installation scope because the data spans tenants; every query is filtered to the user. Recorded as
+  `user.exported` in the installation chain.
+- `DELETE /v1/me` and the operator's `DELETE /admin/v1/users/{uid}` run the same erasure (`store.DeleteUser`), in
+  one transaction:
+  1. If the user is the only active owner of any tenant, nothing changes: 409 `last-owner` with `tenants` (ids).
+  2. Each membership ends (`membership.removed`, without email and name) and the user's grants in it are revoked
+     (`grant.revoked`): contract events, so apps remove the user.
+  3. Pending invitations to the address are revoked (`invitation.revoked`); every invitation row to it gets the
+     pseudonym as its address and loses `deliver_to`; mail queued or sent to the address is deleted.
+  4. `audit_redaction` gets a row (§14.3).
+  5. `app_user` keeps its id (apps' foreign keys stay valid) with email, name, avatar and locale cleared and status
+     `deleted` (`user.deleted`). An old token never brings it back.
+- Then maturad deletes the sign-in account through the `api.UserDirectory` interface (`DeleteUser(ctx, id)`),
+  when one is configured with `Server.SetUserDirectory`; nil skips it. A failure is logged and recorded as
+  `user.directory_delete_failed`; the erasure in Matura stands. maturad does not wire a Keycloak implementation yet.
+
+### 14.3 Pseudonymising erased users in the audit log
+
+Audit events are hashed and append-only, so erasure cannot edit them without breaking the chain. Instead:
+
+- `audit_redaction` (installation-wide) keeps per erased user the pseudonym `deleted-user-<first 12 hex of
+  SHA-256 of the user id>` and SHA-256 hashes of the lower-cased email and name, never the values.
+- Every reader except verification applies it: the list, the NDJSON export, streaming to destinations, the tenant
+  export. The actor's email becomes the pseudonym when the actor is the user or the email is theirs; any string in
+  `data` equal to their email is replaced in every event; their name is replaced in events about them (they are the
+  actor, or their id is in the target or the data). Such an event carries `redacted: true`; its `hash` is the
+  stored one, so it no longer recomputes from the fields shown, but the next event's `prev_hash` still links to it.
+  External verifiers check links for redacted events and hashes for the rest.
+- Searching the log by an erased user's old address finds nothing.
+- Verification reads the stored rows, so every chain still verifies after erasure (`TestUserDataRights`).
+- Limit: the stored rows still contain the address and name, readable only by the database owner or a superuser,
+  until retention purges them (§14.4). Removing them sooner needs per-field commitments or crypto-shredding
+  (planned with OpenBao in TS17's key work). This is the Art. 17(3)(b)/(e) record-keeping position; operators
+  should say so in their records of processing.
+
+### 14.4 Audit retention and legal hold
+
+- `audit_retention` (one row per tenant, forced RLS; absent means 400 days, no hold, version 0).
+  `GET /v1/tenants/{tid}/retention` (owners and admins) answers it with the chain's `anchor_seq`;
+  `PUT` (owners and operators, `If-Match` optional) sets `retention_days` (30–3650) and `legal_hold` with a
+  required `legal_hold_reason`; recorded as `audit_retention.updated` with before and after.
+- The privacy worker runs retention hourly for every tenant chain through `matura_audit_purge(tenant)`, a
+  `SECURITY DEFINER` function owned by the migration role (the runtime role has no DELETE on `audit_event`; a
+  DELETE policy exists for the owner only). The function decides what may go: nothing under legal hold;
+  otherwise the longest prefix of the chain older than the retention (it stops before the first event still
+  inside it), never another tenant's (the argument must be the transaction's tenant). It deletes the prefix and
+  sets the chain's anchor to the last purged event's `seq` and `hash`; maturad then records `audit.purged`
+  (`purged`, `anchor_seq`, `anchor_hash`) in the same chain.
+- A trigger on `audit_chain` refuses any change of the anchor except by the owner role, so the runtime role cannot
+  hide events from verification by moving it.
+- Verification and exports start at the anchor: the first remaining event's `prev_hash` must equal `anchor_hash`
+  (`TestAuditRetention`). Installation events (no tenant) are not purged yet; archive tiers (doc 07: 7 years) come
+  with the backup module.
+## 15. Readiness (TS24, TS25)
+
+Readiness evaluates controls against the installation's real state and reports gaps; it never claims compliance
+(every report and the trust page carry `readiness.Notice`). Operator guide: `docs/guide/readiness.md`.
+
+### 15.1 Controls and the report
+
+- **Catalogue.** `readiness.Catalogue` (`internal/readiness/controls.go`) lists each control: id, title, scope
+  (`installation` or `tenant`), `public` (shown on the trust page), `optional` (counted only once configured), fix
+  text, and framework references (SOC 2 Trust Services Criteria, ISO/IEC 27001:2022 Annex A, GDPR articles) kept
+  conservative: a clause is listed only where the control is a direct technical contribution to it. Operational
+  controls (SMTP, webhooks) have none. The docs link is `docs/guide/readiness.md#<id>`.
+- **Facts.** `GET /admin/v1/readiness` gathers `readiness.Facts` in operator scope: the installation's configuration
+  (`Server.SetReadiness`, from `MATURA_ENV`, `MATURA_AUTH`, `MATURA_KEK` set, `MATURA_SMTP_ADDR` set,
+  `MATURA_METRICS_ADDR` set, `MATURA_PUBLIC_URL`); `store.TenantPostures` (every tenant that is not deleted with its
+  security policy and counts of active and failing audit destinations, one query); `store.VerifyAudit` of the
+  installation chain and of each active tenant's chain; `store.WebhookHealth`; and per evidence kind the newest
+  record and the count in the last 90 days.
+- **Evaluation.** Installation controls return `pass`, `fail` or `not-applicable` with an evidence string. Tenant
+  controls run per active tenant (returning `not-applicable` for kinds they do not cover, e.g. personal tenants) and
+  pass only when every applicable tenant passes; the result lists each tenant. `score` = passed ÷ (passed + failed)
+  × 100, one decimal; 0 when nothing applies. `summary` holds the counts and dates policy templates are filled from.
+- **Cost.** Verification recomputes every chain, so the report is O(audit events). Fine at M3 volumes; signed
+  checkpoints (§13.2, not yet) will let it start from the last checkpoint.
+
+### 15.2 Evidence
+
+`POST /admin/v1/evidence {kind, passed, details?}` (operators): `kind` ∈ `restore-test` (current for 35 days),
+`vulnerability-scan` (35 days), `access-review` (92 days); `details` a JSON object ≤ 16 KiB. No table of its own:
+the record is an event in the installation audit chain with action `evidence.<kind>`, target `evidence/<kind>` and
+data `{kind, passed, details}`, so it is hash-chained, append-only and exported with the chain. The response and
+`GET /admin/v1/evidence?kind=&limit=` give `{id, kind, passed, details, recorded_at, recorded_by, seq, hash}`.
+`scripts/backup.sh restore-test <dir> --report <url>` posts its result with `MATURA_TOKEN` (passed or not, with each
+database's outcome, the backup directory and its `created_at`).
+
+### 15.3 `matura check`
+
+`cmd/matura` reads the report with `MATURA_TOKEN` (or `X-Matura-Dev-*` headers from `MATURA_DEV_USER` on development
+installs) from `MATURA_URL`/`--url`. Output: a table and the gaps with fix, docs link and references (default),
+`--json` (the report), or `--oscal`: OSCAL 1.1.2 assessment results with one result, an observation per control and a
+finding per applicable control (`satisfied` / `not-satisfied`), UUIDv5 derived from `generated_at` and the control
+id so the same report gives the same document. `--min-score N` exits 1 below N; usage and connection errors exit 2.
+`--policies DIR --out DIR --set k=v` fills `{{placeholder}}`s in every `*.md` template except `README.md` from the
+report's summary and `--set`, and lists the ones left. Golden files in `cmd/matura/testdata` pin the three outputs.
+
+### 15.4 Trust page
+
+`GET /trust` and `GET /trust.json` (no authentication) serve `readiness.Public(report)`: public controls only, each
+`in-place`, `not-in-place` or `not-applicable` with its references, plus the product name, totals, optional security
+contact and the notice; never evidence text or tenant data. Off unless `MATURA_TRUST_PAGE=on` (404). Each replica
+renders on request and caches both forms for 5 minutes (`Cache-Control: public, max-age=300`); recording evidence
+clears the cache on that replica. The HTML has no scripts, one inline stylesheet, and
+`Content-Security-Policy: default-src 'none'; style-src 'sha256-<hash of the stylesheet>'; img-src 'none';
+script-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`, plus `X-Content-Type-Options:
+nosniff` and `Referrer-Policy: no-referrer`. `/trust.json` allows any origin.
+
+## 16. Sessions and MFA (TS12)
+
+### 16.1 Keycloak admin API
+
+`internal/keycloak` is maturad's client for one realm's admin REST API. It signs in with the client-credentials grant
+of the confidential client `matura-admin` (realm export), whose service account holds only the realm-management
+roles `view-users`, `manage-users`, `view-identity-providers`, `manage-identity-providers`, and `view-clients` and
+`manage-clients` for agent clients (§20). The token is cached
+until 30 s before it expires and fetched again once on a 401. Every call has a timeout (10 s); errors are typed
+(`ErrNotFound`, `ErrConflict`, `ErrForbidden`, `ErrUnavailable`, `*Error` with status and Keycloak's message). The API
+answers 503 `keycloak-unavailable` when Keycloak does not answer and 502 `keycloak-error` when it refuses.
+
+### 16.2 MFA enforcement
+
+The realm's browser flow is `matura browser`: cookie, identity-provider redirector (`kc_idp_hint`), then password
+form, a conditional second-factor step (OTP, WebAuthn security key, passkey or recovery code, for users who have
+one) and the extension's `matura-mfa-policy` authenticator. That authenticator asks `POST /internal/v1/mfa-policy`
+whether the user is an active member of an active tenant whose policy has `require_mfa`; if so and the user has no
+OTP, WebAuthn or passkey credential, it adds the `CONFIGURE_TOTP` required action to the sign-in (SPI option
+`enrol-action` can name `webauthn-register` instead), so the sign-in finishes only after enrolment. It fails closed
+when maturad is unreachable. Social identity providers (Google, GitHub) run the same two steps as their post-login
+flow `matura post broker login`. Tenant SSO sign-ins are not challenged by Keycloak: the customer's IdP is
+responsible for MFA. Known gaps: a session started before the policy changed keeps working until it ends (sign
+members out to force it); step-up (`acr`) and recovery-code enrolment prompts are not built.
+
+### 16.3 Sessions and resets
+
+People list their sessions (`current` marks the one whose `sid` the token carries) and end one, all, or all but the
+current. Owners and admins list a member's sessions, sign them out everywhere and reset their second factors
+(removes OTP, WebAuthn, passkey and recovery-code credentials, then signs them out; not on oneself). Keycloak
+sessions and credentials belong to the person, not to a tenant, so a tenant acts only on people it **governs**: an
+active member of a company tenant whose email domain that tenant verified (§17), or who belongs to no other
+organisation (personal tenants do not count). Otherwise 403 `not-governed`. Admins cannot act on owners; operators
+need approved support access like for any tenant admin view and are then not limited by this rule. Each action is audited in the tenant's log (`member.signed_out`, `member.mfa_reset`) or, for
+one's own sessions, the installation's (`session.revoked`, `session.revoked_all`). Refresh tokens stop at once;
+access tokens already issued run out within their lifetime (5 min).
+
+## 17. Enterprise SSO (TS13)
+
+```
+tenant_domain(tenant_id, domain, challenge, verified_at, last_checked_at, last_error, version, created_at)
+              PK(tenant_id, domain); UNIQUE(domain) WHERE verified_at IS NOT NULL
+tenant_sso(tenant_id PK, alias UNIQUE, protocol oidc|saml, display_name, config jsonb, client_secret bytea (sealed,
+           AAD "tenant_sso:<tenant id>"), default_tenant_role, version, created_by, created_at, updated_at)
+```
+
+Both have forced RLS (migration 0011).
+
+- **Domains:** owners and admins claim a domain and publish `TXT _matura-challenge.<domain>` =
+  `matura-verification=<challenge>` (24 random bytes). `POST …:verify` looks it up (`net.Resolver`, 10 s) and marks
+  the domain verified; only one tenant can hold a domain verified (409). Changes are audited (`domain.*`).
+- **Connection:** one per company tenant, after at least one domain is verified. maturad has Keycloak import the
+  OIDC discovery document or SAML metadata (`identity-provider/import-config`, https only outside development) and
+  creates identity provider `t-<slug>` (trust email, hidden on the login page, PKCE for OIDC, signed assertions for
+  SAML, NameID email format) with email and name mappers, first-login flow `matura sso first login` and post-login
+  flow `matura sso post login`. The OIDC client secret is sealed with the KEK and never returned. The response
+  shows what the IdP's administrator registers: `redirect_uri` (OIDC redirect or SAML ACS URL), SAML `entity_id`
+  and `metadata_url`. Deleting the connection removes the Keycloak identity provider and its account links.
+- **Sign-in:** both flows start with the extension's `matura-sso` authenticator, which calls
+  `POST /internal/v1/sso-login`: the asserted email must be in a domain the provider's tenant verified, so a
+  tenant's IdP can never sign in someone else's address (`domain_not_verified`). The first-login flow then creates
+  the user or links the existing user with the same email (`idp-create-user-if-unique`, `idp-auto-link`); the
+  post-login flow passes the user id and maturad adds them to the tenant with the connection's
+  `default_tenant_role` and each enabled app's default role (just-in-time; a deactivated membership is refused).
+- **Home-realm discovery:** `GET /v1/sso/discover?email=` (public) returns `{sso, idp_hint, tenant}` for a verified
+  domain of an active tenant with a connection; sign-in pages add `kc_idp_hint=<idp_hint>` (and
+  `matura_tenant=<tenant>`) to the authorisation request. The Keycloak login theme does not do this itself yet.
+- **Not built yet:** SSO-only enforcement with break-glass, group-to-role mapping from groups asserted at sign-in
+  (SCIM groups map to roles, §19), Ory Polis, certificate expiry
+  warnings, test-connection trace, the portal wizard and the mock IdP.
+
+## 18. Fine-grained permissions (TS11)
+
+Token `perms` answer "may this user start runs in this tenant"; resource-level questions ("may Ana edit document
+D?") go to OpenFGA ([ADR 0005](../adr/0005-openfga-for-permissions.md)). OpenFGA is optional: without
+`MATURA_OPENFGA_URL` the endpoints below answer `501 permissions-not-configured` and nothing else changes.
+
+### 18.1 Store, models and names
+
+One OpenFGA store per installation (`MATURA_OPENFGA_STORE`, default `matura`; found by name or created on first
+use, its id kept in `fga_state`). Each app's manifest may carry an authorization model (`authorization.model`, the
+OpenFGA DSL as a string or its JSON form, schema 1.1, no conditions or modules). `PUT /admin/v1/apps/{slug}`
+validates it and stores the JSON of the app's own types; maturad writes to OpenFGA one model per app — Matura's
+base types plus the app's — and keeps its id per content hash in `fga_app_model`. Models are written when a check
+first needs them and by the sync worker on `matura.app.manifest.updated`.
+
+Matura's base types, in every model (apps refer to them; only maturad writes their tuples):
+
+```
+type user
+type group      relations define member: [user]
+type tenant     relations define owner: [user]; define admin: [user] or owner
+                          define billing: [user]; define member: [user] or admin or billing
+type workspace  relations define tenant: [tenant]; define member: member from tenant; define admin: admin from tenant
+type role       relations define assignee: [user, group#member]
+```
+
+An app's model may restate these types (so it also runs in the OpenFGA playground) but may not add relations to
+them. Apps and tenants share the store through name translation (`internal/fga.Namespace`):
+
+| What the app says | Stored as |
+|---|---|
+| type `document` (the app's) | `<app>.document` |
+| type `user`, `group`, `tenant`, `workspace`, `role` | unchanged |
+| object `document:d1` in tenant T | `<app>.document:T/d1` |
+| `user:U`, `tenant:T`, `workspace:W`, `group:G` | `user:T/U`, `tenant:T/T`, `workspace:T/W`, `group:T/G` |
+| `role:editor` (tenant-wide grant), `role:editor@W` (workspace grant) | `role:T/<app>/editor`, `role:T/<app>/editor@W` |
+| `user:*` | `user:*` |
+
+**Isolation.** Every stored object id and every non-wildcard subject id begins with the tenant id from the request
+path, which maturad checks against `tenant_app` (the tenant must have enabled the app and be active); app types are
+prefixed with the app's slug, and the role namespace carries the app. A tuple written in tenant A can therefore only
+name A's objects and A's users, and a check, batch check or listing in tenant B starts from B's objects and can only
+follow B's tuples. `list-objects` results are also filtered by prefix before they are returned. Apps cannot write
+tuples on Matura's types, so they cannot make someone a tenant admin or a role holder.
+
+### 18.2 Matura's facts in OpenFGA
+
+The sync worker (`internal/access.Syncer`, one replica at a time by advisory lock 7351009) reads the outbox in
+sequence order from its own cursor (`fga_state.cursor`) and applies each change before moving the cursor
+(at-least-once; writes ignore duplicates and deletes ignore missing tuples, so repeats are harmless):
+
+| Change | Tuples |
+|---|---|
+| `membership.added/updated/removed` | `tenant:T/T#<tenant_role>@user:T/U` for an active membership; the other three roles deleted |
+| `workspace.*` | `workspace:T/W#tenant@tenant:T/T`; deleted with the workspace |
+| `grant.added/revoked` | `role:T/<app>/<role>[@W]#assignee@user:T/U` (or `group:T/G#member`) |
+| `scim_group.member_added/removed` | `group:T/G#member@user:T/U` (SCIM groups, §19) |
+| `app.role.updated` with `previous_name` | the role's grants move to the new name |
+| `app.manifest.updated` | the app's model is written if it changed |
+| `tenant.deleting` | every tuple of the tenant is deleted (one full read of the store) |
+
+With no cursor (first run, a store OpenFGA no longer has, or a cursor older than the outbox keeps) the worker
+writes every current fact (active memberships, live workspaces, active grants, SCIM group members of tenants not
+being deleted) and
+continues from the outbox position read with them. Tuples of facts that ended while no cursor existed are not
+removed by this; in practice that only happens when an existing store is reused by a fresh Matura database.
+When OpenFGA answers that a remembered store or model is gone, maturad forgets the ids, the call answers 503, and
+the next call or round sets them up again.
+
+### 18.3 App API
+
+HTTP Basic with the app's client id and secret, like the change feed. `{tid}` must be a tenant that enabled the
+app (otherwise 404; suspended 403).
+
+| Endpoint | Body | Answer |
+|---|---|---|
+| `POST /v1/apps/{app}/tenants/{tid}/relations` | `{writes: [{user, relation, object}], deletes: [...]}`, 1–100 together | `{written, deleted}` |
+| `POST /v1/apps/{app}/tenants/{tid}:check` | `{user, relation, object, contextual_tuples?, consistency?}` | `{allowed}` |
+| `POST /v1/apps/{app}/tenants/{tid}:batch-check` | `{checks: [...] (1–50), contextual_tuples?, consistency?}` | `{results: [{allowed, error?}]}` in order |
+| `POST /v1/apps/{app}/tenants/{tid}:list-objects` | `{user, relation, type, contextual_tuples?, consistency?}` | `{objects: ["document:d1", …]}` |
+
+`consistency: "higher"` asks OpenFGA to skip its cache (read your own writes). Errors: 409
+`no-authorization-model`, 422 `invalid` (a name the namespace refuses, or a tuple OpenFGA's model refuses, with
+its message), 501 `permissions-not-configured`, 503 `permissions-unavailable` with `Retry-After`. Tuple writes are
+not recorded in the audit log (they are app data, often high volume); Matura's own facts are audited where they
+change. Not built yet: per-tenant revision tokens, "who has access" views in the portal and access reviews
+(rest of TS11), conditions, `list-users`.
+
+## 19. SCIM 2.0 provisioning (TS14)
+
+A SCIM 2.0 service provider (RFC 7643, RFC 7644) per company tenant at `/scim/v2/tenants/{tid}`, so the tenant's
+identity provider (Okta, Microsoft Entra ID, any SCIM client) creates, updates, deactivates and removes its people
+and groups. Implemented in maturad itself (`internal/api/scim*.go`, `internal/store/scim*.go`); Keycloak's own SCIM
+work and Ory Polis were not needed for this.
+
+```
+scim_token(id, tenant_id, name, hash UNIQUE (SHA-256), prefix, created_by, created_at, expires_at, last_used_at,
+           revoked_at)
+scim_user(tenant_id, user_id, user_name, external_id, active, email, emails jsonb, given_name, family_name,
+          display_name, enterprise jsonb, extra jsonb, created_account, version, created_at, updated_at)
+          PK(tenant_id, user_id); UNIQUE(tenant_id, lower(user_name)); UNIQUE(tenant_id, external_id)
+scim_group(id, tenant_id, display_name, external_id, version, …) UNIQUE(tenant_id, lower(display_name))
+scim_group_member(tenant_id, group_id, user_id) → scim_group, scim_user (cascade)
+scim_group_mapping(id, tenant_id, group_name, app_id, role, version, created_by, created_at)
+                   UNIQUE(tenant_id, lower(group_name), app_id, role)
+scim_managed_grant(tenant_id, grant_id, user_id)   grants a group mapping created
+```
+
+All have forced RLS (migration 0014).
+
+### 19.1 Tokens
+
+Owners create (`POST /v1/tenants/{tid}/scim/tokens {name, expires_at?}`), list and revoke (`DELETE …/{id}`) tokens.
+A token is `scim_` + 32 random bytes (base64url), shown once; maturad keeps its SHA-256 and first 12 characters.
+At most five live tokens per tenant; rotation is create, reconfigure the IdP, revoke. A SCIM request's bearer token
+is looked up by hash within the path's tenant (row-level security), so another tenant's token is unknown (401);
+revoked or expired tokens answer 401; a tenant that is not active answers 403. `last_used_at` is updated at most
+once a minute. Token changes are audited (`scim.token_created`, `scim.token_revoked`). SCIM changes are audited
+with actor kind `system`, actor id the token's id and actor email `scim` (migration 0015 fixed the actor kinds).
+
+### 19.2 Users
+
+- **Resource:** the SCIM id is the Matura user id (= Keycloak user id). `userName`, `externalId`, `active`,
+  `displayName`, `emails` and the enterprise extension are modelled; other core attributes (`name`, `title`,
+  `phoneNumbers`, `addresses`, `locale`, `roles`…) are kept as sent and returned; `password`, `groups` (read-only)
+  and unknown extensions are ignored. The account email is the primary email, else the work one, else the first,
+  else `userName` when it is an address.
+- **Create:** the email must be in a domain the tenant verified (§17), else 400 `invalidValue`. A `userName` or
+  `externalId` already provisioned in the tenant answers 409 `uniqueness` (RFC 7644; Okta and Entra then match by
+  filter); a retried create with the same `Idempotency-Key` replays the first answer. maturad looks the email up in
+  Keycloak: an existing account is linked (and its names and attributes updated), otherwise an account is created
+  with the email as username, email verified, no password (the person signs in through the tenant's SSO, whose
+  first-login flow links by email). The person is adopted if already in the tenant (for example after a
+  just-in-time SSO sign-in), otherwise they join with the SSO connection's `default_tenant_role` (else `member`)
+  and each enabled app's default role, within `max_members` (403 with "plan limit" otherwise; the Keycloak account
+  created for the attempt is deleted). Agents and service accounts (§20) are never provisioned or listed.
+- **Replace and PATCH:** PATCH supports `add`, `replace`, `remove` (any case), paths with sub-attributes
+  (`name.familyName`), value filters (`emails[type eq "work"].value`, `members[value eq "…"]`), the enterprise
+  schema prefix, path-less values, and Entra ID's forms (`"True"`/`"False"` strings, removing members by a value
+  list, `manager` as a plain id). It is applied to the current resource and stored like a PUT under the version
+  that was read (a concurrent change answers 412). A replacement that changes nothing keeps the version, so retries
+  are harmless. A changed email must stay in a verified domain. When the tenant governs the person (§16.3; for SCIM
+  users their email domain is verified by the tenant) the Keycloak account follows: email, first and last name, and
+  user attributes `employeeNumber` and `department` (declared in the realm's user profile).
+- **Deactivate** (`active: false`): the membership is deactivated (never the last active owner's: 400), grants made
+  by group mappings are revoked, and the person is signed out of every Keycloak session at once (refresh tokens
+  stop; access tokens run out within 5 minutes, and token issuance refuses the deactivated membership). A repeated
+  deactivation signs out again, so a retry after Keycloak failed (503) completes it. Reactivating restores the
+  membership and the group grants.
+- **Delete:** the person leaves the tenant's groups, the membership is removed and their grants revoked (contract
+  events), and they are signed out when governed. The account is erased (as in §14.2, then deleted in Keycloak)
+  only when SCIM created it, the tenant governs the person and they belong to no other tenant, personal tenants
+  included; otherwise it stays for their other organisations. A second DELETE answers 404.
+- **List:** `filter` with `eq` on `userName` (ignoring case), `externalId`, `id`, `active`, `emails.value` and
+  `emails[type eq "…"].value`, joined by `and`; others answer 400 `invalidFilter`. `startIndex` (1-based) and
+  `count` (default 100, at most 200, 0 for the total only); oldest first. `attributes` and `excludedAttributes`
+  select top-level attributes.
+
+### 19.3 Groups and roles
+
+Groups have `displayName` (unique per tenant, ignoring case), `externalId` and `members` (users provisioned in the
+same tenant; others 400). Create, read, list (filters `displayName`, `externalId`, `id`, `members[value eq "…"]`;
+`excludedAttributes=members` skips loading members), PUT, PATCH (answers 204 with the new ETag) and DELETE.
+
+Owners and admins map group names to app roles: `POST /v1/tenants/{tid}/scim/group-mappings {group, app, role}`
+(list, delete). This was chosen over a naming convention (`app:role` as the group name) because group names belong
+to the customer's directory and are used for other things. Grants stay user grants, so apps and tokens need no
+change: after every membership change, rename, deletion, mapping change, deactivation or reactivation maturad
+reconciles each affected person: for every mapped (app, role) of their groups, when they are an active member and
+the app is enabled, a tenant-wide grant is created unless they already hold that role, and remembered in
+`scim_managed_grant`; a remembered grant no longer backed by a group is revoked. Grants made by hand are never
+touched. A mapping made for an app the tenant enables later takes effect at the next change of the group.
+Membership changes are also emitted as `scim_group.member_added` and `scim_group.member_removed` (payload
+`{tenant_id, group_id, user_id}`) for the OpenFGA syncer (§18.2); apps' change feeds and webhooks leave them out.
+
+### 19.4 Protocol details
+
+Responses are `application/scim+json`; errors use the SCIM error schema (`status` as a string, `scimType` where
+RFC 7644 defines one). Every resource has `meta.version` and an `ETag` (`W/"<version>"`); `If-Match` on PUT,
+PATCH and DELETE answers 412 when stale, `If-None-Match` on GET 304. `/ServiceProviderConfig`, `/ResourceTypes`
+and `/Schemas` describe the above (patch, filter and etag supported; bulk, sort and password change not); they need
+a token too. `meta.location` uses `MATURA_PUBLIC_URL`.
+
+Not built yet: bulk, sorting, `or`/`not`/`co`/`sw` filters, per-tenant rate limits, the portal pages, a CSV
+import, SCIM-provisioned agents (§20), and tenant export of SCIM groups.
+
+## 20. Agent identity (TS15)
+
+Tenant **service accounts** (kind `service`, for scripts and integrations) and **AI agents** (kind `agent`) are
+principals of one tenant, managed by its owners and admins.
+
+```
+agent(id PK → app_user.id, tenant_id, kind service|agent, name, description, owner_id → app_user, client_id UNIQUE,
+      client_uuid, status active|deactivated|deleted, expires_at, secret_rotated_at, version, created_by,
+      created_at, updated_at)
+audit_event: actor_kind also agent|service; actor_on_behalf_of uuid
+```
+
+Forced RLS on `agent` (migration 0015).
+
+### 20.1 Creating and managing agents
+
+`POST /v1/tenants/{tid}/agents {kind, name, description?, owner_id?, expires_at?, grants?: [{app, role,
+workspace_id?}]}` checks the owner (a person who is an active member; default the caller) and the plan's
+`max_agents`, then has Keycloak create a confidential client `agent-<12 hex>` (or `svc-…`): client credentials only
+(no browser or password flow), `standard.token.exchange.enabled`, `fullScopeAllowed: false` (no realm roles in its
+tokens), the Matura token mapper, and attributes `matura.tenant_id` and `matura.kind`. The client's service-account
+user id becomes the agent's id: an `app_user` row of that kind (display name = the agent's name, no email) that is an
+active `member` of the tenant, so grants (`/grants` or `grants` here), tokens and contract events work as for
+people. Apps receive `user.created` (with `kind`), `membership.added` and `grant.added`; membership payloads carry the
+user's `kind` too. If saving fails after Keycloak created the client, maturad deletes the client again.
+
+The answer holds `client_secret` once (`Cache-Control: no-store`) and the realm's `token_endpoint`; Matura does not
+store the secret. `POST …/agents/{id}:rotate-secret` regenerates it in Keycloak (the old one stops at once).
+`PATCH …/agents/{id}` changes name, description, owner, `expires_at` (null removes it) and `status`. Deactivation
+is the kill switch: maturad refuses tokens for the agent and delegated tokens naming it at once (the mapper caches
+answers for 5 s), the Keycloak client is disabled, and the user becomes `deactivated` (`user.deactivated`). Tokens
+already issued run out within their lifetime (5 minutes). `DELETE` removes the Keycloak client and its service
+user, revokes the grants, removes the membership and marks the user `deleted`; the agent row stays for the audit
+trail. Actions are audited (`agent.created`, `agent.updated`, `agent.deactivated`, `agent.reactivated`,
+`agent.secret_rotated`, `agent.deleted`).
+
+Member endpoints and the member list are for people: changing an agent's membership through them answers 422, and
+`max_members` counts people only (`usage.agents` counts agents).
+
+### 20.2 Tokens
+
+The mapper sends maturad the client id and, on an agent's client, the audience the token request asked for: the
+`matura_app`, `audience` (RFC 8693) or `resource` (RFC 8707) form parameter. maturad looks the client id up in
+`agent`. For an app's client nothing changes except the new `kind` claim. For an agent's client:
+
+- the tenant is the agent's; the app is the one named (by client id, or by a URL in its manifest's
+  `auth.resources`), else the only app the agent holds grants in (otherwise `audience_required`); the app's client id
+  is added to the token's `aud`. Naming maturad's own audience (`MATURA_AUDIENCE`) gives a token with tenant claims
+  and no app roles;
+- **own token** (the user is the agent's service account; client credentials): `sub` = agent, `kind` = agent or
+  service, `troles: ["member"]`, the agent's roles and permissions;
+- **delegated token** (the user is a person; standard token exchange, or any other grant on the agent's client):
+  `sub` = the person, `kind: "human"`, `act: {sub, kind, client_id}` naming the agent, `roles` = roles both hold,
+  `perms` = the intersection of the person's and the agent's permissions (`*` on one side yields the other side's
+  list), `troles` = the tenant role both hold (so usually none: the agent is a member). The person must be an active
+  member of the agent's tenant (`not_a_member`), and the tenant's session limits apply to their session.
+
+Refusals: `agent_inactive`, `agent_expired`, `unknown_audience`, `audience_required`, `not_delegable` (an agent
+acting for another agent), plus the tenant refusals of §6. Standard token exchange needs the requesting agent to be
+in the subject token's audience: either the person's token was issued to the agent's client itself, or the app's
+client adds the agent as an audience (an `oidc-audience-mapper`). Consent screens and per-tool scopes are not
+built.
+
+### 20.3 maturad's own API and audit
+
+`JWTAuthenticator` reads `kind` and `act`. A delegated call is audited with `actor.kind` = the agent's kind,
+`actor.id` = the agent and `actor.on_behalf_of` = the person (stored in `actor_on_behalf_of`; the canonical form of
+§13.2 includes `on_behalf_of` only when set, so earlier hashes are unchanged). Filtering the audit log by a person's
+id also finds what agents did for them. Delegated calls and agents never manage a tenant (they are members at most)
+and are never operators, and a delegated call from a deactivated agent answers 403.
+
+### 20.4 MCP and protected-resource metadata
+
+maturad serves `GET /.well-known/oauth-protected-resource` (RFC 9728): `resource` = `MATURA_PUBLIC_URL`,
+`authorization_servers` = the realm's issuer. A 401 for a missing or invalid bearer token says
+`WWW-Authenticate: Bearer realm="matura", resource_metadata="<public URL>/.well-known/oauth-protected-resource"`.
+Apps that expose an MCP server do the same for their own resource with the SDK helpers
+(`protected_resource_metadata` / `www_authenticate` in Python, `protectedResourceMetadata` / `wwwAuthenticate` in
+TypeScript, `NewResourceMetadata` / `WWWAuthenticate` in Go) and list the server's URL in their manifest's
+`auth.resources`, so an agent asking Keycloak with `resource=<that URL>` gets a token for the app
+([agents guide](../guide/agents.md)).
+
+**Not built yet:** consent screens and per-tool scopes, Client ID Metadata Documents and dynamic registration for
+outside MCP clients, customer-IdP-issued agent grants, SCIM provisioning of agents, OpenFGA relations, step-up,
+human-approval events mapped to EU AI Act articles, agents in the portal.

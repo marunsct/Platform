@@ -1,0 +1,36 @@
+{{- if .Values.ingress.enabled }}
+{{- $fullname := include "matura.fullname" . -}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ $fullname }}
+  labels: {{- include "matura.labels" . | nindent 4 }}
+  {{- with .Values.ingress.annotations }}
+  annotations: {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with .Values.ingress.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  {{- with .Values.ingress.tls }}
+  tls: {{- toYaml . | nindent 4 }}
+  {{- end }}
+  rules:
+    - host: {{ .Values.ingress.maturad.host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend: { service: { name: {{ $fullname }}, port: { name: http } } }
+    {{- if .Values.keycloak.enabled }}
+    - host: {{ .Values.ingress.keycloak.host | quote }}
+      http:
+        paths:
+          - path: /realms
+            pathType: Prefix
+            backend: { service: { name: {{ $fullname }}-keycloak, port: { name: http } } }
+          - path: /resources
+            pathType: Prefix
+            backend: { service: { name: {{ $fullname }}-keycloak, port: { name: http } } }
+    {{- end }}
+{{- end }}

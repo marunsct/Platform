@@ -96,11 +96,13 @@ func (s *Store) GetApp(ctx context.Context, slug string) (App, error) {
 	return out, err
 }
 
-const placementCols = `id, tenant_id, app_id, mode, manager, location_label, state, version`
+const placementCols = `id, tenant_id, app_id, mode, manager, db_server_id, database_name, schema_name,
+	location_label, state, error, version`
 
 func scanPlacement(row pgx.Row) (Placement, error) {
 	var p Placement
-	err := row.Scan(&p.ID, &p.TenantID, &p.AppID, &p.Mode, &p.Manager, &p.LocationLabel, &p.State, &p.Version)
+	err := row.Scan(&p.ID, &p.TenantID, &p.AppID, &p.Mode, &p.Manager, &p.DBServerID, &p.DatabaseName, &p.SchemaName,
+		&p.LocationLabel, &p.State, &p.Error, &p.Version)
 	return p, mapErr(err)
 }
 
@@ -139,6 +141,9 @@ func (s *Store) EnableApp(ctx context.Context, sc Scope, tenantID uuid.UUID, app
 		}
 		t, err := scanTenant(tx.QueryRow(ctx, `SELECT `+tenantCols+` FROM tenant WHERE id = $1`, tenantID))
 		if err != nil {
+			return err
+		}
+		if err := checkAppAllowed(ctx, tx, tenantID, app.Slug); err != nil {
 			return err
 		}
 		v, err := nextVersion(ctx, tx)
@@ -246,4 +251,17 @@ func (s *Store) ListTenantApps(ctx context.Context, sc Scope, tenantID uuid.UUID
 		return err
 	})
 	return out, err
+}
+
+// rawManifest scans a jsonb manifest column into a Manifest.
+type rawManifest struct{ m *Manifest }
+
+func (r rawManifest) Scan(src any) error {
+	switch v := src.(type) {
+	case []byte:
+		return json.Unmarshal(v, r.m)
+	case string:
+		return json.Unmarshal([]byte(v), r.m)
+	}
+	return invalid("manifest column has an unexpected type")
 }

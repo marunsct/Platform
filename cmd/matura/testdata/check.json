@@ -1,0 +1,500 @@
+{
+  "generated_at": "2026-10-17T09:30:00Z",
+  "product": "Acme Cloud",
+  "notice": "Readiness shows which controls are in place on this installation and the evidence for them. It is not an audit and does not certify compliance with any framework; mappings are indicative and an auditor decides.",
+  "score": 61.1,
+  "passed": 11,
+  "failed": 7,
+  "not_applicable": 0,
+  "controls": [
+    {
+      "id": "install-kek",
+      "title": "Stored secrets are encrypted under an operator-held key",
+      "scope": "installation",
+      "status": "pass",
+      "evidence": "MATURA_KEK is set; secrets are sealed with AES-256-GCM envelope encryption",
+      "fix": "Set MATURA_KEK to 32 random bytes, base64 (openssl rand -base64 32), and back it up apart from the database.",
+      "docs": "https://github.com/marunsct/Platform/blob/main/docs/guide/readiness.md#install-kek",
+      "public": true,
+      "optional": false,
+      "refs": [
+        {
+          "framework": "SOC 2",
+          "id": "CC6.1"
+        },
+        {
+          "framework": "ISO/IEC 27001:2022",
+          "id": "A.8.24"
+        },
+        {
+          "framework": "GDPR",
+          "id": "Art. 32(1)(a)"
+        }
+      ]
+    },
+    {
+      "id": "install-oidc",
+      "title": "People sign in through OpenID Connect",
+      "scope": "installation",
+      "status": "pass",
+      "evidence": "MATURA_AUTH=oidc: bearer tokens are verified against the issuer's keys",
+      "fix": "Set MATURA_AUTH=oidc and MATURA_ISSUER to the Keycloak realm URL.",
+      "docs": "https://github.com/marunsct/Platform/blob/main/docs/guide/readiness.md#install-oidc",
+      "public": true,
+      "optional": false,
+      "refs": [
+        {
+          "framework": "SOC 2",
+          "id": "CC6.1"
+        },
+        {
+          "framework": "ISO/IEC 27001:2022",
+          "id": "A.8.5"
+        }
+      ]
+    },
+    {
+      "id": "install-production",
+      "title": "Development mode is off",
+      "scope": "installation",
+      "status": "pass",
+      "evidence": "MATURA_ENV=production",
+      "fix": "Set MATURA_ENV=production (or staging for a test installation).",
+      "docs": "https://github.com/marunsct/Platform/blob/main/docs/guide/readiness.md#install-production",
+      "public": true,
+      "optional": false,
+      "refs": [
+        {
+          "framework": "ISO/IEC 27001:2022",
+          "id": "A.8.31"
+        }
+      ]
+    },
+    {
+      "id": "install-tls",
+      "title": "The public address uses HTTPS",
+      "scope": "installation",
+      "status": "pass",
+      "evidence": "MATURA_PUBLIC_URL is https://id.acme.example",
+      "fix": "Put maturad behind a TLS-terminating proxy and set MATURA_PUBLIC_URL to its https:// address.",
+      "docs": "https://github.com/marunsct/Platform/blob/main/docs/guide/readiness.md#install-tls",
+      "public": true,
+      "optional": false,
+      "refs": [
+        {
+          "framework": "SOC 2",
+          "id": "CC6.7"
+        },
+        {
+          "framework": "ISO/IEC 27001:2022",
+          "id": "A.8.24"
+        },
+        {
+          "framework": "GDPR",
+          "id": "Art. 32(1)(a)"
+        }
+      ]
+    },
+    {
+      "id": "install-smtp",
+      "title": "Outgoing email is configured",
+      "scope": "installation",
+      "status": "pass",
+      "evidence": "MATURA_SMTP_ADDR is set; invitation emails are sent",
+      "fix": "Set MATURA_SMTP_ADDR (and MATURA_SMTP_FROM, MATURA_SMTP_USER, MATURA_SMTP_PASSWORD) to your mail relay.",
+      "docs": "https://github.com/marunsct/Platform/blob/main/docs/guide/readiness.md#install-smtp",
+      "public": false,
+      "optional": false,
+      "refs": []
+    },
+    {
+      "id": "install-metrics",
+      "title": "Metrics are exported for monitoring",
+      "scope": "installation",
+      "status": "pass",
+      "evidence": "MATURA_METRICS_ADDR is set: /metrics is served on its own listener",
+      "fix": "Set MATURA_METRICS_ADDR (default :9090) and scrape /metrics with Prometheus; alert on webhook and email backlogs.",
+      "docs": "https://github.com/marunsct/Platform/blob/main/docs/guide/readiness.md#install-metrics",
+      "public": false,
+      "optional": false,
+      "refs": [
+        {
+          "framework": "SOC 2",
+          "id": "CC7.2"
+        },
+        {
+          "framework": "ISO/IEC 27001:2022",
+          "id": "A.8.16"
+        }
+      ]
+    },
+    {
+      "id": "install-audit-chain",
+      "title": "The installation audit log verifies",
+      "scope": "installation",
+      "status": "pass",
+      "evidence": "212 events, every hash and link recomputed",
+      "fix": "Investigate the first break reported by GET /admin/v1/audit:verify; history was changed outside maturad.",
+      "docs": "https://github.com/marunsct/Platform/blob/main/docs/guide/readiness.md#install-audit-chain",
+      "public": true,
+      "optional": false,
+      "refs": [
+        {
+          "framework": "SOC 2",
+          "id": "CC7.2"
+        },
+        {
+          "framework": "ISO/IEC 27001:2022",
+          "id": "A.8.15"
+        }
+      ]
+    },
+    {
+      "id": "install-webhooks",
+      "title": "Webhook deliveries to apps are healthy",
+      "scope": "installation",
+      "status": "fail",
+      "evidence": "2 active endpoints, 1 failing, 3 events dropped after 24 h in total",
+      "fix": "Check the failing endpoints (GET /admin/v1/apps/{slug}/webhooks): fix the receiver or its URL, then send a test event.",
+      "docs": "https://github.com/marunsct/Platform/blob/main/docs/guide/readiness.md#install-webhooks",
+      "public": false,
+      "optional": false,
+      "refs": []
+    },
+    {
+      "id": "install-restore-test",
+      "title": "Backups are restored and checked regularly",
+      "scope": "installation",
+      "status": "pass",
+      "evidence": "restore test passed on 2026-10-09 (2 in the last 90 days)",
+      "fix": "Run scripts/backup.sh restore-test <dir> --report <maturad URL> weekly (MATURA_TOKEN set to an operator token).",
+      "docs": "https://github.com/marunsct/Platform/blob/main/docs/guide/readiness.md#install-restore-test",
+      "public": true,
+      "optional": false,
+      "refs": [
+        {
+          "framework": "SOC 2",
+          "id": "A1.3"
+        },
+        {
+          "framework": "ISO/IEC 27001:2022",
+          "id": "A.8.13"
+        },
+        {
+          "framework": "GDPR",
+          "id": "Art. 32(1)(c)"
+        },
+        {
+          "framework": "GDPR",
+          "id": "Art. 32(1)(d)"
+        }
+      ]
+    },
+    {
+      "id": "install-access-review",
+      "title": "Access is reviewed at least quarterly",
+      "scope": "installation",
+      "status": "fail",
+      "evidence": "no access review recorded",
+      "fix": "Review operators, tenant owners and admins, then record it: POST /admin/v1/evidence {\"kind\":\"access-review\",\"passed\":true,\"details\":{...}}.",
+      "docs": "https://github.com/marunsct/Platform/blob/main/docs/guide/readiness.md#install-access-review",
+      "public": true,
+      "optional": false,
+      "refs": [
+        {
+          "framework": "SOC 2",
+          "id": "CC6.2"
+        },
+        {
+          "framework": "SOC 2",
+          "id": "CC6.3"
+        },
+        {
+          "framework": "ISO/IEC 27001:2022",
+          "id": "A.5.18"
+        }
+      ]
+    },
+    {
+      "id": "install-vulnerability-scan",
+      "title": "Images and dependencies are scanned for vulnerabilities",
+      "scope": "installation",
+      "status": "pass",
+      "evidence": "vulnerability scan passed on 2026-10-15 (1 in the last 90 days)",
+      "fix": "Scan the deployed images (e.g. Trivy or Grype) monthly or on release, then record it: POST /admin/v1/evidence {\"kind\":\"vulnerability-scan\",...}.",
+      "docs": "https://github.com/marunsct/Platform/blob/main/docs/guide/readiness.md#install-vulnerability-scan",
+      "public": true,
+      "optional": false,
+      "refs": [
+        {
+          "framework": "SOC 2",
+          "id": "CC7.1"
+        },
+        {
+          "framework": "ISO/IEC 27001:2022",
+          "id": "A.8.8"
+        }
+      ]
+    },
+    {
+      "id": "tenant-audit-chain",
+      "title": "Every tenant's audit log verifies",
+      "scope": "tenant",
+      "status": "pass",
+      "evidence": "2 of 2 tenants",
+      "fix": "Investigate the first break reported by GET /v1/tenants/{tid}/audit:verify; history was changed outside maturad.",
+      "docs": "https://github.com/marunsct/Platform/blob/main/docs/guide/readiness.md#tenant-audit-chain",
+      "public": true,
+      "optional": false,
+      "refs": [
+        {
+          "framework": "SOC 2",
+          "id": "CC7.2"
+        },
+        {
+          "framework": "ISO/IEC 27001:2022",
+          "id": "A.8.15"
+        }
+      ],
+      "tenants": [
+        {
+          "tenant_id": "0192a000-0000-7000-8000-000000000001",
+          "slug": "acme",
+          "status": "pass",
+          "evidence": "90 events verified"
+        },
+        {
+          "tenant_id": "0192a000-0000-7000-8000-000000000002",
+          "slug": "globex",
+          "status": "pass",
+          "evidence": "14 events verified"
+        }
+      ]
+    },
+    {
+      "id": "tenant-security-policy",
+      "title": "Each organisation has a security policy",
+      "scope": "tenant",
+      "status": "fail",
+      "evidence": "1 of 2 tenants fail: globex",
+      "fix": "Owners or admins set one in the portal (Security) or with PUT /v1/tenants/{tid}/security-policy.",
+      "docs": "https://github.com/marunsct/Platform/blob/main/docs/guide/readiness.md#tenant-security-policy",
+      "public": false,
+      "optional": false,
+      "refs": [
+        {
+          "framework": "SOC 2",
+          "id": "CC6.1"
+        }
+      ],
+      "tenants": [
+        {
+          "tenant_id": "0192a000-0000-7000-8000-000000000001",
+          "slug": "acme",
+          "status": "pass",
+          "evidence": "security policy set"
+        },
+        {
+          "tenant_id": "0192a000-0000-7000-8000-000000000002",
+          "slug": "globex",
+          "status": "fail",
+          "evidence": "no security policy: installation defaults apply"
+        }
+      ]
+    },
+    {
+      "id": "tenant-mfa",
+      "title": "Organisations require multi-factor authentication",
+      "scope": "tenant",
+      "status": "fail",
+      "evidence": "1 of 2 tenants fail: globex",
+      "fix": "Set require_mfa: true in the tenant's security policy.",
+      "docs": "https://github.com/marunsct/Platform/blob/main/docs/guide/readiness.md#tenant-mfa",
+      "public": true,
+      "optional": false,
+      "refs": [
+        {
+          "framework": "SOC 2",
+          "id": "CC6.1"
+        },
+        {
+          "framework": "ISO/IEC 27001:2022",
+          "id": "A.8.5"
+        }
+      ],
+      "tenants": [
+        {
+          "tenant_id": "0192a000-0000-7000-8000-000000000001",
+          "slug": "acme",
+          "status": "pass",
+          "evidence": "require_mfa is set; Keycloak's matura-mfa-policy step enforces it at sign-in"
+        },
+        {
+          "tenant_id": "0192a000-0000-7000-8000-000000000002",
+          "slug": "globex",
+          "status": "fail",
+          "evidence": "require_mfa is off"
+        }
+      ]
+    },
+    {
+      "id": "tenant-session-limits",
+      "title": "Organisations limit session length and idle time",
+      "scope": "tenant",
+      "status": "fail",
+      "evidence": "1 of 2 tenants fail: globex",
+      "fix": "Set session_max_age and idle_timeout in the tenant's security policy.",
+      "docs": "https://github.com/marunsct/Platform/blob/main/docs/guide/readiness.md#tenant-session-limits",
+      "public": false,
+      "optional": false,
+      "refs": [
+        {
+          "framework": "SOC 2",
+          "id": "CC6.1"
+        },
+        {
+          "framework": "ISO/IEC 27001:2022",
+          "id": "A.8.5"
+        }
+      ],
+      "tenants": [
+        {
+          "tenant_id": "0192a000-0000-7000-8000-000000000001",
+          "slug": "acme",
+          "status": "pass",
+          "evidence": "session_max_age and idle_timeout are set; enforced when tokens are issued"
+        },
+        {
+          "tenant_id": "0192a000-0000-7000-8000-000000000002",
+          "slug": "globex",
+          "status": "fail",
+          "evidence": "installation default session limits"
+        }
+      ]
+    },
+    {
+      "id": "tenant-invite-domains",
+      "title": "Company invitations are limited to the company's domains",
+      "scope": "tenant",
+      "status": "fail",
+      "evidence": "1 of 2 tenants fail: globex",
+      "fix": "Set allowed_email_domains in the tenant's security policy.",
+      "docs": "https://github.com/marunsct/Platform/blob/main/docs/guide/readiness.md#tenant-invite-domains",
+      "public": false,
+      "optional": false,
+      "refs": [
+        {
+          "framework": "SOC 2",
+          "id": "CC6.2"
+        },
+        {
+          "framework": "ISO/IEC 27001:2022",
+          "id": "A.5.16"
+        }
+      ],
+      "tenants": [
+        {
+          "tenant_id": "0192a000-0000-7000-8000-000000000001",
+          "slug": "acme",
+          "status": "pass",
+          "evidence": "1 allowed domains"
+        },
+        {
+          "tenant_id": "0192a000-0000-7000-8000-000000000002",
+          "slug": "globex",
+          "status": "fail",
+          "evidence": "invitations may go to any address"
+        }
+      ]
+    },
+    {
+      "id": "tenant-audit-streaming",
+      "title": "Company audit logs stream to the company's own systems",
+      "scope": "tenant",
+      "status": "fail",
+      "evidence": "1 of 2 tenants fail: acme",
+      "fix": "Add an audit destination in the portal (Audit) or with POST /v1/tenants/{tid}/audit/sinks, and keep it delivering.",
+      "docs": "https://github.com/marunsct/Platform/blob/main/docs/guide/readiness.md#tenant-audit-streaming",
+      "public": false,
+      "optional": false,
+      "refs": [
+        {
+          "framework": "SOC 2",
+          "id": "CC7.2"
+        },
+        {
+          "framework": "ISO/IEC 27001:2022",
+          "id": "A.8.15"
+        }
+      ],
+      "tenants": [
+        {
+          "tenant_id": "0192a000-0000-7000-8000-000000000001",
+          "slug": "acme",
+          "status": "fail",
+          "evidence": "no audit destination"
+        },
+        {
+          "tenant_id": "0192a000-0000-7000-8000-000000000002",
+          "slug": "globex",
+          "status": "pass",
+          "evidence": "1 destinations delivering"
+        }
+      ]
+    },
+    {
+      "id": "tenant-ip-allowlist",
+      "title": "Organisations restrict API access by network (optional)",
+      "scope": "tenant",
+      "status": "pass",
+      "evidence": "1 of 1 tenants",
+      "fix": "Optional: set ip_allowlist in the tenant's security policy to its office or VPN ranges.",
+      "docs": "https://github.com/marunsct/Platform/blob/main/docs/guide/readiness.md#tenant-ip-allowlist",
+      "public": false,
+      "optional": true,
+      "refs": [
+        {
+          "framework": "SOC 2",
+          "id": "CC6.6"
+        },
+        {
+          "framework": "ISO/IEC 27001:2022",
+          "id": "A.8.20"
+        }
+      ],
+      "tenants": [
+        {
+          "tenant_id": "0192a000-0000-7000-8000-000000000001",
+          "slug": "acme",
+          "status": "pass",
+          "evidence": "1 address ranges allowed"
+        },
+        {
+          "tenant_id": "0192a000-0000-7000-8000-000000000002",
+          "slug": "globex",
+          "status": "not-applicable",
+          "evidence": "optional; no allow-list set"
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "product": "Acme Cloud",
+    "public_url": "https://id.acme.example",
+    "environment": "production",
+    "auth": "oidc",
+    "tenants": 2,
+    "tenants_mfa": 1,
+    "tenants_session_limits": 1,
+    "tenants_domain_restricted": 1,
+    "tenants_ip_allowlist": 1,
+    "tenants_audit_streaming": 1,
+    "audit_chains": 3,
+    "audit_chains_verified": 3,
+    "last_restore_test": "2026-10-09T09:30:00Z",
+    "last_restore_test_passed": true,
+    "restore_tests_90d": 2,
+    "last_access_review": null,
+    "last_vulnerability_scan": "2026-10-15T09:30:00Z"
+  }
+}

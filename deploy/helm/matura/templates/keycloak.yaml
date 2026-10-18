@@ -1,0 +1,114 @@
+{{- if .Values.keycloak.enabled }}
+{{- $fullname := include "matura.fullname" . -}}
+{{- if or (not .Values.keycloak.database.existingSecret) (not .Values.keycloak.adminSecret) }}
+{{- fail "keycloak.enabled needs keycloak.database.existingSecret and keycloak.adminSecret" }}
+{{- end }}
+{{- if .Values.keycloak.importRealm }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $fullname }}-realm
+  labels: {{- include "matura.labels" . | nindent 4 }}
+data:
+  matura-realm.json: |-
+{{ .Files.Get "files/matura-realm.json" | indent 4 }}
+---
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $fullname }}-keycloak
+  labels:
+    {{- include "matura.labels" . | nindent 4 }}
+    app.kubernetes.io/component: keycloak
+spec:
+  replicas: {{ .Values.keycloak.replicaCount }}
+  selector:
+    matchLabels: {{- include "matura.selector" (dict "root" . "component" "keycloak") | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "matura.selector" (dict "root" . "component" "keycloak") | nindent 8 }}
+    spec:
+      automountServiceAccountToken: false
+      securityContext: {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: keycloak
+          image: "{{ .Values.keycloak.image.repository }}:{{ .Values.keycloak.image.tag | default .Chart.AppVersion }}"
+          args: ["start", "--optimized"{{ if .Values.keycloak.importRealm }}, "--import-realm"{{ end }}]
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: [ALL] }
+          ports:
+            - { name: http, containerPort: 8080 }
+            - { name: management, containerPort: 9000 }
+          env:
+            - { name: KC_HOSTNAME, value: {{ .Values.keycloak.hostname | quote }} }
+            - { name: KC_HTTP_ENABLED, value: "true" }          # TLS ends at the ingress
+            - { name: KC_PROXY_HEADERS, value: xforwarded }
+            - { name: KC_HEALTH_ENABLED, value: "true" }
+            - { name: KC_METRICS_ENABLED, value: "true" }
+            - { name: KC_CACHE, value: ispn }
+            - { name: KC_CACHE_STACK, value: kubernetes }
+            - { name: JAVA_OPTS_APPEND, value: "-Djgroups.dns.query={{ $fullname }}-keycloak-headless" }
+            - { name: KC_DB, value: postgres }
+            - name: KC_DB_URL
+              valueFrom: { secretKeyRef: { name: {{ .Values.keycloak.database.existingSecret }}, key: url } }
+            - name: KC_DB_USERNAME
+              valueFrom: { secretKeyRef: { name: {{ .Values.keycloak.database.existingSecret }}, key: username } }
+            - name: KC_DB_PASSWORD
+              valueFrom: { secretKeyRef: { name: {{ .Values.keycloak.database.existingSecret }}, key: password } }
+            - name: KC_BOOTSTRAP_ADMIN_USERNAME
+              valueFrom: { secretKeyRef: { name: {{ .Values.keycloak.adminSecret }}, key: username } }
+            - name: KC_BOOTSTRAP_ADMIN_PASSWORD
+              valueFrom: { secretKeyRef: { name: {{ .Values.keycloak.adminSecret }}, key: password } }
+            - { name: MATURA_URL, value: "http://{{ $fullname }}:{{ .Values.service.port }}" }
+            - name: MATURA_INTERNAL_TOKEN
+              valueFrom: { secretKeyRef: { name: {{ include "matura.secrets" . }}, key: internalToken } }
+            - name: MATURA_KEYCLOAK_CLIENT_SECRET
+              valueFrom: { secretKeyRef: { name: {{ include "matura.secrets" . }}, key: keycloakClientSecret, optional: true } }
+            {{- with .Values.smtp }}
+            {{- if .addr }}
+            - { name: MATURA_KEYCLOAK_SMTP_HOST, value: {{ splitList ":" .addr | first | quote }} }
+            - { name: MATURA_KEYCLOAK_SMTP_PORT, value: {{ splitList ":" .addr | last | quote }} }
+            {{- end }}
+            - { name: MATURA_KEYCLOAK_SMTP_FROM, value: {{ .from | quote }} }
+            {{- end }}
+          readinessProbe:
+            httpGet: { path: /health/ready, port: management }
+          startupProbe:
+            httpGet: { path: /health/started, port: management }
+            failureThreshold: 90
+            periodSeconds: 2
+          resources: {{- toYaml .Values.keycloak.resources | nindent 12 }}
+          {{- if .Values.keycloak.importRealm }}
+          volumeMounts:
+            - { name: realm, mountPath: /opt/keycloak/data/import, readOnly: true }
+          {{- end }}
+      {{- if .Values.keycloak.importRealm }}
+      volumes:
+        - name: realm
+          configMap: { name: {{ $fullname }}-realm }
+      {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $fullname }}-keycloak
+  labels: {{- include "matura.labels" . | nindent 4 }}
+spec:
+  selector: {{- include "matura.selector" (dict "root" . "component" "keycloak") | nindent 4 }}
+  ports:
+    - { name: http, port: 8080, targetPort: http }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $fullname }}-keycloak-headless       # cluster discovery for the Infinispan cache
+  labels: {{- include "matura.labels" . | nindent 4 }}
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true
+  selector: {{- include "matura.selector" (dict "root" . "component" "keycloak") | nindent 4 }}
+  ports:
+    - { name: jgroups, port: 7800 }
+{{- end }}

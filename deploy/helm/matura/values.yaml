@@ -1,0 +1,124 @@
+# Matura on Kubernetes. Minimal install:
+#   helm install matura deploy/helm/matura \
+#     --set publicURL=https://id.example.com --set keycloak.hostname=https://login.example.com \
+#     --set database.existingSecret=matura-db --set secrets.existingSecret=matura-secrets
+# See docs/guide/kubernetes.md for the secrets each existingSecret must hold.
+
+publicURL: http://localhost:8080        # where people reach maturad (invitation links, portal)
+env: production
+
+image:
+  repository: ghcr.io/marunsct/maturad
+  tag: ""                               # default: the chart's appVersion
+  pullPolicy: IfNotPresent
+
+replicaCount: 2
+
+maturad:
+  auth: oidc
+  audience: matura-api
+  operatorRole: matura-operator
+  portalClientID: matura-console
+  eventSource: ""                       # default: matura://installation/<release>
+  extraEnv: []
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits: { memory: 512Mi }
+
+# Control-plane database. maturad needs two roles: the runtime role (no BYPASSRLS) and the owner that runs migrations.
+database:
+  # Secret with keys: url (runtime role) and migrateUrl (owner role).
+  existingSecret: ""
+  url: ""                               # used only when existingSecret is empty (not for production)
+  migrateUrl: ""
+  runtimeRole: matura_app
+
+# Secret with keys: kek (base64 32 bytes, openssl rand -base64 32), internalToken (openssl rand -hex 32) and
+# keycloakClientSecret (secret of the realm's matura-admin client, used by maturad for sessions, MFA and SSO).
+secrets:
+  existingSecret: ""
+  kek: ""
+  internalToken: ""
+  keycloakClientSecret: ""
+
+smtp:
+  addr: ""                              # host:port; empty queues emails without sending
+  from: no-reply@matura.local
+  existingSecret: ""                    # keys: user, password
+
+keycloak:
+  enabled: true                         # false: point issuer at your own Keycloak with the Matura extension (drop-in mode)
+  issuer: ""                            # default: <hostname>/realms/matura
+  hostname: http://localhost:8180
+  image:
+    repository: ghcr.io/marunsct/matura-keycloak   # deploy/compose/keycloak.Dockerfile
+    tag: ""
+  replicaCount: 2
+  database:
+    existingSecret: ""                  # keys: url (jdbc:postgresql://...), username, password
+  adminSecret: ""                       # keys: username, password (bootstrap admin)
+  importRealm: true
+  resources:
+    requests: { cpu: 500m, memory: 1Gi }
+    limits: { memory: 2Gi }
+
+# Fine-grained permissions (TS11, docs/spec/02 §18). Off by default: maturad's permission endpoints answer 501.
+openfga:
+  enabled: false                        # deploy OpenFGA with the chart
+  url: ""                               # or use an OpenFGA you run yourself (with enabled: false)
+  storeName: matura
+  presharedKeySecret: ""                # key: key; sent by maturad, required by the chart's OpenFGA when set
+  image:
+    repository: openfga/openfga
+    tag: v1.22.0
+  replicaCount: 2
+  datastore:
+    engine: postgres                    # postgres, or memory for a throwaway test install (one replica, lost on restart)
+    existingSecret: ""                  # key: uri (postgres://user:password@host:5432/openfga?sslmode=require)
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits: { memory: 512Mi }
+
+service:
+  type: ClusterIP
+  port: 8080
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  maturad:
+    host: id.example.com
+  keycloak:
+    host: login.example.com
+  tls: []
+
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+networkPolicy:
+  enabled: true
+
+metrics:
+  serviceMonitor:
+    enabled: false                      # needs the Prometheus Operator CRDs
+    interval: 30s
+
+podSecurityContext:
+  runAsNonRoot: true
+  seccompProfile: { type: RuntimeDefault }
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities: { drop: [ALL] }
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
