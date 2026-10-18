@@ -28,8 +28,8 @@ what is built first and how. The app-facing part is in the [app integration cont
 | Python SDK | `sdk/python`, FastAPI first | verify, principal, contract tables, sync, routing | Django, TypeScript, Go SDKs |
 | Consoles | React 19, Vite, Tailwind 4, TanStack Router and Query (`web/portal`, embedded in maturad at `/portal/`) | customer portal I (TS8): members, invitations, app access, workspaces, roles, My account | portal II and operator console (TS9–TS10) |
 
-Deferred until first needed: NATS (webhooks suffice until M5), Temporal (jobs table with `SKIP LOCKED` until
-tier moves in M5), OpenFGA (M4), OpenBao (secrets encrypted by a local key-encryption key behind a `KeyManager`
+OpenFGA is an optional component since TS11 (§16). Deferred until first needed: NATS (webhooks suffice until M5), Temporal (jobs table with `SKIP LOCKED` until
+tier moves in M5), OpenBao (secrets encrypted by a local key-encryption key behind a `KeyManager`
 interface until TS17).
 
 ## 2. Identifiers and conventions
@@ -123,6 +123,7 @@ that mode unless `MATURA_ENV=development`.
 | Database servers | `POST/GET /admin/v1/db-servers`, `PATCH/DELETE …/{id}`, `POST …/{id}/test` |
 | Placements | `GET /v1/tenants/{tid}/placements`; app: `GET /v1/apps/{app}/placements/{tid}`, `PUT` (app-managed register), `POST …:ready`, `POST …:deleted`; app: `POST /v1/apps/{app}/placements/{tid}/credentials` (short-lived connection) |
 | Sync | `GET /v1/apps/{app}/changes`, `GET /v1/apps/{app}/snapshot?tenant=` |
+| Permissions | app: `POST /v1/apps/{app}/tenants/{tid}/relations`, `POST …/tenants/{tid}:check`, `:batch-check`, `:list-objects` (§16; 501 without OpenFGA) |
 | Webhooks | `POST/GET /admin/v1/apps/{app}/webhooks`, `PATCH/DELETE …/{id}`, `POST …/{id}/test` |
 | Audit | `GET /v1/tenants/{tid}/audit`, `GET …/audit/export` (NDJSON), `GET …/audit:verify`, `GET/POST …/audit/sinks`, `PATCH/DELETE …/audit/sinks/{id}`; operators: `GET /admin/v1/audit`, `GET /admin/v1/audit:verify` (§13) |
 | Security policy | `GET/PUT /v1/tenants/{tid}/security-policy` (§13.4) |
@@ -401,6 +402,9 @@ and reports `ready`. Expand-and-contract migrations are required, since tenants 
 | `MATURA_PRODUCT_NAME` | name on the trust page and in readiness reports (default `Matura`) |
 | `MATURA_TRUST_PAGE` | `on` serves the public trust page at `/trust` and `/trust.json`; `off` (default) answers 404 |
 | `MATURA_SECURITY_CONTACT` | optional address the trust page gives for security reports |
+| `MATURA_OPENFGA_URL` | OpenFGA's HTTP API, e.g. `http://openfga:8080`; unset: fine-grained permissions are off (§16) |
+| `MATURA_OPENFGA_TOKEN` | OpenFGA preshared key, sent as a bearer token, when OpenFGA requires one |
+| `MATURA_OPENFGA_STORE` | name of the installation's OpenFGA store (default `matura`) |
 
 ## 11. Testing
 
@@ -412,6 +416,7 @@ and reports `ready`. Expand-and-contract migrations are required, since tenants 
 | Cross-tenant | every tenant route called as tenant B with tenant A's ids returns 404 |
 | Provisioner | creates and drops a shared database, a schema and a database on the test server; the runtime role cannot read another tenant's schema or database |
 | SDK | fake issuer, contract apply with shuffled duplicated events, routing in all three modes |
+| Permissions | `internal/fga` unit tests and an in-memory fake (`fga/fgatest`); the same client and API suites run against a real OpenFGA when `MATURA_TEST_OPENFGA_URL` is set (`openfga run --datastore-engine memory`) |
 | End to end | Compose stack with Keycloak and the example app (TS7) |
 
 ## 12. Repository layout (first sprints)
@@ -427,6 +432,8 @@ internal/placement/     provisioner (TS7b)
 internal/events/        outbox relay, webhooks, feed (TS7c)
 internal/audit/         audit streaming to tenant destinations (TS9)
 internal/privacy/       tenant exports and audit retention worker (TS17)
+internal/fga/           OpenFGA HTTP client, DSL parser, models and tenant namespacing (TS11)
+internal/access/        OpenFGA store and models, sync worker (TS11)
 internal/readiness/     control catalogue, evaluation, OSCAL and trust-page view (TS24, TS25)
 cmd/matura/             operator CLI: `matura check` (TS24)
 keycloak/realm/         realm-as-code
@@ -658,3 +665,89 @@ clears the cache on that replica. The HTML has no scripts, one inline stylesheet
 script-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`, plus `X-Content-Type-Options:
 nosniff` and `Referrer-Policy: no-referrer`. `/trust.json` allows any origin.
 
+
+## 16. Fine-grained permissions (TS11)
+
+Token `perms` answer "may this user start runs in this tenant"; resource-level questions ("may Ana edit document
+D?") go to OpenFGA ([ADR 0005](../adr/0005-openfga-for-permissions.md)). OpenFGA is optional: without
+`MATURA_OPENFGA_URL` the endpoints below answer `501 permissions-not-configured` and nothing else changes.
+
+### 16.1 Store, models and names
+
+One OpenFGA store per installation (`MATURA_OPENFGA_STORE`, default `matura`; found by name or created on first
+use, its id kept in `fga_state`). Each app's manifest may carry an authorization model (`authorization.model`, the
+OpenFGA DSL as a string or its JSON form, schema 1.1, no conditions or modules). `PUT /admin/v1/apps/{slug}`
+validates it and stores the JSON of the app's own types; maturad writes to OpenFGA one model per app — Matura's
+base types plus the app's — and keeps its id per content hash in `fga_app_model`. Models are written when a check
+first needs them and by the sync worker on `matura.app.manifest.updated`.
+
+Matura's base types, in every model (apps refer to them; only maturad writes their tuples):
+
+```
+type user
+type group      relations define member: [user]
+type tenant     relations define owner: [user]; define admin: [user] or owner
+                          define billing: [user]; define member: [user] or admin or billing
+type workspace  relations define tenant: [tenant]; define member: member from tenant; define admin: admin from tenant
+type role       relations define assignee: [user, group#member]
+```
+
+An app's model may restate these types (so it also runs in the OpenFGA playground) but may not add relations to
+them. Apps and tenants share the store through name translation (`internal/fga.Namespace`):
+
+| What the app says | Stored as |
+|---|---|
+| type `document` (the app's) | `<app>.document` |
+| type `user`, `group`, `tenant`, `workspace`, `role` | unchanged |
+| object `document:d1` in tenant T | `<app>.document:T/d1` |
+| `user:U`, `tenant:T`, `workspace:W`, `group:G` | `user:T/U`, `tenant:T/T`, `workspace:T/W`, `group:T/G` |
+| `role:editor` (tenant-wide grant), `role:editor@W` (workspace grant) | `role:T/<app>/editor`, `role:T/<app>/editor@W` |
+| `user:*` | `user:*` |
+
+**Isolation.** Every stored object id and every non-wildcard subject id begins with the tenant id from the request
+path, which maturad checks against `tenant_app` (the tenant must have enabled the app and be active); app types are
+prefixed with the app's slug, and the role namespace carries the app. A tuple written in tenant A can therefore only
+name A's objects and A's users, and a check, batch check or listing in tenant B starts from B's objects and can only
+follow B's tuples. `list-objects` results are also filtered by prefix before they are returned. Apps cannot write
+tuples on Matura's types, so they cannot make someone a tenant admin or a role holder.
+
+### 16.2 Matura's facts in OpenFGA
+
+The sync worker (`internal/access.Syncer`, one replica at a time by advisory lock 7351009) reads the outbox in
+sequence order from its own cursor (`fga_state.cursor`) and applies each change before moving the cursor
+(at-least-once; writes ignore duplicates and deletes ignore missing tuples, so repeats are harmless):
+
+| Change | Tuples |
+|---|---|
+| `membership.added/updated/removed` | `tenant:T/T#<tenant_role>@user:T/U` for an active membership; the other three roles deleted |
+| `workspace.*` | `workspace:T/W#tenant@tenant:T/T`; deleted with the workspace |
+| `grant.added/revoked` | `role:T/<app>/<role>[@W]#assignee@user:T/U` (or `group:T/G#member`) |
+| `app.role.updated` with `previous_name` | the role's grants move to the new name |
+| `app.manifest.updated` | the app's model is written if it changed |
+| `tenant.deleting` | every tuple of the tenant is deleted (one full read of the store) |
+
+With no cursor (first run, a store OpenFGA no longer has, or a cursor older than the outbox keeps) the worker
+writes every current fact (active memberships, live workspaces, active grants of tenants not being deleted) and
+continues from the outbox position read with them. Tuples of facts that ended while no cursor existed are not
+removed by this; in practice that only happens when an existing store is reused by a fresh Matura database.
+When OpenFGA answers that a remembered store or model is gone, maturad forgets the ids, the call answers 503, and
+the next call or round sets them up again.
+
+### 16.3 App API
+
+HTTP Basic with the app's client id and secret, like the change feed. `{tid}` must be a tenant that enabled the
+app (otherwise 404; suspended 403).
+
+| Endpoint | Body | Answer |
+|---|---|---|
+| `POST /v1/apps/{app}/tenants/{tid}/relations` | `{writes: [{user, relation, object}], deletes: [...]}`, 1–100 together | `{written, deleted}` |
+| `POST /v1/apps/{app}/tenants/{tid}:check` | `{user, relation, object, contextual_tuples?, consistency?}` | `{allowed}` |
+| `POST /v1/apps/{app}/tenants/{tid}:batch-check` | `{checks: [...] (1–50), contextual_tuples?, consistency?}` | `{results: [{allowed, error?}]}` in order |
+| `POST /v1/apps/{app}/tenants/{tid}:list-objects` | `{user, relation, type, contextual_tuples?, consistency?}` | `{objects: ["document:d1", …]}` |
+
+`consistency: "higher"` asks OpenFGA to skip its cache (read your own writes). Errors: 409
+`no-authorization-model`, 422 `invalid` (a name the namespace refuses, or a tuple OpenFGA's model refuses, with
+its message), 501 `permissions-not-configured`, 503 `permissions-unavailable` with `Retry-After`. Tuple writes are
+not recorded in the audit log (they are app data, often high volume); Matura's own facts are audited where they
+change. Not built yet: per-tenant revision tokens, "who has access" views in the portal and access reviews
+(rest of TS11), conditions, `list-users`.

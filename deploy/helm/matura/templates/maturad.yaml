@@ -67,6 +67,14 @@ spec:
             {{- end }}
             {{- end }}
             {{- end }}
+            {{- if or .Values.openfga.enabled .Values.openfga.url }}
+            - { name: MATURA_OPENFGA_URL, value: {{ .Values.openfga.url | default (printf "http://%s-openfga:8080" $fullname) | quote }} }
+            - { name: MATURA_OPENFGA_STORE, value: {{ .Values.openfga.storeName | quote }} }
+            {{- if .Values.openfga.presharedKeySecret }}
+            - name: MATURA_OPENFGA_TOKEN
+              valueFrom: { secretKeyRef: { name: {{ .Values.openfga.presharedKeySecret }}, key: key } }
+            {{- end }}
+            {{- end }}
             {{- with .Values.maturad.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}

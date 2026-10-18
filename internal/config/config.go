@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/netip"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -36,6 +37,9 @@ type Config struct {
 	ProductName        string         // name shown on the trust page and in readiness reports
 	TrustPage          bool           // serve the public trust page at /trust (MATURA_TRUST_PAGE=on)
 	SecurityContact    string         // optional address the trust page gives for security reports
+	OpenFGAURL         string         // OpenFGA HTTP API; empty turns fine-grained permissions off (TS11)
+	OpenFGAToken       string         // OpenFGA preshared key, if it requires one
+	OpenFGAStore       string         // name of the installation's OpenFGA store
 }
 
 func getenv(key, def string) string {
@@ -69,6 +73,9 @@ func FromEnv() (Config, error) {
 		SMTPPassword:       os.Getenv("MATURA_SMTP_PASSWORD"),
 		ProductName:        getenv("MATURA_PRODUCT_NAME", "Matura"),
 		SecurityContact:    os.Getenv("MATURA_SECURITY_CONTACT"),
+		OpenFGAURL:         os.Getenv("MATURA_OPENFGA_URL"),
+		OpenFGAToken:       os.Getenv("MATURA_OPENFGA_TOKEN"),
+		OpenFGAStore:       getenv("MATURA_OPENFGA_STORE", "matura"),
 	}
 	switch v := strings.ToLower(getenv("MATURA_TRUST_PAGE", "off")); v {
 	case "on", "true", "1":
@@ -113,6 +120,12 @@ func (c Config) Validate() error {
 	}
 	if c.SMTPAddr != "" && !strings.Contains(c.SMTPFrom, "@") {
 		return errors.New("MATURA_SMTP_FROM must be an email address")
+	}
+	if c.OpenFGAURL != "" {
+		u, err := url.Parse(c.OpenFGAURL)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+			return fmt.Errorf("MATURA_OPENFGA_URL must be an http(s) URL such as http://openfga:8080, got %q", c.OpenFGAURL)
+		}
 	}
 	switch c.Auth {
 	case "dev":

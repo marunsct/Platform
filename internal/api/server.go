@@ -15,6 +15,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/marunsct/Platform/internal/access"
 	"github.com/marunsct/Platform/internal/portal"
 	"github.com/marunsct/Platform/internal/readiness"
 	"github.com/marunsct/Platform/internal/secrets"
@@ -39,6 +40,7 @@ type Server struct {
 	directory      UserDirectory     // identity provider accounts of erased users (TS17); nil skips
 	install        readiness.Install // this installation's configuration, for readiness (TS24)
 	trust          trustCache        // rendered trust page (TS25)
+	access         *access.Service   // OpenFGA (TS11); nil: permission endpoints answer 501
 }
 
 // seenProfile remembers a profile already written; it is re-checked after a minute so a deactivated account stops
@@ -183,6 +185,8 @@ func (s *Server) Handler() http.Handler {
 	s.handle(appAPI, "PUT /v1/apps/{app}/placements/{tid}", s.appPutPlacement)
 	s.handle(appAPI, "POST /v1/apps/{app}/placements/{tid}", s.appPlacementAction) // {tid}:ready, {tid}:deleted
 	s.handle(appAPI, "POST /v1/apps/{app}/placements/{tid}/credentials", s.appPlacementCredentials)
+	s.handle(appAPI, "POST /v1/apps/{app}/tenants/{tid}/relations", s.appRelations)
+	s.handle(appAPI, "POST /v1/apps/{app}/tenants/{tid}", s.appPermissionAction) // {tid}:check, :batch-check, :list-objects
 
 	authed := s.authenticate(s.idempotent(api), s.idempotent(appAPI))
 	mux.Handle("/v1/", authed)

@@ -49,11 +49,27 @@ jar (`make keycloak-ext`) in that Keycloak's `providers/`, set `MATURA_URL` and 
 the Matura token mapper to the clients of apps that use Matura. Existing users keep signing in as before; they join
 tenants when invited or added.
 
+## Fine-grained permissions (OpenFGA, optional)
+
+Off by default; maturad's permission endpoints then answer 501. To turn them on, either run OpenFGA with the chart:
+
+```sh
+  --set openfga.enabled=true \
+  --set openfga.datastore.existingSecret=openfga-db \     # key uri: postgres://openfga:…@db:5432/openfga
+  --set openfga.presharedKeySecret=openfga-key            # key key: openssl rand -hex 32 (maturad sends it)
+```
+
+or point maturad at an OpenFGA you run yourself with `--set openfga.url=http://openfga.example:8080`. OpenFGA runs
+two replicas against its own Postgres database (an init container runs `openfga migrate`); a network policy lets
+only maturad reach it. `openfga.datastore.engine=memory` is for throwaway test installs (one replica; maturad writes
+its facts again when the store disappears, but tuples apps wrote are lost). How tenants and apps share the store:
+[technical specification §16](../spec/02-technical-specification.md).
+
 ## What the chart sets up
 
 - Pods run as non-root with a read-only root filesystem, no capabilities and the runtime-default seccomp profile.
 - A pod disruption budget keeps one maturad running during node drains; replicas spread across nodes.
-- Network policies allow only the HTTP ports, and Keycloak's cache port between Keycloak pods.
+- Network policies allow only the HTTP ports, Keycloak's cache port between Keycloak pods, and OpenFGA from maturad.
 - `autoscaling.enabled` adds a CPU-based autoscaler; `metrics.serviceMonitor.enabled` scrapes `/metrics` on port 9090
   (`MATURA_METRICS_ADDR`) with the Prometheus Operator.
 

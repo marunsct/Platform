@@ -115,6 +115,18 @@ pl, err = client.PlacementReady(ctx, "notes", tenantID)                        /
 pl, err = client.PlacementDeleted(ctx, "notes", tenantID)                      // after deleting a retiring tenant's data
 ```
 
+## Resource permissions (OpenFGA)
+
+With an authorization model in the manifest (contract §11); maturad answers 501 when it runs without OpenFGA.
+
+```go
+err := client.WriteRelations(ctx, "notes", tenantID, []matura.Tuple{
+	{User: "user:" + p.UserID, Relation: "owner", Object: "document:" + docID}}, nil)
+ok, err := client.Check(ctx, "notes", tenantID, "user:"+p.UserID, "editor", "document:"+docID)
+res, err := client.BatchCheck(ctx, "notes", tenantID, checks, matura.CheckOptions{Fresh: true})
+ids, err := client.ListObjects(ctx, "notes", tenantID, "user:"+p.UserID, "viewer", "document")
+```
+
 ## Testing with maturatest
 
 ```go
