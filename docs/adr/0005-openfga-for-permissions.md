@@ -14,3 +14,9 @@ for document-level sharing).
 ## Consequences
 + Zanzibar-style sharing for every app without each app building it.
 − One more stateful service; tuples must be kept in sync with memberships (done by `maturad` events).
+
+## Implementation note (TS11, 2026-10-18)
+Built with **one store per installation** rather than per tenant: each app has its own model in that store, and
+maturad prefixes every object id with the tenant (and app types with the app's slug), so tenants and apps cannot
+reach each other's tuples while installations keep one store to operate and back up. Details: technical
+specification §18.

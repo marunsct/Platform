@@ -108,10 +108,75 @@ Most apps want level 2: any screen that lists people ("assigned to", "created by
 3. **Check on the server, hide in the UI.** The UI may hide a button when `perms` lacks it; the API must still refuse.
 4. **Keep permissions coarse enough to understand.** 10–40 per app is typical. Above 40 a token carries `perms_ref`
    and the SDK reads the role table instead.
-5. **Record-level rules stay in your code until M4.** "Only the author may delete a draft" is a check on your own
-   data (`created_by = p.user_id`). Fine-grained sharing per record moves to OpenFGA in TS11 through the same SDK.
+5. **Simple record rules stay in your code.** "Only the author may delete a draft" is a check on your own data
+   (`created_by = p.user_id`). Sharing per record (folders, documents, projects shared with people and groups) goes
+   to Matura's resource permissions (§6.1).
 6. **Never widen a permission by renaming it.** Add a new permission, ship code that checks it, then remove the old
    one; the manifest refuses removals that a role still uses.
+
+### 6.1 Resource permissions (OpenFGA)
+
+When "may Ana edit this document?" depends on the document — who owns it, which folder it is in, who it was shared
+with — declare an authorization model in the manifest and let Matura answer. Matura runs
+[OpenFGA](https://openfga.dev) (optional in an installation; without it these calls answer 501) and keeps
+Matura's own facts there for you: who belongs to the tenant with which tenant role, which workspace belongs to the
+tenant, and who holds which of your app roles.
+
+```yaml
+authorization:
+  model: |
+    model
+      schema 1.1
+
+    type user
+
+    type folder
+      relations
+        define tenant: [tenant]
+        define owner: [user]
+        define viewer: [user, role#assignee] or owner or member from tenant
+
+    type document
+      relations
+        define parent: [folder]
+        define owner: [user]
+        define editor: [user, group#member, role#assignee] or owner
+        define viewer: [user, user:*] or editor or viewer from parent
+```
+
+Your model can use Matura's types without defining them: `user`, `group#member`, `tenant` (relations `owner`,
+`admin`, `billing`, `member`), `workspace` (`tenant`, `member`, `admin`) and `role#assignee` — `role:editor` is
+everyone granted your `editor` role in the tenant, `role:editor@<workspace id>` those granted it in one
+workspace. (You may restate `type user` or `type tenant` so the model also runs in the OpenFGA playground, but not add
+relations to them.)
+
+Rules:
+
+1. **Write tuples when your data changes.** Creating a document in a folder writes `folder:f1 parent document:d1`
+   and `user:<creator> owner document:d1`; sharing writes `user:<id> viewer document:d1`; deleting the document
+   deletes its tuples. Writes and deletes can be repeated safely, so put them next to your own transaction and retry
+   on failure (or write them from an outbox of your own).
+2. **Always pass the tenant.** Every call names the tenant from the token's `tid`. Ids only need to be unique
+   inside a tenant: Matura prefixes every object with the tenant, so two tenants' `document:1` are different objects
+   and no call can reach another tenant's tuples.
+3. **Check on the server, before the data leaves.** `check` for one record, `batch_check` for a page of rows,
+   `list_objects` for "everything Ana can see" (capped at 1000; for big lists filter in SQL by what the user can
+   reach instead). Pass `fresh` right after writing a tuple you are about to rely on.
+4. **Keep `perms` for actions, tuples for records.** The token says whether Ana may share documents at all
+   (`doc.share`); OpenFGA says whether she may share *this* one. Check both.
+5. **Don't mirror memberships yourself.** Matura writes `tenant`, `workspace` and `role` tuples from its own
+   records within seconds of a change and removes them when someone leaves; apps cannot write those types.
+
+```python
+api = MaturaAPI(base_url, "notes", client_id, client_secret)
+await api.write_relations(p.tenant_id, writes=[(f"user:{p.user_id}", "owner", f"document:{doc.id}"),
+                                               (f"folder:{folder.id}", "parent", f"document:{doc.id}")])
+if not await api.check(p.tenant_id, f"user:{p.user_id}", "editor", f"document:{doc_id}"):
+    raise HTTPException(403)
+```
+
+The same calls exist in the TypeScript (`api.check`, `api.batchCheck`) and Go (`client.Check`,
+`client.BatchCheck`) SDKs, and as plain HTTPS (`POST /v1/apps/{app}/tenants/{tid}:check`, contract §11).
 
 ## 7. Data: design rules
 
@@ -246,6 +311,8 @@ Apply is idempotent and order-independent because of the version rule, so retrie
 
 - [ ] Manifest lists every permission the code checks; starter roles and a default role are set.
 - [ ] Every route checks a permission on the server, or is explicitly public.
+- [ ] Records shared per person or group have an authorization model; tuples are written with the data and checked
+      before records are returned.
 - [ ] Token verification checks signature, issuer, audience and expiry; JWKS cached.
 - [ ] No local passwords, sign-up, members or roles pages remain (or they are behind a flag for one release).
 - [ ] Every tenant-owned table has `tenant_id`, composite keys, a leading index and, in shared mode, forced RLS.

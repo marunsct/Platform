@@ -69,3 +69,20 @@ func TestMetricsAddrCanBeTurnedOff(t *testing.T) {
 		t.Fatalf("empty MATURA_METRICS_ADDR gave %q, want off", got)
 	}
 }
+
+func TestOpenFGAIsOptional(t *testing.T) {
+	t.Setenv("MATURA_DATABASE_URL", "postgres://x")
+	t.Setenv("MATURA_ENV", "development")
+	t.Setenv("MATURA_AUTH", "dev")
+	if c, err := FromEnv(); err != nil || c.OpenFGAURL != "" || c.OpenFGAStore != "matura" {
+		t.Fatalf("default: %+v %v", c, err)
+	}
+	t.Setenv("MATURA_OPENFGA_URL", "http://openfga:8080")
+	if c, err := FromEnv(); err != nil || c.OpenFGAURL != "http://openfga:8080" {
+		t.Fatalf("set: %v", err)
+	}
+	t.Setenv("MATURA_OPENFGA_URL", "openfga:8080")
+	if _, err := FromEnv(); err == nil {
+		t.Fatal("a URL without scheme was accepted")
+	}
+}

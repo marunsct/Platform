@@ -12,7 +12,8 @@ export {
   type QueryResult, type Statement,
 } from "./contract.js";
 export {
-  CursorExpired, MaturaAPI, MaturaAPIError, Sync, snapshotEvents, type ChangesPage, type Credentials,
+  CursorExpired, MaturaAPI, MaturaAPIError, Sync, snapshotEvents, type ChangesPage, type CheckOptions,
+  type CheckResult, type Credentials, type RelationTuple,
   type MaturaAPIOptions, type Placement, type Snapshot, type StorageRegistration, type SyncOptions, type Transaction,
 } from "./feed.js";
 export {
