@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -246,6 +247,30 @@ func TestAgents(t *testing.T) {
 	}
 	if code, out := viaAgent(alice.user, "GET", base+"/workspaces", nil); code != 403 {
 		t.Fatalf("delegated call after deactivation: %d %v", code, out)
+	}
+	// tokens issued before the kill switch are revoked too (§21): the agent's own and those it holds for people
+	for _, act := range []string{"", agentID} {
+		sub := agentID
+		if act != "" {
+			sub = alice.user.String()
+		}
+		req, _ := http.NewRequest("GET", srv.URL+base+"/workspaces", nil)
+		req.Header.Set("X-Matura-Dev-User", sub)
+		req.Header.Set("X-Matura-Dev-Tenant", aid)
+		req.Header.Set("X-Matura-Dev-Issued-At", strconv.FormatInt(time.Now().Add(-time.Minute).Unix(), 10))
+		if act != "" {
+			req.Header.Set("X-Matura-Dev-Act", act)
+		} else {
+			req.Header.Set("X-Matura-Dev-Kind", "agent")
+		}
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		res.Body.Close()
+		if res.StatusCode != http.StatusUnauthorized {
+			t.Fatalf("old token (act %q) after the kill switch: %d", act, res.StatusCode)
+		}
 	}
 	if u := op.must(http.StatusOK, "GET", "/admin/v1/users/"+agentID, nil); u["status"] != "deactivated" ||
 		u["display_name"] != "Old bot" {

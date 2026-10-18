@@ -386,7 +386,8 @@ func (s *Store) DeleteAgent(ctx context.Context, sc Scope, tenantID, id uuid.UUI
 	})
 }
 
-// AgentSecretRotated records that the API rotated the agent's Keycloak client secret.
+// AgentSecretRotated records that the API rotated the agent's Keycloak client secret and revokes the agent's tokens
+// (its own and delegated ones), since a secret is rotated when it may have leaked.
 func (s *Store) AgentSecretRotated(ctx context.Context, sc Scope, tenantID, id uuid.UUID) (Agent, error) {
 	var out Agent
 	err := s.tx(ctx, sc.InTenant(tenantID), func(tx pgx.Tx) error {
@@ -404,7 +405,12 @@ func (s *Store) AgentSecretRotated(ctx context.Context, sc Scope, tenantID, id u
 		if out, err = getAgent(ctx, tx, tenantID, id, false); err != nil {
 			return err
 		}
-		return audit(ctx, tx, tenantID, "agent.secret_rotated", agentSubject(out), auditAgent(out))
+		if err := audit(ctx, tx, tenantID, "agent.secret_rotated", agentSubject(out), auditAgent(out)); err != nil {
+			return err
+		}
+		// a secret is rotated when it may have leaked: tokens got with the old one stop too (§21)
+		_, err = revokeTokens(ctx, tx, tenantID, id, "", RevokeAgentSecret)
+		return err
 	})
 	return out, err
 }

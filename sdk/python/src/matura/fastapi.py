@@ -58,8 +58,11 @@ class MaturaFastAPI:
         return Depends(dep)
 
 
-def webhook_router(secret: str | bytes, contract: Contract, begin: Any, path: str = "/matura/events") -> APIRouter:
-    """``POST /matura/events``: verify the signature, then apply the event in one transaction (contract §10.2)."""
+def webhook_router(secret: str | bytes, contract: Contract, begin: Any, path: str = "/matura/events", *,
+                   revocations: Any = None) -> APIRouter:
+    """``POST /matura/events``: verify the signature, then apply the event in one transaction (contract §10.2).
+
+    ``revocations`` (a :class:`matura.Revocations`) gets each revocation event, so revoked tokens stop at once."""
     router = APIRouter()
 
     @router.post(path, include_in_schema=False)
@@ -73,6 +76,8 @@ def webhook_router(secret: str | bytes, contract: Contract, begin: Any, path: st
             event = json.loads(body)
         except ValueError:
             raise HTTPException(400, "body is not JSON") from None
+        if revocations is not None:
+            revocations.apply(event)
         async with begin() as conn:
             await contract.apply(conn, event)
         return Response(status_code=204)

@@ -1,6 +1,7 @@
 /** Reading the app's change feed and snapshots from maturad (contract §7, level 2), and data placement (level 3). */
 
 import type { Contract, Executor, MaturaEvent } from "./contract.js";
+import type { Revocation, Revocations } from "./revocations.js";
 
 /** The stored cursor is older than the feed keeps (30 days): take a snapshot ({@link Sync.bootstrap}). */
 export class CursorExpired extends Error {
@@ -118,6 +119,11 @@ export class MaturaAPI {
   }
 
   /** Without `tenant`: the index (cursor, tenants that enabled the app, roles). With it: that tenant's state. */
+  /** Recent token revocations for the app (technical specification §21). */
+  revocations(app: string): Promise<{ items: Revocation[]; window_seconds?: number }> {
+    return this.request("GET", `/v1/apps/${MaturaAPI.seg(app)}/revocations`);
+  }
+
   snapshot(app: string, tenant?: string | null): Promise<Snapshot> {
     return this.request("GET", `/v1/apps/${MaturaAPI.seg(app)}/snapshot`, tenant ? { query: { tenant } } : {});
   }
@@ -247,6 +253,8 @@ export interface SyncOptions {
   stream?: string;
   /** Page size for the change feed (default 500). */
   limit?: number;
+  /** Gets each `matura.revocation.created` event the feed carries. */
+  revocations?: Revocations;
 }
 
 /**
@@ -260,6 +268,7 @@ export class Sync {
   private readonly transaction: Transaction;
   private readonly stream: string;
   private readonly limit: number;
+  private readonly revocations: Revocations | undefined;
 
   constructor(opts: SyncOptions) {
     this.api = opts.api;
@@ -268,6 +277,7 @@ export class Sync {
     this.transaction = opts.transaction;
     this.stream = opts.stream ?? "changes";
     this.limit = opts.limit ?? 500;
+    this.revocations = opts.revocations;
   }
 
   /** Snapshot every tenant that enabled the app, then store the cursor the first snapshot gave. */
@@ -306,7 +316,10 @@ export class Sync {
       const next = String(page.next_cursor);
       applied += await this.transaction(async (db) => {
         let n = 0;
-        for (const e of page.items ?? []) if (await this.contract.apply(db, e)) n++;
+        for (const e of page.items ?? []) {
+          this.revocations?.apply(e as Record<string, unknown>);
+          if (await this.contract.apply(db, e)) n++;
+        }
         await this.contract.saveCursor(db, next, this.stream);
         return n;
       });

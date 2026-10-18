@@ -54,11 +54,16 @@ type Sync struct {
 	DB       TxBeginner
 	Stream   string // matura_sync_cursor.stream (default "changes")
 	Limit    int    // page size (default 500)
+	// Revocations, when set, get each matura.revocation.created event the feed carries.
+	Revocations *Revocations
 }
 
 func (s *Sync) applyAll(ctx context.Context, events []*Event) error {
 	return pgx.BeginFunc(ctx, s.DB, func(tx pgx.Tx) error {
 		for _, e := range events {
+			if s.Revocations != nil {
+				s.Revocations.Apply(e)
+			}
 			if _, err := s.Contract.Apply(ctx, tx, e); err != nil {
 				return err
 			}

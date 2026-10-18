@@ -325,6 +325,22 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+  /v1/me/tokens:revoke:
+    post:
+      operationId: revokeMyTokens
+      summary: Stop all my tokens, everywhere
+      description: |
+        For a lost device: every access token of the caller issued until now is refused by maturad within a second
+        and by apps as soon as they hear of it (§21). People only (not agents or delegated tokens). Sign out of
+        sessions too (`DELETE /v1/me/sessions`) so refresh tokens stop.
+      tags: [sessions]
+      responses:
+        '204':
+          description: Revoked.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
   /v1/me/tenants:
     get:
       operationId: listMyTenants
@@ -3095,6 +3111,23 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+  /admin/v1/users/{uid}:revoke-tokens:
+    parameters:
+      - $ref: '#/components/parameters/uid'
+    post:
+      operationId: revokeUserTokens
+      summary: Stop all of a user's tokens, everywhere
+      description: Operators. As `POST /v1/me/tokens:revoke`, for any user; deactivating or deleting a user does it too.
+      tags: [operator]
+      responses:
+        '204':
+          description: Revoked.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /admin/v1/users/{uid}:
     parameters:
       - $ref: '#/components/parameters/uid'
@@ -3221,6 +3254,43 @@ paths:
           $ref: '#/components/responses/NotFound'
         '410':
           $ref: '#/components/responses/Gone'
+  /v1/apps/{app}/revocations:
+    parameters:
+      - $ref: '#/components/parameters/app'
+    get:
+      operationId: getAppRevocations
+      summary: Recent token revocations
+      description: |
+        The revocations of the last `window_seconds` (900) that concern the app: in tenants that enabled it, and
+        revocations everywhere of users who belong to such a tenant. An SDK loads them at start and then follows
+        `matura.revocation.created` events (or polls this). A token is revoked when its `sub` or `act.sub` is
+        `user_id`, its `tid` is `tenant_id` (when set), its `sid` is `session_id` (when set), and its `iat` is at or
+        before `not_before` (technical specification §21).
+      tags: [app-backend]
+      security:
+        - appBasic: []
+      responses:
+        '200':
+          description: The revocations, oldest first.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, window_seconds]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Revocation'
+                  window_seconds:
+                    type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
   /v1/apps/{app}/snapshot:
     parameters:
       - $ref: '#/components/parameters/app'
@@ -3561,6 +3631,28 @@ paths:
           $ref: '#/components/responses/NotFound'
         '503':
           $ref: '#/components/responses/IdentityUnavailable'
+  /v1/tenants/{tid}/members/{uid}:revoke-tokens:
+    parameters:
+      - $ref: '#/components/parameters/tid'
+      - $ref: '#/components/parameters/uid'
+    post:
+      operationId: revokeMemberTokens
+      summary: Stop a member's tokens for this tenant at once
+      description: |
+        Owners and admins. Every access token of the member for this tenant (its `tid`) issued until now is refused
+        by maturad within a second and by apps as soon as they get `matura.revocation.created` (technical
+        specification §21). Their sessions and tokens for other tenants are not touched; no identity-provider call is
+        made. Removing or deactivating a member does this by itself.
+      tags: [sessions]
+      responses:
+        '204':
+          description: Revoked.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /v1/tenants/{tid}/members/{uid}:reset-mfa:
     parameters:
       - $ref: '#/components/parameters/tid'
@@ -7185,6 +7277,36 @@ components:
               response:
                 type: object
                 additionalProperties: true
+    Revocation:
+      type: object
+      required: [id, tenant_id, user_id, session_id, not_before, reason, created_at]
+      description: Tokens of `user_id` (as `sub` or `act.sub`) issued at or before `not_before` are refused (§21).
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: [string, 'null']
+          format: uuid
+          description: Only tokens for this tenant (`tid`); null for every tenant.
+        user_id:
+          type: string
+          format: uuid
+          description: A person, service account or agent.
+        session_id:
+          type: [string, 'null']
+          description: Only tokens of this session (`sid`); null for all.
+        not_before:
+          type: string
+          format: date-time
+        reason:
+          type: string
+          enum: [requested, session_ended, signed_out, mfa_reset, membership_removed, membership_deactivated,
+                 user_deactivated, user_deleted, agent_deactivated, agent_deleted, agent_secret_rotated,
+                 consent_withdrawn]
+        created_at:
+          type: string
+          format: date-time
     SCIMGroupMapping:
       type: object
       required: [id, tenant_id, group, app, role, version, created_at]

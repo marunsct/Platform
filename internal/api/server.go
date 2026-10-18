@@ -47,6 +47,7 @@ type Server struct {
 	access         *access.Service   // OpenFGA (TS11); nil: permission endpoints answer 501
 	resource       string            // maturad's public URL as an OAuth protected resource (TS15)
 	apiAudience    string            // the token audience maturad's API accepts
+	revocations    revocationCache   // recent token revocations (§21)
 }
 
 // seenProfile remembers a profile already written; it is re-checked after a minute so a deactivated account stops
@@ -176,6 +177,7 @@ func (s *Server) Handler() http.Handler {
 	s.handle(api, "POST /admin/v1/db-servers/{id}/test", s.testDBServer)
 
 	s.handle(api, "GET /v1/me/tenants", s.myTenants)
+	s.handle(api, "POST /v1/me/tokens:revoke", s.revokeMyTokens)
 	s.handle(api, "GET /v1/me/sessions", s.mySessions)
 	s.handle(api, "DELETE /v1/me/sessions", s.signOutEverywhere)
 	s.handle(api, "DELETE /v1/me/sessions/{id}", s.deleteMySession)
@@ -207,6 +209,7 @@ func (s *Server) Handler() http.Handler {
 	s.handle(api, "GET /admin/v1/users/{uid}", s.getUser)
 	s.handle(api, "PATCH /admin/v1/users/{uid}", s.patchUser)
 	s.handle(api, "DELETE /admin/v1/users/{uid}", s.deleteUser)
+	s.handle(api, "POST /admin/v1/users/{uid}", s.userAction) // {uid}:revoke-tokens
 	s.handle(api, "GET /admin/v1/apps/{slug}/secrets", s.listAppSecrets)
 	s.handle(api, "POST /admin/v1/apps/{slug}/secrets", s.createAppSecret)
 	s.handle(api, "DELETE /admin/v1/apps/{slug}/secrets/{id}", s.revokeAppSecret)
@@ -231,6 +234,7 @@ func (s *Server) Handler() http.Handler {
 	appAPI := http.NewServeMux()
 	s.handle(appAPI, "GET /v1/apps/{app}/changes", s.appChanges)
 	s.handle(appAPI, "GET /v1/apps/{app}/snapshot", s.appSnapshot)
+	s.handle(appAPI, "GET /v1/apps/{app}/revocations", s.appRevocations)
 	s.handle(appAPI, "GET /v1/apps/{app}/placements/{tid}", s.appGetPlacement)
 	s.handle(appAPI, "PUT /v1/apps/{app}/placements/{tid}", s.appPutPlacement)
 	s.handle(appAPI, "POST /v1/apps/{app}/placements/{tid}", s.appPlacementAction) // {tid}:ready, {tid}:deleted
@@ -244,7 +248,14 @@ func (s *Server) Handler() http.Handler {
 	for _, rt := range s.internalRoutes {
 		s.handle(mux, rt.pattern, rt.handler)
 	}
-	return mux
+	// A write on this replica may have revoked tokens (§21): check the database again on the next request rather
+	// than after the cache's second.
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mux.ServeHTTP(w, r)
+		if r.Method != http.MethodGet && r.Method != http.MethodHead && r.Method != http.MethodOptions {
+			s.revocations.forget()
+		}
+	})
 }
 
 type route struct {
@@ -302,6 +313,14 @@ func (s *Server) authenticate(next, appNext http.Handler) http.Handler {
 		if err != nil {
 			w.Header().Set("WWW-Authenticate", s.bearerChallenge())
 			problem(w, http.StatusUnauthorized, "unauthenticated", err.Error())
+			return
+		}
+		if gone, err := s.revoked(r.Context(), p); err != nil {
+			s.fail(w, r, err)
+			return
+		} else if gone {
+			w.Header().Set("WWW-Authenticate", s.bearerChallenge()+`, error="invalid_token", error_description="token revoked"`)
+			problem(w, http.StatusUnauthorized, "token-revoked", "this token was revoked; sign in again or get a new token")
 			return
 		}
 		profile := store.UserProfile{ID: p.UserID, Email: p.Email, EmailVerified: p.EmailVerified,

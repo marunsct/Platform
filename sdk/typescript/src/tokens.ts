@@ -3,6 +3,7 @@
 import { constants, createPublicKey, verify as cryptoVerify, type JsonWebKey, type KeyObject } from "node:crypto";
 
 import { Principal, type Claims } from "./principal.js";
+import type { Revocations } from "./revocations.js";
 
 /** Signature algorithms Matura tokens may use. `none` and HMAC (`HS*`) are always refused. */
 export const ALGORITHMS = ["RS256", "RS384", "RS512", "PS256", "ES256", "ES384"] as const;
@@ -46,6 +47,8 @@ export interface VerifierOptions {
   now?: () => number;
   /** `fetch` implementation (default: the global one). */
   fetch?: typeof fetch;
+  /** Revocations checked after the signature and claims: a revoked token fails like an invalid one. */
+  revocations?: Revocations;
 }
 
 const HASH: Record<Algorithm, string> = {
@@ -97,6 +100,7 @@ export class Verifier {
   private readonly clock: () => number;
   private readonly fetchImpl: typeof fetch | undefined;
   private readonly isStatic: boolean;
+  private readonly revocations: Revocations | undefined;
   private keys: Jwk[] = [];
   private fetchedAt = -Infinity;
   private inflight: Promise<void> | null = null;
@@ -112,6 +116,7 @@ export class Verifier {
     this.clock = opts.now ?? (() => Date.now() / 1000);
     this.fetchImpl = opts.fetch;
     this.isStatic = opts.jwks !== undefined;
+    this.revocations = opts.revocations;
     if (opts.jwks) this.keys = [...(opts.jwks.keys ?? [])];
   }
 
@@ -134,6 +139,7 @@ export class Verifier {
       throw new InvalidToken("invalid token: signature verification failed");
     }
     this.checkClaims(claims);
+    if (this.revocations?.revoked(claims)) throw new InvalidToken("token revoked");
     return Principal.fromClaims(claims as Claims);
   }
 

@@ -3,6 +3,7 @@
 import { InvalidEvent, type Contract, type Executor } from "./contract.js";
 import type { Transaction } from "./feed.js";
 import type { Principal } from "./principal.js";
+import type { Revocations } from "./revocations.js";
 import { BadSignature, verify as verifySignature } from "./signatures.js";
 import { bearer, type Verifier } from "./tokens.js";
 
@@ -66,6 +67,8 @@ export interface WebhookHandlerOptions {
   toleranceSeconds?: number;
   /** Current time in Unix seconds, for tests. */
   now?: () => number;
+  /** Gets each `matura.revocation.created` event, so the Verifier using it refuses revoked tokens at once. */
+  revocations?: Revocations;
 }
 
 function problem(status: number, detail: string): WebhookResponse {
@@ -110,6 +113,7 @@ export function webhookHandler(opts: WebhookHandlerOptions): (
       return problem(400, "body is not JSON");
     }
     if (!event || typeof event !== "object" || Array.isArray(event)) return problem(400, "body is not a CloudEvent");
+    opts.revocations?.apply(event as Record<string, unknown>);
     try {
       await run((db) => opts.contract.apply(db, event as Record<string, unknown>));
     } catch (err) {

@@ -708,8 +708,8 @@ sessions and credentials belong to the person, not to a tenant, so a tenant acts
 active member of a company tenant whose email domain that tenant verified (§17), or who belongs to no other
 organisation (personal tenants do not count). Otherwise 403 `not-governed`. Admins cannot act on owners; operators
 need approved support access like for any tenant admin view and are then not limited by this rule. Each action is audited in the tenant's log (`member.signed_out`, `member.mfa_reset`) or, for
-one's own sessions, the installation's (`session.revoked`, `session.revoked_all`). Refresh tokens stop at once;
-access tokens already issued run out within their lifetime (5 min).
+one's own sessions, the installation's (`session.revoked`, `session.revoked_all`). Refresh tokens stop at once, and
+access tokens already issued are revoked (§21): maturad refuses them within a second, apps when they hear of it.
 
 ## 17. Enterprise SSO (TS13)
 
@@ -1032,3 +1032,47 @@ TypeScript, `NewResourceMetadata` / `WWWAuthenticate` in Go) and list the server
 **Not built yet:** consent screens and per-tool scopes, Client ID Metadata Documents and dynamic registration for
 outside MCP clients, customer-IdP-issued agent grants, SCIM provisioning of agents, OpenFGA relations, step-up,
 human-approval events mapped to EU AI Act articles, agents in the portal.
+
+## 21. Instant revocation
+
+Access tokens live 5 minutes and apps verify them locally, so ending a session at Keycloak alone leaves tokens
+working until they expire. A **revocation** closes that gap: tokens of a user issued at or before `not_before` are
+refused, everywhere or for one tenant, for all sessions or one. A token is covered when its `sub` **or** `act.sub` is
+`user_id` (so an agent's revocation also stops tokens it holds for people), its `tid` is `tenant_id` when that is
+set, its `sid` is `session_id` when that is set, and its `iat` is at or before `not_before` (`iat` is whole seconds,
+so a token issued in the same second counts as revoked; it is simply fetched again). Keycloak's and Postgres's
+clocks must be in sync (NTP), as for token expiry.
+
+**Recorded** in `token_revocation` (migration 0017, row-level security like other tenant rows; revocations
+everywhere are written in operator scope) in the same transaction as the change that causes them, with an outbox
+event `matura.revocation.created` (`data.revocation`: `id`, `tenant_id`, `user_id`, `session_id`, `not_before`,
+`reason`, `created_at`), which is also audited. Rows are pruned an hour after `not_before`.
+
+| Cause | Scope | `reason` |
+|---|---|---|
+| member removed, or deactivated (portal, API, SCIM) | that tenant | `membership_removed`, `membership_deactivated` |
+| user deactivated or deleted (operator, erasure) | everywhere | `user_deactivated`, `user_deleted` |
+| agent deactivated or deleted (kill switch) | the agent's tenant | `user_deactivated`, `user_deleted` |
+| agent secret rotated | the agent's tenant | `agent_secret_rotated` |
+| a person ends one session / signs out everywhere | that session / everywhere | `session_ended`, `signed_out` |
+| an admin signs a member out, or resets their MFA | everywhere (the member is governed, §16.3) | `signed_out`, `mfa_reset` |
+| `POST /v1/tenants/{tid}/members/{uid}:revoke-tokens` (owners, admins) | that tenant | `requested` |
+| `POST /v1/me/tokens:revoke` (a person, for a lost device) | everywhere | `requested` |
+| `POST /admin/v1/users/{uid}:revoke-tokens` (operators) | everywhere | `requested` |
+
+**maturad** checks every bearer token against the revocations of the last 15 minutes, read from the database at
+most once a second per replica and again after any write on the replica, so a revocation stops maturad access
+within a second on every replica and at once on the one that made it. A revoked token answers 401
+`token-revoked` with `WWW-Authenticate: Bearer …, error="invalid_token"`.
+
+**Apps** get `matura.revocation.created` by webhook and in the change feed, filtered like other events: a tenant's
+revocations go to apps the tenant enabled; revocations everywhere go to apps of every tenant the user belongs to.
+`GET /v1/apps/{app}/revocations` lists the recent ones (`window_seconds`: 900) for an SDK starting up or polling.
+The SDKs hold them in a `Revocations` set that their verifier consults (`Revocations` / `NewRevocations` in Go,
+Python and TypeScript; the webhook handler and `Sync` feed it when given it), so a revoked token fails as soon as
+the event arrives: within the webhook delivery delay (seconds), or the poll interval (default 5 s in Go's `Poll`).
+An app that verifies tokens without an SDK does the same check from the events or the list (contract §6).
+
+Not covered: tokens of other identity providers in bring-your-own-IdP mode, and Keycloak's own token introspection
+(which already reflects ended sessions).
+

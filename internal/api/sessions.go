@@ -118,6 +118,10 @@ func (s *Server) deleteMySession(w http.ResponseWriter, r *http.Request) {
 		s.kcFail(w, r, err)
 		return
 	}
+	if err := s.revokeTokens(r.Context(), store.Scope{Operator: true}, uuid.Nil, p.UserID, id, store.RevokeSessionEnded); err != nil {
+		s.fail(w, r, err)
+		return
+	}
 	s.auditKeycloak(r, uuid.Nil, "session.revoked", "users/"+p.UserID.String()+"/sessions/"+id, nil)
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -148,11 +152,21 @@ func (s *Server) signOutEverywhere(w http.ResponseWriter, r *http.Request) {
 				s.kcFail(w, r, err)
 				return
 			}
+			if err := s.revokeTokens(r.Context(), store.Scope{Operator: true}, uuid.Nil, p.UserID, x.ID, store.RevokeSessionEnded); err != nil {
+				s.fail(w, r, err)
+				return
+			}
 			n++
 		}
-	} else if err := s.kc.LogoutUser(r.Context(), p.UserID.String()); err != nil {
-		s.kcFail(w, r, err)
-		return
+	} else {
+		if err := s.kc.LogoutUser(r.Context(), p.UserID.String()); err != nil {
+			s.kcFail(w, r, err)
+			return
+		}
+		if err := s.revokeTokens(r.Context(), store.Scope{Operator: true}, uuid.Nil, p.UserID, "", store.RevokeSignedOut); err != nil {
+			s.fail(w, r, err)
+			return
+		}
 	}
 	s.auditKeycloak(r, uuid.Nil, "session.revoked_all", "users/"+p.UserID.String()+"/sessions",
 		map[string]any{"kept_current": keep})
@@ -264,6 +278,16 @@ func (s *Server) memberAction(w http.ResponseWriter, r *http.Request) {
 		action = "sign-out"
 	case strings.HasSuffix(raw, ":reset-mfa"):
 		action = "reset-mfa"
+	case strings.HasSuffix(raw, ":revoke-tokens"):
+		// this tenant's tokens only: needs no Keycloak and no governance (§21)
+		tid, err := uuid.Parse(r.PathValue("tid"))
+		uid, err2 := uuid.Parse(strings.TrimSuffix(raw, ":revoke-tokens"))
+		if err != nil || err2 != nil {
+			problem(w, http.StatusNotFound, "not-found", "not found")
+			return
+		}
+		s.revokeMemberTokens(w, r, tid, uid)
+		return
 	default:
 		problem(w, http.StatusNotFound, "not-found", "not found")
 		return
@@ -279,6 +303,10 @@ func (s *Server) memberAction(w http.ResponseWriter, r *http.Request) {
 			s.kcFail(w, r, err)
 			return
 		}
+		if err := s.revokeTokens(r.Context(), store.Scope{Operator: true}, uuid.Nil, uid, "", store.RevokeSignedOut); err != nil {
+			s.fail(w, r, err)
+			return
+		}
 		s.auditKeycloak(r, tid, "member.signed_out", target, nil)
 		w.WriteHeader(http.StatusNoContent)
 	case "reset-mfa":
@@ -290,6 +318,10 @@ func (s *Server) memberAction(w http.ResponseWriter, r *http.Request) {
 		n, err := s.kc.ResetSecondFactors(r.Context(), uid.String())
 		if err != nil {
 			s.kcFail(w, r, err)
+			return
+		}
+		if err := s.revokeTokens(r.Context(), store.Scope{Operator: true}, uuid.Nil, uid, "", store.RevokeMFAReset); err != nil {
+			s.fail(w, r, err)
 			return
 		}
 		s.auditKeycloak(r, tid, "member.mfa_reset", target, map[string]any{"removed": n})

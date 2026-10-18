@@ -36,6 +36,10 @@ class MaturaAPI:
             params["cursor"] = cursor
         return await self._get(f"/v1/apps/{self.app}/changes", params)
 
+    async def revocations(self) -> dict[str, Any]:
+        """Recent token revocations for this app (technical specification §21)."""
+        return await self._get(f"/v1/apps/{self.app}/revocations")
+
     async def snapshot(self, tenant: str | None = None) -> dict[str, Any]:
         return await self._get(f"/v1/apps/{self.app}/snapshot", {"tenant": tenant} if tenant else None)
 
@@ -152,10 +156,11 @@ class Sync:
     Each page is applied and its cursor stored in one transaction, so a crash repeats at most one page.
     """
 
-    def __init__(self, api: MaturaAPI, contract: Contract, begin: Any):
+    def __init__(self, api: MaturaAPI, contract: Contract, begin: Any, *, revocations: Any = None):
         self.api = api
         self.contract = contract
         self.begin = begin
+        self.revocations = revocations
 
     async def bootstrap(self) -> str:
         """Snapshot every tenant that enabled the app, then store the cursor the first snapshot gave."""
@@ -188,6 +193,8 @@ class Sync:
                 continue
             async with self.begin() as conn:
                 for e in page["items"]:
+                    if self.revocations is not None:
+                        self.revocations.apply(e)
                     applied += await self.contract.apply(conn, e)
                 await self.contract.save_cursor(conn, page["next_cursor"])
             cursor = page["next_cursor"]
