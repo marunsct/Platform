@@ -118,3 +118,26 @@ func (s *Server) billingExports(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": out})
 }
+
+// POST /v1/apps/{app}/tenants/{tid}/oversight: a person approved, rejected, overrode, interrupted or stopped what an
+// agent did (§20.6). 201 when recorded, 200 for a retry of the same id.
+func (s *Server) recordOversight(w http.ResponseWriter, r *http.Request) {
+	app, tid, ok := s.appTenant(w, r)
+	if !ok {
+		return
+	}
+	var in store.OversightEvent
+	if !decode(w, r, &in) {
+		return
+	}
+	created, err := s.store.RecordOversight(r.Context(), app, tid, in)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	status := http.StatusOK
+	if created {
+		status = http.StatusCreated
+	}
+	writeJSON(w, status, map[string]any{"id": in.ID, "recorded": created})
+}

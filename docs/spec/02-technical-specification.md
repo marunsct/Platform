@@ -1115,9 +1115,23 @@ names the consent screen `/agents/consent?client_id=<agent client id>`. The agen
   agent's own tokens are untouched. Audited as `agent.consent_granted` and `agent.consent_withdrawn`.
 - `GET /v1/me/consents` and `GET /v1/tenants/{tid}/agents/{id}/consents` list active, unexpired consents.
 
+### 20.6 Human oversight and AI logs
+
+Apps record what people decided about agents' actions with `POST /v1/apps/{app}/tenants/{tid}/oversight
+{id, kind, agent_id, person_id, action, target?, details?, time?}`. `kind` is `approval`, `rejection`, `override`,
+`intervention` or `stop`; the agent must be the tenant's; the person must be an active human member; `id` makes it
+idempotent (`agent_oversight`, migration 0022). Each record is an audit event `agent.oversight.<kind>` with the
+person as actor and `data.eu_ai_act` naming what it evidences: Art. 12 (logging), Art. 14(4)(d) for approvals,
+rejections and overrides, Art. 14(4)(e) for interventions and stops, and Art. 26(5) (monitoring). The kill switch
+(deactivation, §20.1) and consent (§20.5) are the other oversight measures.
+
+A tenant with agents keeps its audit log at least 183 days (Art. 26(6)): `PUT …/retention` below that answers 422,
+and the purge (`matura_audit_purge`) keeps 183 days whatever the setting. Readiness has three tenant controls,
+mapped to the EU AI Act and ISO/IEC 42001: `tenant-agent-accountability` (every agent has an active person as
+owner), `tenant-agent-oversight` (oversight recorded in the last 90 days) and `tenant-agent-logs`.
+
 **Not built yet:** per-tool scopes, Client ID Metadata Documents and dynamic registration for
-outside MCP clients, customer-IdP-issued agent grants, SCIM provisioning of agents, OpenFGA relations, step-up,
-human-approval events mapped to EU AI Act articles, agents in the portal.
+outside MCP clients, customer-IdP-issued agent grants, SCIM provisioning of agents, OpenFGA relations, step-up.
 
 ## 21. Instant revocation
 

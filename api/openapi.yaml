@@ -3846,6 +3846,71 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
+  /v1/apps/{app}/tenants/{tid}/oversight:
+    parameters:
+      - $ref: '#/components/parameters/app'
+      - $ref: '#/components/parameters/tid'
+    post:
+      operationId: recordOversight
+      summary: Record a person's oversight of an agent action
+      description: |
+        Technical specification §20.6. Audited as `agent.oversight.<kind>` with the person as actor and the EU AI
+        Act articles it evidences in `data.eu_ai_act`. 201 when recorded; 200 (`recorded: false`) for a retry of the
+        same `id`.
+      tags: [app-backend]
+      security:
+        - appBasic: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [id, kind, agent_id, person_id, action]
+              properties:
+                id:
+                  type: string
+                  maxLength: 200
+                kind:
+                  type: string
+                  enum: [approval, rejection, override, intervention, stop]
+                agent_id:
+                  type: string
+                  format: uuid
+                person_id:
+                  type: string
+                  format: uuid
+                action:
+                  type: string
+                  maxLength: 1000
+                target:
+                  type: string
+                details:
+                  type: object
+                  additionalProperties: true
+                time:
+                  type: string
+                  format: date-time
+      responses:
+        '200':
+          description: Already recorded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OversightRecorded'
+        '201':
+          description: Recorded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OversightRecorded'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
   /v1/apps/{app}/snapshot:
     parameters:
       - $ref: '#/components/parameters/app'
@@ -8477,6 +8542,14 @@ components:
         outcome:
           type: [string, 'null']
           enum: [kept, revoked, already_gone, last_owner_kept, null]
+    OversightRecorded:
+      type: object
+      required: [id, recorded]
+      properties:
+        id:
+          type: string
+        recorded:
+          type: boolean
     SCIMGroupMapping:
       type: object
       required: [id, tenant_id, group, app, role, version, created_at]

@@ -258,6 +258,7 @@ func (s *Server) Handler() http.Handler {
 	s.handle(appAPI, "GET /v1/apps/{app}/revocations", s.appRevocations)
 	s.handle(appAPI, "POST /v1/apps/{app}/tenants/{tid}/data-keys", s.newDataKey)
 	s.handle(appAPI, "POST /v1/apps/{app}/tenants/{tid}/usage", s.recordUsage)
+	s.handle(appAPI, "POST /v1/apps/{app}/tenants/{tid}/oversight", s.recordOversight)
 	s.handle(appAPI, "POST /v1/apps/{app}/tenants/{tid}/quota:consume", s.consumeQuota)
 	s.handle(appAPI, "GET /v1/apps/{app}/tenants/{tid}/entitlements", s.appEntitlements)
 	s.handle(appAPI, "POST /v1/apps/{app}/tenants/{tid}/data-keys:unwrap", s.unwrapDataKey)

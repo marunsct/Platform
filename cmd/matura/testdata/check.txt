@@ -1,26 +1,29 @@
-Acme Cloud readiness: 12 of 20 applicable controls pass (60.0%), 0 not applicable
+Acme Cloud readiness: 12 of 20 applicable controls pass (60.0%), 3 not applicable
 
-STATUS  CONTROL                     EVIDENCE
-pass    install-kek                 MATURA_KEK is set; secrets are sealed with AES-256-GCM envelope encryption
-pass    install-tenant-keys         tenant keys are on: deleting a tenant destroys its keys, so its sealed data cannot be read again, from backups either (crypto-shredding)
-pass    install-oidc                MATURA_AUTH=oidc: bearer tokens are verified against the issuer's keys
-pass    install-production          MATURA_ENV=production
-pass    install-tls                 MATURA_PUBLIC_URL is https://id.acme.example
-pass    install-smtp                MATURA_SMTP_ADDR is set; invitation emails are sent
-pass    install-metrics             MATURA_METRICS_ADDR is set: /metrics is served on its own listener
-pass    install-audit-chain         212 events, every hash and link recomputed
-FAIL    install-webhooks            2 active endpoints, 1 failing, 3 events dropped after 24 h in total
-pass    install-restore-test        restore test passed on 2026-10-09 (2 in the last 90 days)
-FAIL    install-access-review       no access review recorded
-pass    install-vulnerability-scan  vulnerability scan passed on 2026-10-15 (1 in the last 90 days)
-pass    tenant-audit-chain          2 of 2 tenants
-FAIL    tenant-access-review        1 of 2 tenants fail: globex
-FAIL    tenant-security-policy      1 of 2 tenants fail: globex
-FAIL    tenant-mfa                  1 of 2 tenants fail: globex
-FAIL    tenant-session-limits       1 of 2 tenants fail: globex
-FAIL    tenant-invite-domains       1 of 2 tenants fail: globex
-FAIL    tenant-audit-streaming      1 of 2 tenants fail: acme
-pass    tenant-ip-allowlist         1 of 1 tenants
+STATUS  CONTROL                      EVIDENCE
+pass    install-kek                  MATURA_KEK is set; secrets are sealed with AES-256-GCM envelope encryption
+pass    install-tenant-keys          tenant keys are on: deleting a tenant destroys its keys, so its sealed data cannot be read again, from backups either (crypto-shredding)
+pass    install-oidc                 MATURA_AUTH=oidc: bearer tokens are verified against the issuer's keys
+pass    install-production           MATURA_ENV=production
+pass    install-tls                  MATURA_PUBLIC_URL is https://id.acme.example
+pass    install-smtp                 MATURA_SMTP_ADDR is set; invitation emails are sent
+pass    install-metrics              MATURA_METRICS_ADDR is set: /metrics is served on its own listener
+pass    install-audit-chain          212 events, every hash and link recomputed
+FAIL    install-webhooks             2 active endpoints, 1 failing, 3 events dropped after 24 h in total
+pass    install-restore-test         restore test passed on 2026-10-09 (2 in the last 90 days)
+FAIL    install-access-review        no access review recorded
+pass    install-vulnerability-scan   vulnerability scan passed on 2026-10-15 (1 in the last 90 days)
+pass    tenant-audit-chain           2 of 2 tenants
+FAIL    tenant-access-review         1 of 2 tenants fail: globex
+n/a     tenant-agent-accountability  no active tenant this control applies to
+n/a     tenant-agent-oversight       no active tenant this control applies to
+n/a     tenant-agent-logs            no active tenant this control applies to
+FAIL    tenant-security-policy       1 of 2 tenants fail: globex
+FAIL    tenant-mfa                   1 of 2 tenants fail: globex
+FAIL    tenant-session-limits        1 of 2 tenants fail: globex
+FAIL    tenant-invite-domains        1 of 2 tenants fail: globex
+FAIL    tenant-audit-streaming       1 of 2 tenants fail: acme
+pass    tenant-ip-allowlist          1 of 1 tenants
 
 Gaps:
 

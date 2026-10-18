@@ -54,7 +54,10 @@ type Tenant struct {
 	SinksFailing        int
 	Audit               Chain
 	LastAccessReview    *time.Time // newest completed access review
-	Members             int        // active members, for whether a review is expected
+	Agents              int        // active agents and service accounts
+	AgentsWithoutOwner  int
+	Oversight90d        int // human oversight records in the last 90 days
+	RetentionDays       int // audit retention (0: unknown)
 }
 
 // Webhooks sums up the app webhook endpoints.

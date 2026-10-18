@@ -52,28 +52,31 @@ a large installation takes a while; the trust page keeps its result for five min
 
 ## Controls
 
-| Id | Control | Scope | Public | SOC 2 | ISO/IEC 27001:2022 | GDPR |
-|---|---|---|---|---|---|---|
-| [install-kek](#install-kek) | Stored secrets are encrypted under an operator-held key | installation | yes | CC6.1 | A.8.24 | Art. 32(1)(a) |
-| [install-tenant-keys](#install-tenant-keys) | Each tenant's secrets are sealed under its own key, destroyed when it is deleted | installation | yes | | A.8.10, A.8.24 | Art. 17, Art. 32(1)(a) |
-| [install-oidc](#install-oidc) | People sign in through OpenID Connect | installation | yes | CC6.1 | A.8.5 | |
-| [install-production](#install-production) | Development mode is off | installation | yes | | A.8.31 | |
-| [install-tls](#install-tls) | The public address uses HTTPS | installation | yes | CC6.7 | A.8.24 | Art. 32(1)(a) |
-| [install-smtp](#install-smtp) | Outgoing email is configured | installation | | | | |
-| [install-metrics](#install-metrics) | Metrics are exported for monitoring | installation | | CC7.2 | A.8.16 | |
-| [install-audit-chain](#install-audit-chain) | The installation audit log verifies | installation | yes | CC7.2 | A.8.15 | |
-| [install-webhooks](#install-webhooks) | Webhook deliveries to apps are healthy | installation | | | | |
-| [install-restore-test](#install-restore-test) | Backups are restored and checked regularly | installation | yes | A1.3 | A.8.13 | Art. 32(1)(c), 32(1)(d) |
-| [install-access-review](#install-access-review) | Access is reviewed at least quarterly | installation | yes | CC6.2, CC6.3 | A.5.18 | |
-| [install-vulnerability-scan](#install-vulnerability-scan) | Images and dependencies are scanned for vulnerabilities | installation | yes | CC7.1 | A.8.8 | |
-| [tenant-audit-chain](#tenant-audit-chain) | Every tenant's audit log verifies | tenant | yes | CC7.2 | A.8.15 | |
-| [tenant-access-review](#tenant-access-review) | Organisations review who has access at least quarterly | tenant | | CC6.2, CC6.3 | A.5.18 | |
-| [tenant-security-policy](#tenant-security-policy) | Each organisation has a security policy | tenant | | CC6.1 | | |
-| [tenant-mfa](#tenant-mfa) | Organisations require multi-factor authentication | tenant | yes | CC6.1 | A.8.5 | |
-| [tenant-session-limits](#tenant-session-limits) | Organisations limit session length and idle time | tenant | | CC6.1 | A.8.5 | |
-| [tenant-invite-domains](#tenant-invite-domains) | Company invitations are limited to the company's domains | tenant | | CC6.2 | A.5.16 | |
-| [tenant-audit-streaming](#tenant-audit-streaming) | Company audit logs stream to the company's own systems | tenant | | CC7.2 | A.8.15 | |
-| [tenant-ip-allowlist](#tenant-ip-allowlist) | Organisations restrict API access by network (optional) | tenant | | CC6.6 | A.8.20 | |
+| Id | Control | Scope | Public | SOC 2 | ISO/IEC 27001:2022 | GDPR | EU AI Act | ISO/IEC 42001 |
+|---|---|---|---|---|---|---|---|---|
+| [install-kek](#install-kek) | Stored secrets are encrypted under an operator-held key | installation | yes | CC6.1 | A.8.24 | Art. 32(1)(a) | | |
+| [install-tenant-keys](#install-tenant-keys) | Each tenant's secrets are sealed under its own key, destroyed when it is deleted | installation | yes | | A.8.10, A.8.24 | Art. 17, Art. 32(1)(a) | | |
+| [install-oidc](#install-oidc) | People sign in through OpenID Connect | installation | yes | CC6.1 | A.8.5 | | | |
+| [install-production](#install-production) | Development mode is off | installation | yes | | A.8.31 | | | |
+| [install-tls](#install-tls) | The public address uses HTTPS | installation | yes | CC6.7 | A.8.24 | Art. 32(1)(a) | | |
+| [install-smtp](#install-smtp) | Outgoing email is configured | installation | | | | | | |
+| [install-metrics](#install-metrics) | Metrics are exported for monitoring | installation | | CC7.2 | A.8.16 | | | |
+| [install-audit-chain](#install-audit-chain) | The installation audit log verifies | installation | yes | CC7.2 | A.8.15 | | | |
+| [install-webhooks](#install-webhooks) | Webhook deliveries to apps are healthy | installation | | | | | | |
+| [install-restore-test](#install-restore-test) | Backups are restored and checked regularly | installation | yes | A1.3 | A.8.13 | Art. 32(1)(c), 32(1)(d) | | |
+| [install-access-review](#install-access-review) | Access is reviewed at least quarterly | installation | yes | CC6.2, CC6.3 | A.5.18 | | | |
+| [install-vulnerability-scan](#install-vulnerability-scan) | Images and dependencies are scanned for vulnerabilities | installation | yes | CC7.1 | A.8.8 | | | |
+| [tenant-audit-chain](#tenant-audit-chain) | Every tenant's audit log verifies | tenant | yes | CC7.2 | A.8.15 | | | |
+| [tenant-access-review](#tenant-access-review) | Organisations review who has access at least quarterly | tenant | | CC6.2, CC6.3 | A.5.18 | | | |
+| [tenant-agent-accountability](#tenant-agent-accountability) | Every AI agent has a person accountable for it | tenant | yes | | | | Art. 26(2) | A.3.2 |
+| [tenant-agent-oversight](#tenant-agent-oversight) | People oversee what AI agents do, and it is recorded | tenant | yes | | | | Art. 14, Art. 26(5) | A.9.2 |
+| [tenant-agent-logs](#tenant-agent-logs) | AI agent activity is logged and kept at least six months | tenant | yes | | | | Art. 12, Art. 26(6) | A.6.2.8 |
+| [tenant-security-policy](#tenant-security-policy) | Each organisation has a security policy | tenant | | CC6.1 | | | | |
+| [tenant-mfa](#tenant-mfa) | Organisations require multi-factor authentication | tenant | yes | CC6.1 | A.8.5 | | | |
+| [tenant-session-limits](#tenant-session-limits) | Organisations limit session length and idle time | tenant | | CC6.1 | A.8.5 | | | |
+| [tenant-invite-domains](#tenant-invite-domains) | Company invitations are limited to the company's domains | tenant | | CC6.2 | A.5.16 | | | |
+| [tenant-audit-streaming](#tenant-audit-streaming) | Company audit logs stream to the company's own systems | tenant | | CC7.2 | A.8.15 | | | |
+| [tenant-ip-allowlist](#tenant-ip-allowlist) | Organisations restrict API access by network (optional) | tenant | | CC6.6 | A.8.20 | | | |
 
 Tenant controls are evaluated for every **active** tenant they apply to and pass only when all of them pass; the
 report lists each tenant's result, and the evidence names up to five failing tenants. The catalogue is
@@ -159,6 +162,24 @@ Passes when the organisation completed an access review (technical specification
 Owners and admins start one (`POST /v1/tenants/{tid}/access-reviews`), mark each grant and admin role keep or
 revoke, and complete it. At the deadline, anything nobody decided is revoked, unless the review was started with
 `on_pending: keep`. Personal tenants are not applicable.
+
+### tenant-agent-accountability
+
+Not applicable without agents. Passes when every active agent and service account has an owner who is an active
+person in the organisation. Fix: set `owner_id` on the agent.
+
+### tenant-agent-oversight
+
+Not applicable without agents. Passes when the organisation's apps recorded at least one human oversight decision
+in the last 90 days (`POST /v1/apps/{app}/tenants/{tid}/oversight`, technical specification §20.6): an approval,
+rejection, override, intervention or stop. Requiring consent for delegated agents (§20.5) and the kill switch
+(deactivation) are the other oversight measures Matura gives.
+
+### tenant-agent-logs
+
+Not applicable without agents. Passes while agents are active: their own and delegated actions are in the
+tamper-evident audit log, and a tenant with agents keeps it at least 183 days whatever its retention setting (Art.
+26(6) of the EU AI Act asks deployers to keep logs at least six months).
 
 ### tenant-security-policy
 
@@ -255,6 +276,7 @@ It writes each filled template to `--out` (default `./policies`) and lists the p
 
 ## Not built yet
 
-Control packs for ISO/IEC 42001 and the EU AI Act, opening fix pull requests, MFA coverage measured from Keycloak
+Fuller control packs for ISO/IEC 42001 and the EU AI Act (risk classification, conformity documentation and
+other organisational controls), opening fix pull requests, MFA coverage measured from Keycloak
 (rather than the policy setting), SSO and SCIM status, the SIG Lite and CAIQ answer banks, the generated security
 whitepaper, and readiness views in the consoles (doc 13 TS24, TS25).

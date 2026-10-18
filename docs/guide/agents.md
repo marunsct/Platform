@@ -175,7 +175,21 @@ maturad does the same for its own API. `GET /.well-known/oauth-protected-resourc
 401 answers point to it. An agent asks for `audience=<MATURA_AUDIENCE>` (default `matura-api`) to call maturad. On
 maturad's API, agents act as tenant members and never as admins or operators.
 
-## 6. Not built yet
+## 6. Human oversight
+
+When a person approves, rejects, overrides, interrupts or stops something an agent did, have the app record it:
+
+```sh
+curl -u "$APP_ID:$APP_SECRET" -X POST "$MATURA/v1/apps/agentcanvas/tenants/$TID/oversight" -d '{
+  "id": "run-42-approval", "kind": "approval", "agent_id": "'$AGENT'", "person_id": "'$ANA'",
+  "action": "send the weekly report to the board"}'
+```
+
+The record lands in the tenant's audit log, with the person as actor and the EU AI Act articles it evidences
+(Art. 12, 14 and 26). A tenant with agents keeps its audit log at least six months. Readiness reports whether
+every agent has an owner and whether oversight is recorded.
+
+## 7. Not built yet
 
 - Per-tool scopes (consent narrows by permission, not by MCP tool).
 - Client ID Metadata Documents and dynamic registration for MCP clients outside the installation.
@@ -183,5 +197,3 @@ maturad's API, agents act as tenant members and never as admins or operators.
 - SCIM provisioning of agents.
 - OpenFGA relations.
 - Step-up authentication.
-- Human-approval events mapped to EU AI Act articles 12, 14 and 26.
-- Agents in the customer portal.

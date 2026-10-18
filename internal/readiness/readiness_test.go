@@ -163,8 +163,10 @@ func TestMappingsUseKnownFrameworks(t *testing.T) {
 				ok = strings.HasPrefix(r.ID, "CC") || strings.HasPrefix(r.ID, "A1.")
 			case iso:
 				ok = strings.HasPrefix(r.ID, "A.5.") || strings.HasPrefix(r.ID, "A.8.")
-			case gdpr:
+			case gdpr, aiAct:
 				ok = strings.HasPrefix(r.ID, "Art. ")
+			case iso42:
+				ok = strings.HasPrefix(r.ID, "A.")
 			}
 			if !ok {
 				t.Errorf("%s: unexpected reference %s %s", c.ID, r.Framework, r.ID)

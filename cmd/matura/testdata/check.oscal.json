@@ -962,6 +962,142 @@
           },
           {
             "collected": "2026-10-17T09:30:00Z",
+            "description": "no active tenant this control applies to",
+            "links": [
+              {
+                "href": "https://github.com/marunsct/Platform/blob/main/docs/guide/readiness.md#tenant-agent-accountability",
+                "rel": "reference"
+              }
+            ],
+            "methods": [
+              "TEST"
+            ],
+            "props": [
+              {
+                "name": "matura-status",
+                "ns": "https://matura.dev/ns/oscal",
+                "value": "not-applicable"
+              },
+              {
+                "name": "framework-reference",
+                "ns": "https://matura.dev/ns/oscal",
+                "value": "EU AI Act Art. 26(2)"
+              },
+              {
+                "name": "framework-reference",
+                "ns": "https://matura.dev/ns/oscal",
+                "value": "ISO/IEC 42001:2023 A.3.2"
+              }
+            ],
+            "subjects": [
+              {
+                "subject-uuid": "169313e3-1e15-5a04-a747-ef1d7e5a5c55",
+                "title": "Acme Cloud",
+                "type": "component"
+              }
+            ],
+            "title": "Every AI agent has a person accountable for it",
+            "types": [
+              "control-objective"
+            ],
+            "uuid": "33ec0a05-4e9f-5402-a1c3-f90ab444317b"
+          },
+          {
+            "collected": "2026-10-17T09:30:00Z",
+            "description": "no active tenant this control applies to",
+            "links": [
+              {
+                "href": "https://github.com/marunsct/Platform/blob/main/docs/guide/readiness.md#tenant-agent-oversight",
+                "rel": "reference"
+              }
+            ],
+            "methods": [
+              "TEST"
+            ],
+            "props": [
+              {
+                "name": "matura-status",
+                "ns": "https://matura.dev/ns/oscal",
+                "value": "not-applicable"
+              },
+              {
+                "name": "framework-reference",
+                "ns": "https://matura.dev/ns/oscal",
+                "value": "EU AI Act Art. 14"
+              },
+              {
+                "name": "framework-reference",
+                "ns": "https://matura.dev/ns/oscal",
+                "value": "EU AI Act Art. 26(5)"
+              },
+              {
+                "name": "framework-reference",
+                "ns": "https://matura.dev/ns/oscal",
+                "value": "ISO/IEC 42001:2023 A.9.2"
+              }
+            ],
+            "subjects": [
+              {
+                "subject-uuid": "169313e3-1e15-5a04-a747-ef1d7e5a5c55",
+                "title": "Acme Cloud",
+                "type": "component"
+              }
+            ],
+            "title": "People oversee what AI agents do, and it is recorded",
+            "types": [
+              "control-objective"
+            ],
+            "uuid": "b4468419-3b63-5a66-8138-fbf56f84f4b8"
+          },
+          {
+            "collected": "2026-10-17T09:30:00Z",
+            "description": "no active tenant this control applies to",
+            "links": [
+              {
+                "href": "https://github.com/marunsct/Platform/blob/main/docs/guide/readiness.md#tenant-agent-logs",
+                "rel": "reference"
+              }
+            ],
+            "methods": [
+              "TEST"
+            ],
+            "props": [
+              {
+                "name": "matura-status",
+                "ns": "https://matura.dev/ns/oscal",
+                "value": "not-applicable"
+              },
+              {
+                "name": "framework-reference",
+                "ns": "https://matura.dev/ns/oscal",
+                "value": "EU AI Act Art. 12"
+              },
+              {
+                "name": "framework-reference",
+                "ns": "https://matura.dev/ns/oscal",
+                "value": "EU AI Act Art. 26(6)"
+              },
+              {
+                "name": "framework-reference",
+                "ns": "https://matura.dev/ns/oscal",
+                "value": "ISO/IEC 42001:2023 A.6.2.8"
+              }
+            ],
+            "subjects": [
+              {
+                "subject-uuid": "169313e3-1e15-5a04-a747-ef1d7e5a5c55",
+                "title": "Acme Cloud",
+                "type": "component"
+              }
+            ],
+            "title": "AI agent activity is logged and kept at least six months",
+            "types": [
+              "control-objective"
+            ],
+            "uuid": "f9dbbbbf-76cc-54dd-9d57-9705a0d2dc78"
+          },
+          {
+            "collected": "2026-10-17T09:30:00Z",
             "description": "1 of 2 tenants fail: globex",
             "links": [
               {

@@ -11,11 +11,15 @@ import (
 
 // TenantPosture is a tenant with the settings readiness checks look at (TS24).
 type TenantPosture struct {
-	Tenant           Tenant
-	Policy           SecurityPolicy
-	SinksActive      int // audit destinations delivering
-	SinksFailing     int
-	LastAccessReview *time.Time // the newest completed access review (§18.4)
+	Tenant             Tenant
+	Policy             SecurityPolicy
+	SinksActive        int // audit destinations delivering
+	SinksFailing       int
+	LastAccessReview   *time.Time // the newest completed access review (§18.4)
+	Agents             int        // active agents and service accounts
+	AgentsWithoutOwner int        // of those, without an active person as owner
+	Oversight90d       int        // human oversight records in the last 90 days (§20.6)
+	RetentionDays      int        // audit retention setting
 }
 
 // TenantPostures reads every tenant that is not deleted, with its security policy and audit destinations, in one
@@ -29,7 +33,13 @@ func (s *Store) TenantPostures(ctx context.Context) ([]TenantPosture, error) {
 				coalesce(p.allowed_email_domains, '{}'), coalesce(p.ip_allowlist, '{}'), coalesce(p.version, 0), p.updated_at,
 				(SELECT count(*) FROM audit_sink a WHERE a.tenant_id = t.id AND a.status = 'active'),
 				(SELECT count(*) FROM audit_sink a WHERE a.tenant_id = t.id AND a.status = 'failing'),
-				(SELECT max(completed_at) FROM access_review r WHERE r.tenant_id = t.id AND r.status = 'completed')
+				(SELECT max(completed_at) FROM access_review r WHERE r.tenant_id = t.id AND r.status = 'completed'),
+				(SELECT count(*) FROM agent a WHERE a.tenant_id = t.id AND a.status = 'active'),
+				(SELECT count(*) FROM agent a WHERE a.tenant_id = t.id AND a.status = 'active' AND NOT EXISTS
+					(SELECT 1 FROM membership m JOIN app_user u ON u.id = m.user_id WHERE m.tenant_id = a.tenant_id
+					 AND m.user_id = a.owner_id AND m.status = 'active' AND u.kind = 'human')),
+				(SELECT count(*) FROM agent_oversight o WHERE o.tenant_id = t.id AND o.occurred_at > now() - interval '90 days'),
+				coalesce((SELECT retention_days FROM audit_retention r WHERE r.tenant_id = t.id), 400)
 			FROM tenant t LEFT JOIN security_policy p ON p.tenant_id = t.id
 			WHERE t.status <> 'deleted' ORDER BY t.slug`)
 		if err != nil {
@@ -40,7 +50,8 @@ func (s *Store) TenantPostures(ctx context.Context) ([]TenantPosture, error) {
 			t, p := &tp.Tenant, &tp.Policy
 			err := r.Scan(&t.ID, &t.Slug, &t.Name, &t.Kind, &t.Status, &t.Plan, &t.DataModeDefault, &t.Version,
 				&t.CreatedAt, &t.UpdatedAt, &p.RequireMFA, &p.SessionMaxAge, &p.IdleTimeout, &p.AllowedEmailDomains,
-				&p.IPAllowlist, &p.Version, &p.UpdatedAt, &tp.SinksActive, &tp.SinksFailing, &tp.LastAccessReview)
+				&p.IPAllowlist, &p.Version, &p.UpdatedAt, &tp.SinksActive, &tp.SinksFailing, &tp.LastAccessReview,
+				&tp.Agents, &tp.AgentsWithoutOwner, &tp.Oversight90d, &tp.RetentionDays)
 			p.TenantID = t.ID
 			return tp, err
 		})
