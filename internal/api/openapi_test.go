@@ -31,6 +31,7 @@ var openAPIAliases = map[string]string{
 	"POST /v1/apps/{app}/tenants/{tid}:check":              "POST /v1/apps/{app}/tenants/{tid}",
 	"POST /v1/apps/{app}/tenants/{tid}:batch-check":        "POST /v1/apps/{app}/tenants/{tid}",
 	"POST /v1/apps/{app}/tenants/{tid}:list-objects":       "POST /v1/apps/{app}/tenants/{tid}",
+	"POST /v1/apps/{app}/tenants/{tid}:list-users":         "POST /v1/apps/{app}/tenants/{tid}",
 	"POST /v1/tenants/{tid}/members/{uid}:sign-out":        "POST /v1/tenants/{tid}/members/{uid}",
 	"POST /v1/tenants/{tid}/members/{uid}:reset-mfa":       "POST /v1/tenants/{tid}/members/{uid}",
 	"POST /v1/tenants/{tid}/members/{uid}:revoke-tokens":   "POST /v1/tenants/{tid}/members/{uid}",

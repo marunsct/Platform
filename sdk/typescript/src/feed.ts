@@ -193,6 +193,13 @@ export class MaturaAPI {
       { body: permissionQuery({ user, relation, type }, opts) });
     return r.objects;
   }
+
+  /** Who has `relation` on `object` in the tenant: `user:<id>` (or `userType`, such as `group`), `type:*` if public. */
+  async listUsers(app: string, tenantId: string, object: string, relation: string, userType = "user", opts?: CheckOptions): Promise<string[]> {
+    const r = await this.request<{ users: string[] }>("POST", this.tenantPath(app, tenantId) + ":list-users",
+      { body: permissionQuery({ object, relation, user_type: userType }, opts) });
+    return r.users;
+  }
 }
 
 /**

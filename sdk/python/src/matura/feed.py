@@ -110,6 +110,12 @@ class MaturaAPI:
         body = _query({"user": user, "relation": relation, "type": type}, contextual, fresh)
         return (await self._send("POST", self._perm_path(tenant) + ":list-objects", body))["objects"]
 
+    async def list_users(self, tenant: str, object: str, relation: str, *, user_type: str = "user",
+                         contextual: list[TupleLike] = (), fresh: bool = False) -> list[str]:
+        """Who has ``relation`` on ``object`` in the tenant: ``user:<id>`` (or ``user_type``), ``type:*`` if public."""
+        body = _query({"object": object, "relation": relation, "user_type": user_type}, contextual, fresh)
+        return (await self._send("POST", self._perm_path(tenant) + ":list-users", body))["users"]
+
     async def aclose(self) -> None:
         await self._client.aclose()
 

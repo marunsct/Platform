@@ -303,3 +303,37 @@ func (c *Client) ListObjects(ctx context.Context, store string, q Query, user, r
 	err := c.do(ctx, http.MethodPost, "/stores/"+url.PathEscape(store)+"/list-objects", body, &out)
 	return out.Objects, err
 }
+
+// ListUsers returns the users of userType that have relation on object ("type:id", or "type:*" for a public
+// wildcard), OpenFGA's list-users. Usersets are not followed into the answer; their members are.
+func (c *Client) ListUsers(ctx context.Context, store string, q Query, object, relation, userType string) ([]string, error) {
+	typ, id, _ := strings.Cut(object, ":")
+	body := q.body()
+	body["object"] = map[string]string{"type": typ, "id": id}
+	body["relation"] = relation
+	body["user_filters"] = []map[string]string{{"type": userType}}
+	var out struct {
+		Users []struct {
+			Object *struct {
+				Type string `json:"type"`
+				ID   string `json:"id"`
+			} `json:"object"`
+			Wildcard *struct {
+				Type string `json:"type"`
+			} `json:"wildcard"`
+		} `json:"users"`
+	}
+	if err := c.do(ctx, http.MethodPost, "/stores/"+url.PathEscape(store)+"/list-users", body, &out); err != nil {
+		return nil, err
+	}
+	users := make([]string, 0, len(out.Users))
+	for _, u := range out.Users {
+		switch {
+		case u.Object != nil:
+			users = append(users, u.Object.Type+":"+u.Object.ID)
+		case u.Wildcard != nil:
+			users = append(users, u.Wildcard.Type+":*")
+		}
+	}
+	return users, nil
+}

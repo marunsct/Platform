@@ -5260,6 +5260,66 @@ paths:
           $ref: '#/components/responses/PermissionsNotConfigured'
         '503':
           $ref: '#/components/responses/PermissionsUnavailable'
+  /v1/apps/{app}/tenants/{tid}:list-users:
+    parameters:
+      - $ref: '#/components/parameters/app'
+      - $ref: '#/components/parameters/tid'
+    post:
+      operationId: listAppUsers
+      summary: List who has access to an object
+      description: |
+        Who has `relation` on `object`: the users (or `user_type`, such as group) of this tenant only, as `type:id`,
+        or `type:*` when the object is public. For "who has access" views and access reviews.
+      tags: [app-backend, permissions]
+      security:
+        - appBasic: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - type: object
+                  required: [object, relation]
+                  properties:
+                    object:
+                      type: string
+                      examples: ['document:d1']
+                    relation:
+                      type: string
+                    user_type:
+                      type: string
+                      default: user
+                - $ref: '#/components/schemas/PermissionQueryOptions'
+      responses:
+        '200':
+          description: The users, as `type:id` or `type:*`.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [users]
+                properties:
+                  users:
+                    type: array
+                    items:
+                      type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/NoAuthorizationModel'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '501':
+          $ref: '#/components/responses/PermissionsNotConfigured'
+        '503':
+          $ref: '#/components/responses/PermissionsUnavailable'
   /internal/v1/token-context:
     post:
       operationId: getTokenContext

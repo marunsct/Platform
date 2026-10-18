@@ -906,12 +906,14 @@ app (otherwise 404; suspended 403).
 | `POST /v1/apps/{app}/tenants/{tid}:check` | `{user, relation, object, contextual_tuples?, consistency?}` | `{allowed}` |
 | `POST /v1/apps/{app}/tenants/{tid}:batch-check` | `{checks: [...] (1–50), contextual_tuples?, consistency?}` | `{results: [{allowed, error?}]}` in order |
 | `POST /v1/apps/{app}/tenants/{tid}:list-objects` | `{user, relation, type, contextual_tuples?, consistency?}` | `{objects: ["document:d1", …]}` |
+| `POST /v1/apps/{app}/tenants/{tid}:list-users` | `{object, relation, user_type? (user), contextual_tuples?, consistency?}` | `{users: ["user:<id>", …]}`, this tenant's only; `user:*` if public |
 
 `consistency: "higher"` asks OpenFGA to skip its cache (read your own writes). Errors: 409
 `no-authorization-model`, 422 `invalid` (a name the namespace refuses, or a tuple OpenFGA's model refuses, with
 its message), 501 `permissions-not-configured`, 503 `permissions-unavailable` with `Retry-After`. Tuple writes are
 not recorded in the audit log (they are app data, often high volume); Matura's own facts are audited where they
-change. Not built yet: per-tenant revision tokens, "who has access" views in the portal, conditions, `list-users`.
+change. `:list-users` answers "who has access" to an object (OpenFGA list-users) for apps' sharing dialogs and access
+reviews. Not built yet: per-tenant revision tokens, conditions.
 
 ### 18.4 Access reviews
 
