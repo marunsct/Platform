@@ -16,7 +16,7 @@ import (
 	"github.com/marunsct/Platform/internal/store"
 )
 
-// Tenant service accounts and AI agents (TS15, technical specification §18). Owners and admins manage them; each is
+// Tenant service accounts and AI agents (TS15, technical specification §20). Owners and admins manage them; each is
 // a Keycloak confidential client created here, whose secret is shown once, on creation and on rotation.
 
 type agentGrantIn struct {

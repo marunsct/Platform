@@ -154,6 +154,68 @@ export class MaturaAPI {
   placementDeleted(app: string, tenantId: string): Promise<Placement> {
     return this.request("POST", this.placementPath(app, tenantId) + ":deleted");
   }
+
+  // --- fine-grained permissions (technical specification §18); maturad answers 501 without OpenFGA ---
+
+  private tenantPath(app: string, tenantId: string): string {
+    return `/v1/apps/${MaturaAPI.seg(app)}/tenants/${MaturaAPI.seg(tenantId)}`;
+  }
+
+  /** Add and remove tuples in the tenant, all or nothing (at most 100 together). Repeating either is harmless. */
+  writeRelations(app: string, tenantId: string, change: { writes?: RelationTuple[]; deletes?: RelationTuple[] }): Promise<{ written: number; deleted: number }> {
+    return this.request("POST", this.tenantPath(app, tenantId) + "/relations",
+      { body: { writes: change.writes ?? [], deletes: change.deletes ?? [] } });
+  }
+
+  /** Whether `user` has `relation` on `object` in the tenant. */
+  async check(app: string, tenantId: string, user: string, relation: string, object: string, opts?: CheckOptions): Promise<boolean> {
+    const r = await this.request<{ allowed: boolean }>("POST", this.tenantPath(app, tenantId) + ":check",
+      { body: permissionQuery({ user, relation, object }, opts) });
+    return r.allowed;
+  }
+
+  /** Up to 50 checks, answered in order. */
+  async batchCheck(app: string, tenantId: string, checks: RelationTuple[], opts?: CheckOptions): Promise<CheckResult[]> {
+    const r = await this.request<{ results: CheckResult[] }>("POST", this.tenantPath(app, tenantId) + ":batch-check",
+      { body: permissionQuery({ checks }, opts) });
+    return r.results;
+  }
+
+  /** The objects (`type:id`) of `type` on which `user` has `relation` in the tenant. */
+  async listObjects(app: string, tenantId: string, user: string, relation: string, type: string, opts?: CheckOptions): Promise<string[]> {
+    const r = await this.request<{ objects: string[] }>("POST", this.tenantPath(app, tenantId) + ":list-objects",
+      { body: permissionQuery({ user, relation, type }, opts) });
+    return r.objects;
+  }
+}
+
+/**
+ * A relationship: `user` has `relation` on `object`. Objects are `type:id` of a type in the app's authorization model;
+ * users are `user:<id>`, `type:id#relation` (for example `role:editor#assignee`) or `type:*`.
+ */
+export interface RelationTuple {
+  user: string;
+  relation: string;
+  object: string;
+}
+
+export interface CheckOptions {
+  /** Tuples that count for this request only. */
+  contextual?: RelationTuple[];
+  /** Skip OpenFGA's cache, to read a tuple written just before. */
+  fresh?: boolean;
+}
+
+export interface CheckResult {
+  allowed: boolean;
+  /** Set when this check could not be evaluated. */
+  error?: string;
+}
+
+function permissionQuery(body: Record<string, unknown>, opts: CheckOptions = {}): Record<string, unknown> {
+  if (opts.contextual?.length) body["contextual_tuples"] = opts.contextual;
+  if (opts.fresh) body["consistency"] = "higher";
+  return body;
 }
 
 /** Turn a snapshot into events the contract applies with the same version rule (no event ids: not de-duplicated). */

@@ -1,0 +1,85 @@
+{{- if .Values.openfga.enabled }}
+{{- $fullname := include "matura.fullname" . -}}
+{{- with .Values.openfga }}
+{{- if and (eq .datastore.engine "postgres") (not .datastore.existingSecret) }}
+{{- fail "openfga.datastore.engine=postgres needs openfga.datastore.existingSecret (key: uri)" }}
+{{- end }}
+{{- if and (eq .datastore.engine "memory") (gt (int .replicaCount) 1) }}
+{{- fail "openfga.datastore.engine=memory keeps tuples in each pod: set openfga.replicaCount=1 (test installs only)" }}
+{{- end }}
+{{- if not (has .datastore.engine (list "postgres" "memory")) }}
+{{- fail "openfga.datastore.engine must be postgres or memory" }}
+{{- end }}
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $fullname }}-openfga
+  labels:
+    {{- include "matura.labels" . | nindent 4 }}
+    app.kubernetes.io/component: openfga
+spec:
+  replicas: {{ .Values.openfga.replicaCount }}
+  selector:
+    matchLabels: {{- include "matura.selector" (dict "root" . "component" "openfga") | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "matura.selector" (dict "root" . "component" "openfga") | nindent 8 }}
+    spec:
+      automountServiceAccountToken: false
+      securityContext: {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- if eq .Values.openfga.datastore.engine "postgres" }}
+      initContainers:
+        - name: migrate                           # creates or upgrades OpenFGA's tables; safe to repeat
+          image: "{{ .Values.openfga.image.repository }}:{{ .Values.openfga.image.tag }}"
+          args: ["migrate"]
+          securityContext: {{- toYaml .Values.securityContext | nindent 12 }}
+          env:
+            - { name: OPENFGA_DATASTORE_ENGINE, value: postgres }
+            - name: OPENFGA_DATASTORE_URI
+              valueFrom: { secretKeyRef: { name: {{ .Values.openfga.datastore.existingSecret }}, key: uri } }
+      {{- end }}
+      containers:
+        - name: openfga
+          image: "{{ .Values.openfga.image.repository }}:{{ .Values.openfga.image.tag }}"
+          args: ["run"]
+          securityContext: {{- toYaml .Values.securityContext | nindent 12 }}
+          ports:
+            - { name: http, containerPort: 8080 }
+          env:
+            - { name: OPENFGA_PLAYGROUND_ENABLED, value: "false" }
+            - { name: OPENFGA_DATASTORE_ENGINE, value: {{ .Values.openfga.datastore.engine | quote }} }
+            {{- if eq .Values.openfga.datastore.engine "postgres" }}
+            - name: OPENFGA_DATASTORE_URI
+              valueFrom: { secretKeyRef: { name: {{ .Values.openfga.datastore.existingSecret }}, key: uri } }
+            {{- end }}
+            {{- if .Values.openfga.presharedKeySecret }}
+            - { name: OPENFGA_AUTHN_METHOD, value: preshared }
+            - name: OPENFGA_AUTHN_PRESHARED_KEYS
+              valueFrom: { secretKeyRef: { name: {{ .Values.openfga.presharedKeySecret }}, key: key } }
+            {{- end }}
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 10
+          resources: {{- toYaml .Values.openfga.resources | nindent 12 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations: {{- toYaml . | nindent 8 }}
+      {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $fullname }}-openfga
+  labels: {{- include "matura.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector: {{- include "matura.selector" (dict "root" . "component" "openfga") | nindent 4 }}
+  ports:
+    - { name: http, port: 8080, targetPort: http }
+{{- end }}

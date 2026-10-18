@@ -62,6 +62,23 @@ keycloak:
     requests: { cpu: 500m, memory: 1Gi }
     limits: { memory: 2Gi }
 
+# Fine-grained permissions (TS11, docs/spec/02 §18). Off by default: maturad's permission endpoints answer 501.
+openfga:
+  enabled: false                        # deploy OpenFGA with the chart
+  url: ""                               # or use an OpenFGA you run yourself (with enabled: false)
+  storeName: matura
+  presharedKeySecret: ""                # key: key; sent by maturad, required by the chart's OpenFGA when set
+  image:
+    repository: openfga/openfga
+    tag: v1.22.0
+  replicaCount: 2
+  datastore:
+    engine: postgres                    # postgres, or memory for a throwaway test install (one replica, lost on restart)
+    existingSecret: ""                  # key: uri (postgres://user:password@host:5432/openfga?sslmode=require)
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits: { memory: 512Mi }
+
 service:
   type: ClusterIP
   port: 8080

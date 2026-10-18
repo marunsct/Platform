@@ -18,10 +18,12 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/marunsct/Platform/internal/access"
 	"github.com/marunsct/Platform/internal/api"
 	"github.com/marunsct/Platform/internal/audit"
 	"github.com/marunsct/Platform/internal/config"
 	"github.com/marunsct/Platform/internal/events"
+	"github.com/marunsct/Platform/internal/fga"
 	"github.com/marunsct/Platform/internal/keycloak"
 	"github.com/marunsct/Platform/internal/lifecycle"
 	"github.com/marunsct/Platform/internal/mail"
@@ -115,6 +117,14 @@ func run(log *slog.Logger) error {
 	go privacyWorker.Run(ctx)
 
 	server := api.New(st, auth, keys, log)
+	if cfg.OpenFGAURL != "" {
+		svc := &access.Service{Client: &fga.Client{URL: cfg.OpenFGAURL, Token: cfg.OpenFGAToken}, Store: st,
+			StoreName: cfg.OpenFGAStore, Log: log}
+		server.SetAccess(svc)
+		go (&access.Syncer{Service: svc}).Run(ctx)
+	} else {
+		log.Info("MATURA_OPENFGA_URL is not set: fine-grained permission endpoints answer 501")
+	}
 	server.SetSource(cfg.EventSource)
 	server.SetTrustedProxies(cfg.TrustedProxies)
 	server.EnableInternal(cfg.InternalToken)

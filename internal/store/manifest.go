@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"slices"
 
+	"github.com/marunsct/Platform/internal/fga"
 	"github.com/marunsct/Platform/internal/ids"
 )
 
@@ -22,6 +23,26 @@ type Manifest struct {
 	Tenancy     Tenancy         `json:"tenancy"`
 	// Conformance is read by matura-conformance (docs/guide/conformance.md); maturad keeps it but does not use it.
 	Conformance json.RawMessage `json:"conformance,omitempty"`
+	// Authorization is the app's resource permission model for OpenFGA (TS11, technical specification §18).
+	Authorization *Authorization `json:"authorization,omitempty"`
+}
+
+// Authorization holds the app's OpenFGA model: the DSL as a string or the JSON form. Normalize stores the JSON form
+// of the app's own types.
+type Authorization struct {
+	Model json.RawMessage `json:"model"`
+}
+
+// FGAModel returns the app's own model, or false when the manifest declares none.
+func (m Manifest) FGAModel() (fga.Model, bool) {
+	if m.Authorization == nil {
+		return fga.Model{}, false
+	}
+	var out fga.Model
+	if err := json.Unmarshal(m.Authorization.Model, &out); err != nil || len(out.TypeDefinitions) == 0 {
+		return out, false
+	}
+	return out, true
 }
 
 type ManifestAuth struct {
@@ -136,6 +157,16 @@ func (m *Manifest) Normalize() error {
 		if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" || u.Fragment != "" {
 			return invalid("auth resource %q must be an absolute http(s) URL without a fragment", r)
 		}
+	}
+	if a := m.Authorization; a != nil {
+		if len(a.Model) == 0 || string(a.Model) == "null" {
+			return invalid("authorization needs a model (OpenFGA DSL or JSON)")
+		}
+		own, err := fga.ParseModel(a.Model)
+		if err != nil {
+			return invalid("%s", err.Error())
+		}
+		a.Model, _ = json.Marshal(own)
 	}
 	t := &m.Tenancy
 	if len(t.Modes) == 0 {

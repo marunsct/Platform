@@ -103,6 +103,17 @@ await api.placementReady("notes", tenantId);                           // after 
 await api.placementDeleted("notes", tenantId);                         // after deleting a retiring tenant's data
 ```
 
+## Resource permissions (OpenFGA)
+
+With an authorization model in the manifest (contract §11); maturad answers 501 when it runs without OpenFGA.
+
+```ts
+await api.writeRelations("notes", tenantId, { writes: [{ user: `user:${p.userId}`, relation: "owner", object: `document:${id}` }] });
+const ok = await api.check("notes", tenantId, `user:${p.userId}`, "editor", `document:${id}`);
+const results = await api.batchCheck("notes", tenantId, checks, { fresh: true });  // up to 50, in order
+const docs = await api.listObjects("notes", tenantId, `user:${p.userId}`, "viewer", "document");
+```
+
 ## Testing with FakeIssuer
 
 ```ts

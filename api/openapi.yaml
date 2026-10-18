@@ -9,7 +9,7 @@ info:
     - Users and operators send an OIDC access token from Keycloak (`bearer`). Endpoints under `/admin/v1` need the
       operator realm role.
     - App backends send HTTP Basic with their client id and secret (`appBasic`) to `/v1/apps/{app}/changes`,
-      `/snapshot` and `/placements`. Another app's slug answers 404.
+      `/snapshot`, `/placements` and `/tenants/{tid}` (resource permissions). Another app's slug answers 404.
     - Keycloak's Matura extension calls `/internal/v1` with the shared `MATURA_INTERNAL_TOKEN` (`internalToken`).
       These routes are only served when that token is configured.
 
@@ -66,6 +66,8 @@ tags:
     description: Time-boxed, read-only operator access a tenant approves.
   - name: app-backend
     description: Called by app backends with their client credentials.
+  - name: permissions
+    description: Fine-grained resource permissions on OpenFGA (optional component).
   - name: internal
     description: Called by Keycloak's Matura extension.
 
@@ -3839,6 +3841,237 @@ paths:
         '400':
           $ref: '#/components/responses/BadRequest'
 
+  /v1/apps/{app}/tenants/{tid}/relations:
+    parameters:
+      - $ref: '#/components/parameters/app'
+      - $ref: '#/components/parameters/tid'
+    post:
+      operationId: writeAppRelations
+      summary: Write and delete resource relationships
+      description: |
+        Adds and removes relationship tuples on the app's own resource types in one tenant, all or nothing (1 to 100
+        tuples together). Adding a tuple that exists and removing one that does not are not errors. Objects are
+        `type:id` of a type in the app's authorization model; users are `user:<id>`, `type:id#relation` or `type:*`.
+        Matura's own types (`user`, `group`, `tenant`, `workspace`, `role`) can be named as users but not written
+        as objects: Matura keeps them from its records. The tenant must have enabled the app.
+      tags: [app-backend, permissions]
+      security:
+        - appBasic: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                writes:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/RelationTuple'
+                deletes:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/RelationTuple'
+      responses:
+        '200':
+          description: Written.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [written, deleted]
+                properties:
+                  written:
+                    type: integer
+                  deleted:
+                    type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/NoAuthorizationModel'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '501':
+          $ref: '#/components/responses/PermissionsNotConfigured'
+        '503':
+          $ref: '#/components/responses/PermissionsUnavailable'
+  /v1/apps/{app}/tenants/{tid}:check:
+    parameters:
+      - $ref: '#/components/parameters/app'
+      - $ref: '#/components/parameters/tid'
+    post:
+      operationId: checkAppPermission
+      summary: Check one permission
+      description: Whether `user` has `relation` on `object` in this tenant, under the app's authorization model.
+      tags: [app-backend, permissions]
+      security:
+        - appBasic: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/RelationTuple'
+                - $ref: '#/components/schemas/PermissionQueryOptions'
+      responses:
+        '200':
+          description: The answer.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [allowed]
+                properties:
+                  allowed:
+                    type: boolean
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/NoAuthorizationModel'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '501':
+          $ref: '#/components/responses/PermissionsNotConfigured'
+        '503':
+          $ref: '#/components/responses/PermissionsUnavailable'
+  /v1/apps/{app}/tenants/{tid}:batch-check:
+    parameters:
+      - $ref: '#/components/parameters/app'
+      - $ref: '#/components/parameters/tid'
+    post:
+      operationId: batchCheckAppPermissions
+      summary: Check several permissions
+      description: |
+        Up to 50 checks in one call. `results` follows the order of `checks`; an entry that could not be evaluated
+        (for example a type the model lacks) has `error` instead of failing the whole call.
+      tags: [app-backend, permissions]
+      security:
+        - appBasic: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - type: object
+                  required: [checks]
+                  properties:
+                    checks:
+                      type: array
+                      minItems: 1
+                      maxItems: 50
+                      items:
+                        $ref: '#/components/schemas/RelationTuple'
+                - $ref: '#/components/schemas/PermissionQueryOptions'
+      responses:
+        '200':
+          description: One result per check, in order.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [results]
+                properties:
+                  results:
+                    type: array
+                    items:
+                      type: object
+                      required: [allowed]
+                      properties:
+                        allowed:
+                          type: boolean
+                        error:
+                          type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/NoAuthorizationModel'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '501':
+          $ref: '#/components/responses/PermissionsNotConfigured'
+        '503':
+          $ref: '#/components/responses/PermissionsUnavailable'
+  /v1/apps/{app}/tenants/{tid}:list-objects:
+    parameters:
+      - $ref: '#/components/parameters/app'
+      - $ref: '#/components/parameters/tid'
+    post:
+      operationId: listAppObjects
+      summary: List the objects a user can reach
+      description: |
+        The ids of objects of `type` on which `user` has `relation`, in this tenant only (OpenFGA caps the answer,
+        1000 by default). For "what can this user see" pages; filter large lists in the app's own query instead.
+      tags: [app-backend, permissions]
+      security:
+        - appBasic: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - type: object
+                  required: [user, relation, type]
+                  properties:
+                    user:
+                      type: string
+                      examples: ['user:0192b7a4-5c1e-7d2a-9f00-4b1e2a9c0d11']
+                    relation:
+                      type: string
+                    type:
+                      type: string
+                      examples: [document]
+                - $ref: '#/components/schemas/PermissionQueryOptions'
+      responses:
+        '200':
+          description: The objects, as `type:id`.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [objects]
+                properties:
+                  objects:
+                    type: array
+                    items:
+                      type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/NoAuthorizationModel'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '501':
+          $ref: '#/components/responses/PermissionsNotConfigured'
+        '503':
+          $ref: '#/components/responses/PermissionsUnavailable'
   /internal/v1/token-context:
     post:
       operationId: getTokenContext
@@ -4228,6 +4461,29 @@ components:
                     items:
                       type: string
                       format: uuid
+    NoAuthorizationModel:
+      description: The app's manifest declares no authorization model (problem type `no-authorization-model`).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    PermissionsNotConfigured:
+      description: |
+        The installation runs without OpenFGA (`MATURA_OPENFGA_URL` unset; problem type `permissions-not-configured`).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    PermissionsUnavailable:
+      description: OpenFGA did not answer (problem type `permissions-unavailable`); retry after `Retry-After` seconds.
+      headers:
+        Retry-After:
+          schema:
+            type: integer
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
     Unprocessable:
       description: Well-formed but invalid.
       content:
@@ -4371,6 +4627,34 @@ components:
         updated_at:
           type: string
           format: date-time
+    RelationTuple:
+      type: object
+      description: A relationship as the app names it; Matura scopes it to the tenant in the path.
+      required: [user, relation, object]
+      properties:
+        user:
+          type: string
+          description: '`user:<id>`, `type:id#relation` (for example `role:editor#assignee`, `group:<id>#member`) or `type:*`.'
+          examples: ['user:0192b7a4-5c1e-7d2a-9f00-4b1e2a9c0d11']
+        relation:
+          type: string
+          examples: [editor]
+        object:
+          type: string
+          examples: ['document:d1']
+    PermissionQueryOptions:
+      type: object
+      properties:
+        contextual_tuples:
+          type: array
+          maxItems: 20
+          description: Tuples that count for this request only (not stored).
+          items:
+            $ref: '#/components/schemas/RelationTuple'
+        consistency:
+          type: string
+          enum: [minimize_latency, higher]
+          description: '`higher` skips OpenFGA''s cache, to read a tuple written just before.'
     Problem:
       type: object
       description: RFC 9457 problem details.
@@ -4823,6 +5107,18 @@ components:
                 manager:
                   type: string
                   enum: [app, platform]
+        authorization:
+          type: object
+          description: |
+            The app's resource permission model for OpenFGA (technical specification §18). Stored as the JSON form of
+            the app's own types.
+          required: [model]
+          properties:
+            model:
+              description: OpenFGA DSL (schema 1.1) as a string, or its JSON form (`schema_version`, `type_definitions`).
+              oneOf:
+                - type: string
+                - type: object
 
     App:
       type: object

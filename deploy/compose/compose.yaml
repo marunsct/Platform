@@ -2,6 +2,7 @@
 #   maturad   http://localhost:8080   (MATURA_AUTH=dev: send X-Matura-Dev-User: <uuid>)
 #   Keycloak  http://localhost:8180   (admin / admin; realm "matura")
 #   Mailpit   http://localhost:8025   (every email maturad and Keycloak send)
+#   OpenFGA   http://localhost:8081   (fine-grained permissions; preshared key below, development only)
 name: matura
 services:
   postgres:
@@ -41,6 +42,27 @@ services:
     image: axllent/mailpit:v1.27
     ports: ["8025:8025"]
 
+  openfga-migrate:                # creates or upgrades OpenFGA's tables, then exits
+    image: openfga/openfga:v1.22.0
+    command: ["migrate"]
+    environment: &openfga-db
+      OPENFGA_DATASTORE_ENGINE: postgres
+      OPENFGA_DATASTORE_URI: postgres://openfga:openfga-dev@postgres:5432/openfga?sslmode=disable
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  openfga:                        # fine-grained permissions (TS11); remove it and MATURA_OPENFGA_URL to run without
+    image: openfga/openfga:v1.22.0
+    command: ["run"]
+    environment:
+      <<: *openfga-db
+      OPENFGA_PLAYGROUND_ENABLED: "false"
+      OPENFGA_AUTHN_METHOD: preshared
+      OPENFGA_AUTHN_PRESHARED_KEYS: &openfga-key matura-openfga-development-key-0001  # development only
+    ports: ["8081:8080"]
+    depends_on:
+      openfga-migrate: { condition: service_completed_successfully }
+
   maturad:
     build: { context: ../.., dockerfile: Dockerfile }
     environment:
@@ -57,9 +79,12 @@ services:
       MATURA_PUBLIC_URL: http://localhost:8080        # invitation links point here
       MATURA_SMTP_ADDR: mailpit:1025                  # invitation emails land in Mailpit
       MATURA_SMTP_FROM: no-reply@matura.local
+      MATURA_OPENFGA_URL: http://openfga:8080         # fine-grained permissions; unset: those endpoints answer 501
+      MATURA_OPENFGA_TOKEN: *openfga-key
     ports: ["8080:8080"]
     depends_on:
       postgres: { condition: service_healthy }
+      openfga: { condition: service_started }
 
 volumes:
   pgdata:

@@ -10,7 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// Agents (TS15, technical specification §18): tenant service accounts (kind service) and AI agents (kind agent).
+// Agents (TS15, technical specification §20): tenant service accounts (kind service) and AI agents (kind agent).
 // Each is a Keycloak confidential client whose service-account user is an app_user row of that kind and an active
 // member of its tenant, so grants, tokens and contract events work as for people. The API creates the Keycloak
 // client first and records it here; the client secret is never stored by Matura.

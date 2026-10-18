@@ -2,7 +2,7 @@
 
 This guide is for tenant administrators who give scripts, integrations and AI agents their own identity, and for app
 developers whose apps accept calls from them, including apps that expose an MCP server. Reference: [technical
-specification §18](../spec/02-technical-specification.md#18-agent-identity-ts15) and [contract
+specification §20](../spec/02-technical-specification.md#20-agent-identity-ts15) and [contract
 §2](../spec/03-app-integration-contract.md#2-the-access-token).
 
 Two kinds of non-human principal belong to a tenant:

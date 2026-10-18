@@ -75,8 +75,57 @@ class MaturaAPI:
         """The app deleted a retiring tenant's data; Matura then drops platform-managed storage."""
         return await self._send("POST", f"/v1/apps/{self.app}/placements/{tenant}:deleted")
 
+    # --- fine-grained permissions (TS11, technical specification §18) ---
+    # Objects are "type:id" of a type in the app's authorization model; users are "user:<id>", "type:id#relation"
+    # (for example "role:editor#assignee") or "type:*". A tuple is (user, relation, object) or a dict with those keys.
+    # maturad answers 501 when the installation runs without OpenFGA (httpx.HTTPStatusError).
+
+    def _perm_path(self, tenant: str) -> str:
+        return f"/v1/apps/{self.app}/tenants/{tenant}"
+
+    async def write_relations(self, tenant: str, writes: list[TupleLike] = (), deletes: list[TupleLike] = ()) -> dict[str, Any]:
+        """Add and remove tuples in the tenant, all or nothing (at most 100 together). Repeating either is harmless."""
+        return await self._send("POST", self._perm_path(tenant) + "/relations",
+                                {"writes": [_tuple(t) for t in writes], "deletes": [_tuple(t) for t in deletes]})
+
+    async def check(self, tenant: str, user: str, relation: str, object: str, *,
+                    contextual: list[TupleLike] = (), fresh: bool = False) -> bool:
+        """Whether ``user`` has ``relation`` on ``object`` in the tenant. ``fresh`` reads a tuple written just before."""
+        body = _query({"user": user, "relation": relation, "object": object}, contextual, fresh)
+        return bool((await self._send("POST", self._perm_path(tenant) + ":check", body))["allowed"])
+
+    async def batch_check(self, tenant: str, checks: list[TupleLike], *, contextual: list[TupleLike] = (),
+                          fresh: bool = False) -> list[dict[str, Any]]:
+        """Up to 50 checks; one ``{"allowed": bool}`` per check in order, with ``error`` if it could not be evaluated."""
+        body = _query({"checks": [_tuple(c) for c in checks]}, contextual, fresh)
+        return (await self._send("POST", self._perm_path(tenant) + ":batch-check", body))["results"]
+
+    async def list_objects(self, tenant: str, user: str, relation: str, type: str, *,
+                           contextual: list[TupleLike] = (), fresh: bool = False) -> list[str]:
+        """The objects ("type:id") of ``type`` on which ``user`` has ``relation`` in the tenant."""
+        body = _query({"user": user, "relation": relation, "type": type}, contextual, fresh)
+        return (await self._send("POST", self._perm_path(tenant) + ":list-objects", body))["objects"]
+
     async def aclose(self) -> None:
         await self._client.aclose()
+
+
+TupleLike = "tuple[str, str, str] | dict[str, str]"
+
+
+def _tuple(t: Any) -> dict[str, str]:
+    if isinstance(t, dict):
+        return {"user": t["user"], "relation": t["relation"], "object": t["object"]}
+    user, relation, obj = t
+    return {"user": user, "relation": relation, "object": obj}
+
+
+def _query(body: dict[str, Any], contextual: Any, fresh: bool) -> dict[str, Any]:
+    if contextual:
+        body["contextual_tuples"] = [_tuple(t) for t in contextual]
+    if fresh:
+        body["consistency"] = "higher"
+    return body
 
 
 def snapshot_events(snap: dict[str, Any]) -> list[dict[str, Any]]:

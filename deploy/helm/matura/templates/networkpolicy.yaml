@@ -30,4 +30,21 @@ spec:
             matchLabels: {{- include "matura.selector" (dict "root" . "component" "keycloak") | nindent 14 }}
       ports: [{ port: 7800 }, { port: 57800 }]
 {{- end }}
+{{- if .Values.openfga.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fullname }}-openfga
+  labels: {{- include "matura.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels: {{- include "matura.selector" (dict "root" . "component" "openfga") | nindent 6 }}
+  policyTypes: [Ingress]
+  ingress:
+    - from:                                       # only maturad talks to OpenFGA; apps go through maturad
+        - podSelector:
+            matchLabels: {{- include "matura.selector" (dict "root" . "component" "maturad") | nindent 14 }}
+      ports: [{ port: 8080 }]
+{{- end }}
 {{- end }}

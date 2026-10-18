@@ -59,7 +59,7 @@ Issued by Keycloak with the Matura mapper (TS5). JWT, ES256 or RS256, 5-minute l
 | `act` | object | delegated tokens only: `{"sub": <agent id>, "kind": "agent", "client_id": "agent-…"}`, the agent acting for `sub` (RFC 8693 §4.1); `perms` are then only those both the person and the agent have |
 | `azp`, `client_id` | | the client the token was issued to: for an agent's own token `sub` is the agent; for a delegated token `azp` is the agent's client |
 
-An agent's tokens (TS15, technical specification §18) have the app's client id in `aud` like any other. An app
+An agent's tokens (TS15, technical specification §20) have the app's client id in `aud` like any other. An app
 treats them like a person's: check `perms`. It should record `kind` and, for a delegated token, `act.sub` with `sub`
 in its own audit trail, so "the agent did this for Ana" stays visible. Agents appear in `matura_user` with their
 `kind`, and in `matura_membership` and `matura_role_grant` like people.
@@ -384,3 +384,41 @@ tokens from a built-in test issuer for two tenants, sends signed events, and che
   manifest's `conformance` section, then reads them as B);
 - applies events idempotently and in version order, and catches up from the change feed;
 - answers `tenant-not-ready` before its placement is ready (level 3).
+
+## 11. Resource permissions (optional, TS11)
+
+`perms` in the token says what a user may do in the tenant; it cannot say which records. For record-level sharing
+an app declares an OpenFGA authorization model in its manifest and asks Matura. Mechanics and isolation are in the
+[technical specification §18](02-technical-specification.md); the guide's §6.1 shows how to design for it.
+
+```json
+"authorization": { "model": "model\n  schema 1.1\ntype folder\n  relations\n    define tenant: [tenant]\n    define viewer: [user] or member from tenant\n..." }
+```
+
+The model may be the DSL (a string) or OpenFGA's JSON form; it defines the app's own types and may use Matura's:
+
+| Type | Relations | Kept by Matura from |
+|---|---|---|
+| `user` | | |
+| `group` | `member` | not yet written: groups arrive with SCIM (TS14) |
+| `tenant` | `owner`, `admin` (includes owner), `billing`, `member` (includes admin and billing) | memberships and tenant roles |
+| `workspace` | `tenant`, `member` and `admin` (from the tenant) | workspaces |
+| `role` | `assignee` | app role grants: `role:<name>` tenant-wide, `role:<name>@<workspace id>` in one workspace |
+
+The app's backend calls, with HTTP Basic (client id and secret), always naming one tenant that enabled the app:
+
+| Call | Body | Answer |
+|---|---|---|
+| `POST /v1/apps/{app}/tenants/{tid}/relations` | `{"writes": [{"user", "relation", "object"}], "deletes": [...]}` (≤ 100) | `{"written", "deleted"}` |
+| `POST /v1/apps/{app}/tenants/{tid}:check` | `{"user": "user:<sub>", "relation": "editor", "object": "document:d1"}` | `{"allowed": true}` |
+| `POST /v1/apps/{app}/tenants/{tid}:batch-check` | `{"checks": [...]}` (≤ 50) | `{"results": [{"allowed": …, "error"?: …}]}` |
+| `POST /v1/apps/{app}/tenants/{tid}:list-objects` | `{"user", "relation", "type": "document"}` | `{"objects": ["document:d1"]}` |
+
+Users and objects are named as the app sees them (`user:<sub>`, `document:<id>`, `role:editor#assignee`,
+`group:<id>#member`, `user:*`); Matura scopes every name to the tenant in the path, so the same ids in two tenants
+never meet. Apps write tuples only on their own types. Each call accepts `"contextual_tuples"` (not stored) and
+`"consistency": "higher"` (read a tuple written just before). An installation without OpenFGA answers `501`
+(`permissions-not-configured`); an app without a model `409` (`no-authorization-model`); OpenFGA unreachable `503`
+with `Retry-After`. SDK helpers: Python `MaturaAPI.check`, `batch_check`, `list_objects`, `write_relations`;
+TypeScript `MaturaAPI.check`, `batchCheck`, `listObjects`, `writeRelations`; Go `Client.Check`, `BatchCheck`,
+`ListObjects`, `WriteRelations`.

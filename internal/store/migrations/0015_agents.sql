@@ -1,4 +1,4 @@
--- Agent identity (TS15, technical specification §18): tenant service accounts and AI agents as principals.
+-- Agent identity (TS15, technical specification §20): tenant service accounts and AI agents as principals.
 
 -- Each agent is a Keycloak confidential client (client credentials, token exchange) whose service-account user is
 -- the agent's app_user row (kind service or agent, the token's sub) and an active member of exactly one tenant, so
