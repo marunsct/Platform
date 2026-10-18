@@ -72,7 +72,7 @@ Nothing is open in Platform. Everything still pending is listed here, in the ord
 
 | # | Repo | PR / branch | What | Merges cleanly into `main`? | Recommendation |
 |---|---|---|---|---|---|
-| 1 | Platform | PR from `claude/project-thread-hr0gkg` (this handover) | Adds this document under `docs/handover/` and links it from HANDOVER.md | yes, docs only | merge |
+| 1 | Platform | [#4](https://github.com/marunsct/Platform/pull/4) (`claude/project-thread-hr0gkg`, this handover) | Adds this document under `docs/handover/` and links it from HANDOVER.md | yes, docs only | merge |
 | 2 | AgentCanvas | [#36](https://github.com/marunsct/AgentCanvas/pull/36) (draft, `claude/project-thread-wirnvh`) | AgentCanvas's side of the plan: doc 18 and ADR 0019 (identity and tenancy) | yes, docs only (4 commits) | mark ready for review, then merge; Platform's HANDOVER.md links to it |
 | 3 | AgentCanvas | [#46](https://github.com/marunsct/AgentCanvas/pull/46) Dependabot | `azure/setup-helm` 4 → 5 in GitHub Actions | yes | merge |
 | 4 | AgentCanvas | [#44](https://github.com/marunsct/AgentCanvas/pull/44) Dependabot | `uv` 0.12 → 0.13 in `infra/` Dockerfiles | yes | merge after a local `docker build` |
