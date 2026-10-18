@@ -1,6 +1,6 @@
 # Handover
 
-*Last updated 2026-10-16. Read this first when starting work on Matura in a new project or session. Update it at the
+*Last updated 2026-10-18. Read this first when starting work on Matura in a new project or session. Update it at the
 end of every sprint.*
 
 ## 1. What Matura is
@@ -74,6 +74,8 @@ self-hosted, open standards, nothing phones home).
   RLS, portal links, audit sink, v0.28.0) merged into AgentCanvas `main`. Full status and gaps: doc 21 §5.
 - **End to end, 2026-10-18:** onboarding, identity (sessions, MFA, SSO) and AgentCanvas conformance all pass against a
   real Keycloak. The run found pool starvation (fixed in `store.Open`) and the realm's hard-coded SMTP host (now env).
+- **2026-10-18, account move:** the owner is continuing from another account. What is pending (AgentCanvas#36,
+  Dependabot PRs, DevFlow branches), the merge order and next steps: [docs/handover/2026-10-18-account-move.md](docs/handover/2026-10-18-account-move.md).
 - **Next:** the gaps in doc 21 §5; DevFlow (TS7d) only when the owner asks.
 - **Was next:** doc 21 §3: any-language kit
   (TS7e: OpenAPI, TypeScript SDK, conformance CLI, contract SQL for other databases).
