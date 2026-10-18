@@ -6,12 +6,42 @@ from dataclasses import dataclass, field, replace
 from typing import Any
 
 
+KINDS = ("human", "service", "agent")
+
+
+@dataclass(frozen=True)
+class Actor:
+    """The agent acting for the token's subject in a delegated token (the ``act`` claim, RFC 8693 §4.1)."""
+
+    sub: str
+    kind: str = "agent"
+    client_id: str | None = None
+
+    @classmethod
+    def from_claim(cls, act: Any) -> Actor | None:
+        if not isinstance(act, dict) or not act.get("sub"):
+            return None
+        kind = act.get("kind") if act.get("kind") in ("service", "agent") else "agent"
+        return cls(sub=str(act["sub"]), kind=kind, client_id=act.get("client_id"))
+
+
+def _kind(c: dict[str, Any]) -> str:
+    if c.get("kind") in KINDS:
+        return c["kind"]
+    # tokens from before agent identity: a client-credentials token has client_id and no email
+    return "service" if "client_id" in c and "email" not in c else "human"
+
+
 @dataclass(frozen=True)
 class Principal:
     """Who is calling and what they may do, read from a verified Matura access token.
 
     Apps check ``permissions`` (the token's ``perms``), never role names: roles are defined and edited in Matura,
     permissions are what the app's code declares (ADR 0008).
+
+    ``kind`` is what ``user_id`` is: ``human``, ``service`` (a tenant service account) or ``agent`` (an AI agent).
+    ``actor`` is set on a delegated token: an agent acting for the person in ``user_id``; its ``permissions`` are
+    already only those both have. Record both in your audit log.
     """
 
     user_id: str
@@ -31,6 +61,8 @@ class Principal:
     session_id: str | None = None
     client_id: str | None = None
     is_service: bool = False
+    kind: str = "human"
+    actor: Actor | None = None
     claims: dict[str, Any] = field(default_factory=dict, repr=False, compare=False)
 
     @classmethod
@@ -53,9 +85,16 @@ class Principal:
             mfa="mfa" in amr or "otp" in amr or "hwk" in amr or str(c.get("acr", "")) in ("2", "3"),
             session_id=c.get("sid"),
             client_id=c.get("azp") or c.get("client_id"),
-            is_service="client_id" in c and "email" not in c,
+            is_service=_kind(c) != "human",
+            kind=_kind(c),
+            actor=Actor.from_claim(c.get("act")),
             claims=c,
         )
+
+    @property
+    def is_delegated(self) -> bool:
+        """True when an agent acts for the person in ``user_id`` (the token has ``act``)."""
+        return self.actor is not None
 
     def has(self, permission: str) -> bool:
         """True when the token grants ``permission`` (or ``*``). With ``perms_ref`` use :meth:`expand` first."""

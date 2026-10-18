@@ -29,6 +29,7 @@ T3 = "0192b7a4-6000-7000-8000-000000000003"
 U1 = "0192b7a4-5c1e-7d2a-9f00-4b1e2a9c0d11"
 W1 = "0192b7a4-7000-7000-8000-0000000000a1"
 G1 = "0192b7a4-8000-7000-8000-0000000000b1"
+A1 = "0192b7a4-9000-7000-8000-0000000000c1"  # an AI agent (TS15)
 
 
 def tokens() -> dict:
@@ -52,7 +53,17 @@ def tokens() -> dict:
     none = (base64.urlsafe_b64encode(b'{"alg":"none","typ":"JWT","kid":"test-key-1"}').decode().rstrip("=") + "." + p + ".")
     principal = {"user_id": U1, "tenant_id": T1, "tenant_slug": "acme", "workspace_id": W1, "tenant_roles": ["admin"],
                  "roles": ["editor"], "permissions": ["note.read", "note.write"], "email": "ada@example.test",
-                 "placement_mode": "shared", "has": {"note.read": True, "note.write": True, "note.delete": False}}
+                 "placement_mode": "shared", "kind": "human", "actor": None,
+                 "has": {"note.read": True, "note.write": True, "note.delete": False}}
+    # an agent's own token (client credentials) and a person's token exchanged by the agent (RFC 8693)
+    agent = {"iss": ISSUER, "aud": AUDIENCE, "sub": A1, "iat": NOW - 60, "exp": NOW + 240, "azp": "agent-3f9c2a1b7d4e",
+             "client_id": "agent-3f9c2a1b7d4e", "kind": "agent", "tid": T1, "tenant": "acme", "wid": W1,
+             "troles": ["member"], "roles": ["writer"], "perms": ["note.read", "note.write"],
+             "ver": {"u": 3, "m": 4, "t": 10}, "pmode": "shared"}
+    act = {"sub": A1, "kind": "agent", "client_id": "agent-3f9c2a1b7d4e"}
+    delegated = {**base, "azp": "agent-3f9c2a1b7d4e", "kind": "human", "act": act, "troles": [], "roles": ["editor"],
+                 "perms": ["note.read"]}
+    delegated.pop("sid")
     cases = [
         {"name": "valid", "token": good, "valid": True, "principal": principal},
         {"name": "wildcard permission", "token": sign({**base, "roles": ["admin"], "perms": ["*"]}), "valid": True,
@@ -63,6 +74,13 @@ def tokens() -> dict:
          "principal": {**principal, "tenant_id": None, "tenant_slug": None, "workspace_id": None,
                        "placement_mode": None, "permissions": [],
                        "has": {"note.read": False, "note.write": False, "note.delete": False}}},
+        {"name": "agent (client credentials)", "token": sign(agent), "valid": True,
+         "principal": {**principal, "user_id": A1, "tenant_roles": ["member"], "roles": ["writer"], "email": "",
+                       "kind": "agent"}},
+        {"name": "delegated (an agent acting for a person)", "token": sign(delegated), "valid": True,
+         "principal": {**principal, "tenant_roles": [], "permissions": ["note.read"],
+                       "actor": {"sub": A1, "kind": "agent", "client_id": "agent-3f9c2a1b7d4e"},
+                       "has": {"note.read": True, "note.write": False, "note.delete": False}}},
         {"name": "expired", "token": sign({**base, "iat": NOW - 900, "exp": NOW - 300}), "valid": False},
         {"name": "other audience", "token": sign({**base, "aud": "billing", "azp": "billing"}), "valid": False},
         {"name": "other issuer", "token": sign({**base, "iss": "https://evil.test/realms/matura"}), "valid": False},
@@ -73,7 +91,8 @@ def tokens() -> dict:
     ]
     return {"description": "Access tokens to verify with 'now', 'issuer', 'audience' and 'jwks' (contract §2). Accept "
                            "exactly the 'valid' ones (allow at most 30 s clock leeway); for those, the principal must "
-                           "match and 'has' lists permission checks.",
+                           "match and 'has' lists permission checks. 'kind' is the subject's kind (human when the "
+                           "token has no kind claim); 'actor' is the act claim of a delegated token, else null.",
             "issuer": ISSUER, "audience": AUDIENCE, "now": NOW, "jwks": {"keys": [pub]}, "cases": cases}
 
 

@@ -1,6 +1,10 @@
 /** Matura SDK for TypeScript: verify Matura tokens, check permissions, keep the matura_* contract tables in sync. */
 
-export { Principal, type Claims, type PrincipalInit } from "./principal.js";
+export { Principal, type Actor, type Claims, type PrincipalInit, type PrincipalKind } from "./principal.js";
+export {
+  WELL_KNOWN_RESOURCE, metadataUrl, protectedResourceMetadata, wwwAuthenticate, type ChallengeOptions,
+  type ResourceMetadataOptions,
+} from "./resource.js";
 export {
   ALGORITHMS, InvalidToken, Verifier, bearer, type Algorithm, type Jwk, type JwkSet, type VerifierOptions,
 } from "./tokens.js";
