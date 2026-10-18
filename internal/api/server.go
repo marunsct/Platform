@@ -150,6 +150,7 @@ func (s *Server) Handler() http.Handler {
 	s.handle(api, "GET /v1/tenants/{tid}/placements", s.listPlacements)
 	s.handle(api, "GET /v1/tenants/{tid}/invitations", s.listInvitations)
 	s.handle(api, "POST /v1/tenants/{tid}/invitations", s.createInvitation)
+	s.handle(api, "POST /v1/tenants/{tid}/invitations:bulk", s.bulkInvitations)
 	s.handle(api, "POST /v1/tenants/{tid}/invitations/{id}", s.invitationAction) // {id}:resend
 	s.handle(api, "DELETE /v1/tenants/{tid}/invitations/{id}", s.revokeInvitation)
 	s.handle(api, "POST /v1/invitations:accept", s.acceptInvitation)

@@ -142,7 +142,17 @@ The OpenAPI 3.1 document lives in `api/openapi.yaml` and is the source for gener
 - **Invite** (owners and admins; only owners invite owners): `{email, tenant_role (default member), app_roles:
   [{app, role, workspace_id?}], delivery: "link", deliver_to?}`. App roles are checked up front (app enabled, role
   exists, workspace in the tenant). An active member's address answers 409; an earlier pending invitation to the
-  same address is revoked. `delivery: temp_password` answers 422 until it is built.
+  same address is revoked.
+- **Temporary password** (`delivery: temp_password`, needs Keycloak's admin API): for an address with no account
+  (409 `account-exists` otherwise), maturad creates the Keycloak account with a 16-character one-time password
+  (`temporary: true`, required action `UPDATE_PASSWORD`, and `VERIFY_EMAIL` unless the tenant verified the
+  domain), records the account on the invitation (`invitation.account_id`, migration 0023) and answers the password
+  once (`Cache-Control: no-store`); it is emailed only to `deliver_to` when given. A failed save deletes the
+  account again. The account's first token issuance accepts the invitation (§6), granting the invited roles, until
+  `expires_at` (72 hours); after it, a sign-in by an account that belongs to no tenant is refused with
+  `temporary_password_expired`.
+- **Bulk:** `POST /v1/tenants/{tid}/invitations:bulk` with a CSV body (header `email` and optionally `tenant_role`,
+  `app_roles` as `app:role;app:role`, `deliver_to`; up to 500 rows) creates link invitations, one result per row.
 - **Token:** 32 random bytes, base64url, in the link `MATURA_INVITE_ACCEPT_URL?token=…`; only its SHA-256 is stored.
   Links expire after 7 days (`expires_at`; a pending invitation past it lists as `expired`). The create and resend
   responses carry `accept_url` (not stored) so an admin can pass a link on when email is not set up.

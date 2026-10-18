@@ -19,6 +19,16 @@ type Account struct {
 	LastName      string              `json:"lastName,omitempty"`
 	Enabled       bool                `json:"enabled"`
 	Attributes    map[string][]string `json:"attributes,omitempty"`
+	// only when creating: a password credential, and actions the person must take at first sign-in
+	Credentials     []PasswordCredential `json:"credentials,omitempty"`
+	RequiredActions []string             `json:"requiredActions,omitempty"`
+}
+
+// PasswordCredential is a password set on a new account; Temporary makes Keycloak ask for a new one at sign-in.
+type PasswordCredential struct {
+	Type      string `json:"type"` // password
+	Value     string `json:"value"`
+	Temporary bool   `json:"temporary"`
 }
 
 // Attribute returns the first value of a user attribute.

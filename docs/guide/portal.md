@@ -91,7 +91,7 @@ flow works there against a local Keycloak. With a maturad in dev mode no Keycloa
 ## Not built yet
 
 From doc 05 and TS8/TS9: API keys and service accounts, groups, per-workspace member lists, member deactivation,
-bulk CSV invitations and temporary passwords, tenant-scoped custom roles (RL-7; operators edit an app's roles today),
+bulk CSV invitations and temporary passwords in the portal (the API has both), tenant-scoped custom roles (RL-7; operators edit an app's roles today),
 sessions, security policies, audit sinks and export, agent grants and expiry, webhooks, branding, and translations. Doc 18's wider gates (Storybook, axe,
 size-limit and Lighthouse in CI, DTCG tokens through Style Dictionary, Base UI, view transitions, command palette)
 are still to come.

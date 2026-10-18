@@ -84,8 +84,10 @@ func TestInvitations(t *testing.T) {
 		"app_roles": []map[string]any{{"app": "devflow", "role": "wizard"}}})
 	owner.must(http.StatusUnprocessableEntity, "POST", base, map[string]any{"email": emailOf(bob),
 		"app_roles": []map[string]any{{"app": "nope", "role": "admin"}}})
-	owner.must(http.StatusUnprocessableEntity, "POST", base, map[string]any{"email": emailOf(bob),
+	// temporary passwords need Keycloak's admin API (TestTemporaryPasswordOnboarding has it)
+	owner.must(http.StatusServiceUnavailable, "POST", base, map[string]any{"email": emailOf(bob),
 		"delivery": "temp_password"})
+	owner.must(http.StatusUnprocessableEntity, "POST", base, map[string]any{"email": emailOf(bob), "delivery": "pigeon"})
 	owner.must(http.StatusUnprocessableEntity, "POST", base, map[string]any{"email": "not-an-address"})
 
 	inv := owner.must(http.StatusCreated, "POST", base, map[string]any{"email": strings.ToUpper(emailOf(bob)),

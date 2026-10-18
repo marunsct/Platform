@@ -84,6 +84,10 @@ func (s *Store) TokenContextFor(ctx context.Context, req TokenRequest) (TokenCon
 	if u.Status != "active" {
 		return TokenContext{}, refuse("user_inactive", "this account is deactivated")
 	}
+	// an account made for a temporary-password invitation joins its tenant at its first sign-in (TS6)
+	if err := s.AcceptTempPasswordInvitations(ctx, u.ID); err != nil {
+		return TokenContext{}, err
+	}
 	out := TokenContext{TenantRoles: []string{}, Roles: []string{}, Versions: map[string]int64{"u": u.Version},
 		Kind: u.Kind}
 	err = s.tx(ctx, Scope{UserID: u.ID}, func(tx pgx.Tx) error {

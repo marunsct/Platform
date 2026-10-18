@@ -1536,7 +1536,10 @@ paths:
       description: |
         Owners and admins; only owners invite owners. Emails a link valid for 7 days. App roles are checked up front.
         An active member's address answers 409; an earlier pending invitation to the address is revoked.
-        `delivery: temp_password` answers 422 (not built yet).
+        `delivery: temp_password` (needs Keycloak's admin API, 503 otherwise) creates the account with a one-time
+        password Keycloak makes the person change at their first sign-in, which joins them to the tenant with the
+        invited roles; it works for 72 hours, is in this response only (`Cache-Control: no-store`) and is emailed to
+        `deliver_to` when given. An address that already has an account answers 409 `account-exists`.
       tags: [invitations]
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
@@ -1567,11 +1570,25 @@ paths:
                   description: Send the email here instead of the invited address.
       responses:
         '201':
-          description: The invitation, with its link.
+          description: The invitation, with its link; for `temp_password`, the invitation with the temporary password.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/InvitationWithLink'
+                oneOf:
+                  - $ref: '#/components/schemas/InvitationWithLink'
+                  - type: object
+                    required: [invitation, temporary_password, account_id, expires_at]
+                    properties:
+                      invitation:
+                        $ref: '#/components/schemas/Invitation'
+                      temporary_password:
+                        type: string
+                      account_id:
+                        type: string
+                        format: uuid
+                      expires_at:
+                        type: string
+                        format: date-time
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -1582,6 +1599,66 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '503':
+          $ref: '#/components/responses/IdentityUnavailable'
+  /v1/tenants/{tid}/invitations:bulk:
+    parameters:
+      - $ref: '#/components/parameters/tid'
+    post:
+      operationId: bulkInvitations
+      summary: Invite people from a CSV
+      description: |
+        Owners and admins. A header row naming `email` and optionally `tenant_role`, `app_roles` (`app:role`
+        separated by `;`) and `deliver_to`, then up to 500 rows (1 MB). Each row becomes a link invitation or an
+        error of its own, so one bad row does not stop the rest.
+      tags: [invitations]
+      requestBody:
+        required: true
+        content:
+          text/csv:
+            schema:
+              type: string
+      responses:
+        '200':
+          description: One result per row.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [invited, failed, results]
+                properties:
+                  invited:
+                    type: integer
+                  failed:
+                    type: integer
+                  results:
+                    type: array
+                    items:
+                      type: object
+                      required: [row, email, status]
+                      properties:
+                        row:
+                          type: integer
+                        email:
+                          type: string
+                        status:
+                          type: string
+                          enum: [invited, error]
+                        error:
+                          type: string
+                        id:
+                          type: string
+                          format: uuid
+                        accept_url:
+                          type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '422':
           $ref: '#/components/responses/Unprocessable'
   /v1/tenants/{tid}/invitations/{id}:resend:

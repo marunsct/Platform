@@ -58,7 +58,7 @@ self-hosted, open standards, nothing phones home).
   reach each other's schema or database.
 - **Invitations and email (TS6), 2026-10-17:** invitation API and accept page (`internal/api/invitations.go`,
   `accept.html`), default roles on joining (RL-4), email outbox and SMTP mailer (`internal/mail`), migration 0007;
-  `TestInvitations`. Temporary-password delivery and bulk CSV are not built yet (doc 13 TS6 extras).
+  `TestInvitations`. Temporary-password delivery and bulk CSV were added on 2026-10-18 (§5.1).
 - **End to end, 2026-10-17:** `scripts/e2e_invite_signup.mjs` (Playwright) passed against Keycloak 26.4 with the
   extension, maturad (OIDC) and Mailpit: owner invites, invitee signs up on the accept page, verifies email, joins
   with the invited AgentCanvas role, and the AgentCanvas token carries `tid`, `roles`, `perms`.
