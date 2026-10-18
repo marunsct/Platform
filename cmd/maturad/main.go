@@ -71,7 +71,7 @@ func run(log *slog.Logger) error {
 	defer pool.Close()
 
 	kek := cfg.KEK
-	if kek == "" { // only reachable in development (config.Validate)
+	if kek == "" && (cfg.KEKProvider == "" || cfg.KEKProvider == "local") { // only in development (config.Validate)
 		b := make([]byte, 32)
 		if _, err := rand.Read(b); err != nil {
 			return err
@@ -79,10 +79,17 @@ func run(log *slog.Logger) error {
 		kek = base64.StdEncoding.EncodeToString(b)
 		log.Warn("MATURA_KEK is not set: using a random key for this run; stored secrets will not open after a restart")
 	}
-	keys, err := secrets.NewLocal(kek)
+	var previous []string
+	for _, k := range strings.Split(os.Getenv("MATURA_KEK_PREVIOUS"), ",") {
+		if k = strings.TrimSpace(k); k != "" {
+			previous = append(previous, k)
+		}
+	}
+	keys, err := secrets.RingFromConfig(secrets.RingConfig{Provider: cfg.KEKProvider, LocalKEK: kek, Previous: previous})
 	if err != nil {
 		return err
 	}
+	log.Info("key-encryption key", "provider", cfg.KEKProvider, "key", keys.Primary().ID())
 
 	var auth api.Authenticator
 	switch cfg.Auth {
@@ -116,6 +123,18 @@ func run(log *slog.Logger) error {
 	go privacyWorker.Run(ctx)
 
 	server := api.New(st, auth, keys, log)
+	tenantKeysOn := false
+	if v := strings.ToLower(os.Getenv("MATURA_TENANT_KEYS")); v != "off" && v != "false" {
+		tenantKeysOn = true
+		var byok []string
+		for _, p := range strings.Split(os.Getenv("MATURA_BYOK_PROVIDERS"), ",") {
+			if p = strings.TrimSpace(strings.ToLower(p)); p != "" {
+				byok = append(byok, p)
+			}
+		}
+		server.EnableTenantKeys(keys, &secrets.CustomerKeys{Providers: byok, AllowHTTP: cfg.Env == "development"})
+		log.Info("tenant keys on", "customer_managed_providers", byok)
+	}
 	if cfg.OpenFGAURL != "" {
 		svc := &access.Service{Client: &fga.Client{URL: cfg.OpenFGAURL, Token: cfg.OpenFGAToken}, Store: st,
 			StoreName: cfg.OpenFGAStore, Log: log}
@@ -152,7 +171,8 @@ func run(log *slog.Logger) error {
 		Issuer: cfg.Issuer, ClientID: cfg.PortalClientID})
 	server.SetPortal(portal.Config{Auth: cfg.Auth, Issuer: cfg.Issuer, ClientID: cfg.PortalClientID})
 	server.SetReadiness(readiness.Install{Product: cfg.ProductName, Env: cfg.Env, Auth: cfg.Auth,
-		KEKConfigured: cfg.KEK != "", SMTPConfigured: cfg.SMTPAddr != "", MetricsEnabled: cfg.MetricsAddr != "",
+		KEKConfigured: cfg.KEK != "" || (cfg.KEKProvider != "" && cfg.KEKProvider != "local"), KEKProvider: cfg.KEKProvider,
+		TenantKeys: tenantKeysOn, SMTPConfigured: cfg.SMTPAddr != "", MetricsEnabled: cfg.MetricsAddr != "",
 		PublicURL: cfg.PublicURL, TrustPage: cfg.TrustPage, SecurityContact: cfg.SecurityContact})
 	if cfg.SMTPAddr != "" {
 		mailer := &mail.Mailer{Store: st, Log: log, Sender: mail.SMTP{Addr: cfg.SMTPAddr, From: cfg.SMTPFrom,

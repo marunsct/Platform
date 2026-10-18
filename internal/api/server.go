@@ -48,6 +48,7 @@ type Server struct {
 	resource       string            // maturad's public URL as an OAuth protected resource (TS15)
 	apiAudience    string            // the token audience maturad's API accepts
 	revocations    revocationCache   // recent token revocations (§21)
+	ring           *secrets.Ring     // the key ring, when keys is one (key rotation, tenant keys)
 }
 
 // seenProfile remembers a profile already written; it is re-checked after a minute so a deactivated account stops
@@ -217,6 +218,11 @@ func (s *Server) Handler() http.Handler {
 	s.handle(api, "PATCH /admin/v1/users/{uid}", s.patchUser)
 	s.handle(api, "DELETE /admin/v1/users/{uid}", s.deleteUser)
 	s.handle(api, "POST /admin/v1/users/{uid}", s.userAction) // {uid}:revoke-tokens
+	s.handle(api, "POST /admin/v1/keys:rewrap", s.rewrapKeys)
+	s.handle(api, "GET /v1/tenants/{tid}/keys", s.getTenantKeys)
+	s.handle(api, "POST /v1/tenants/{tid}/keys:rotate", s.rotateTenantKey)
+	s.handle(api, "PUT /v1/tenants/{tid}/keys/provider", s.putKeyProvider)
+	s.handle(api, "DELETE /v1/tenants/{tid}/keys/provider", s.deleteKeyProvider)
 	s.handle(api, "GET /admin/v1/apps/{slug}/secrets", s.listAppSecrets)
 	s.handle(api, "POST /admin/v1/apps/{slug}/secrets", s.createAppSecret)
 	s.handle(api, "DELETE /admin/v1/apps/{slug}/secrets/{id}", s.revokeAppSecret)
@@ -242,6 +248,8 @@ func (s *Server) Handler() http.Handler {
 	s.handle(appAPI, "GET /v1/apps/{app}/changes", s.appChanges)
 	s.handle(appAPI, "GET /v1/apps/{app}/snapshot", s.appSnapshot)
 	s.handle(appAPI, "GET /v1/apps/{app}/revocations", s.appRevocations)
+	s.handle(appAPI, "POST /v1/apps/{app}/tenants/{tid}/data-keys", s.newDataKey)
+	s.handle(appAPI, "POST /v1/apps/{app}/tenants/{tid}/data-keys:unwrap", s.unwrapDataKey)
 	s.handle(appAPI, "GET /v1/apps/{app}/placements/{tid}", s.appGetPlacement)
 	s.handle(appAPI, "PUT /v1/apps/{app}/placements/{tid}", s.appPutPlacement)
 	s.handle(appAPI, "POST /v1/apps/{app}/placements/{tid}", s.appPlacementAction) // {tid}:ready, {tid}:deleted
@@ -439,6 +447,11 @@ func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 			ext["max"], ext["used"] = *lim.Max, lim.Used
 		}
 		problemWith(w, http.StatusPaymentRequired, "plan-limit", lim.Msg, ext)
+	case errors.Is(err, store.ErrTenantKeyDestroyed):
+		problem(w, http.StatusGone, "tenant-key-destroyed", err.Error())
+	case errors.As(err, new(*store.TenantKeyUnavailableError)):
+		s.log.WarnContext(r.Context(), "tenant key unavailable", "err", err)
+		problem(w, http.StatusServiceUnavailable, "tenant-key-unavailable", err.Error())
 	case errors.Is(err, store.ErrSupportAccessOff):
 		s.auditDenied(r, "support-access-off")
 		problem(w, http.StatusForbidden, "support-access-off", err.Error())

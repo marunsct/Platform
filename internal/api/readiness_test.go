@@ -22,7 +22,7 @@ import (
 
 var (
 	devInstall  = readiness.Install{Product: "Matura", Env: "development", Auth: "dev", PublicURL: "http://localhost:8080"}
-	prodInstall = readiness.Install{Product: "Acme Cloud", Env: "production", Auth: "oidc", KEKConfigured: true,
+	prodInstall = readiness.Install{Product: "Acme Cloud", Env: "production", Auth: "oidc", KEKConfigured: true, TenantKeys: true,
 		SMTPConfigured: true, MetricsEnabled: true, PublicURL: "https://id.acme.example", TrustPage: true,
 		SecurityContact: "security@acme.example"}
 )

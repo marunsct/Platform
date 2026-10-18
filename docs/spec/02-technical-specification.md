@@ -375,8 +375,8 @@ and reports `ready`. Expand-and-contract migrations are required, since tenants 
 ## 9. Security
 
 - Secrets (`db_server.admin_secret`, `placement.role_secret`, webhook secrets) are encrypted with AES-256-GCM
-  using a data key per row, wrapped by the key-encryption key from `MATURA_KEK` (32 random bytes, base64) through
-  the `KeyManager` interface; OpenBao transit replaces it in TS17. Associated data binds each ciphertext to its row id.
+  using a data key per row, wrapped by the key-encryption key (§9.1) through the `KeyManager` interface.
+  Associated data binds each ciphertext to its row id. Tenant secrets are sealed under tenant keys (§9.2).
 - DDL on registered servers runs with identifiers built by `pgx.Identifier{…}.Sanitize()` from validated slugs and
   ids; no user-supplied SQL ever reaches a server.
 - Invitation tokens: 32 random bytes, only the SHA-256 is stored, single use.
@@ -384,6 +384,54 @@ and reports `ready`. Expand-and-contract migrations are required, since tenants 
 - Every change, operator action and refused request is recorded in the tenant's hash-chained audit log (§13).
 - Behind a reverse proxy, `MATURA_TRUSTED_PROXIES` names the proxies whose `X-Forwarded-For` is believed; the
   client address (for IP allow-lists and the audit log) is the right-most hop that is not one of them.
+
+### 9.1 Key-encryption keys
+
+`MATURA_KEK_PROVIDER` picks where the key-encryption key (KEK) lives; maturad never holds a KMS key, it sends each
+data key to be wrapped and gets it back unwrapped when it opens a secret. Every provider is reached over its HTTP API
+without an SDK.
+
+| Provider | Settings | Associated data |
+|---|---|---|
+| `local` (default) | `MATURA_KEK` (32 random bytes, base64) | AES-256-GCM additional data |
+| `transit` (OpenBao or Vault) | `MATURA_TRANSIT_ADDR`, `MATURA_TRANSIT_TOKEN` or `_TOKEN_FILE`, `_MOUNT` (transit), `_KEY` (matura), `_NAMESPACE` | `associated_data` (use an `aes256-gcm96` key) |
+| `awskms` | `MATURA_AWS_KMS_KEY_ID` (ARN), `MATURA_AWS_REGION` or `AWS_REGION`, credentials in `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`/`AWS_SESSION_TOKEN` (SigV4) | encryption context `{"matura": aad}` |
+| `gcpkms` | `MATURA_GCP_KMS_KEY` (`projects/…/cryptoKeys/…`), token from `MATURA_GCP_ACCESS_TOKEN` or the metadata server | `additionalAuthenticatedData` |
+| `azurekv` | `MATURA_AZURE_KEY_URL` (an RSA key), token from `MATURA_AZURE_ACCESS_TOKEN` or managed identity (IMDS) | a hash wrapped with the key (RSA-OAEP-256 takes none) |
+
+Ciphertexts name the key that sealed them (format 2: `2 | id length | id | wrapped length | wrapped data key | nonce
+| AES-256-GCM value`; format 1 of earlier versions still opens). A **key ring** seals under the provider's key and
+opens under any key it holds: `MATURA_KEK` stays in the ring when another provider is primary, and
+`MATURA_KEK_PREVIOUS` (comma-separated) keeps earlier local KEKs. After a rotation, `POST /admin/v1/keys:rewrap`
+re-seals every stored secret and installation-sealed tenant key under the primary (audited as `keys.rewrapped`), and
+the old keys can be removed. PKCS#11 HSMs are not supported yet (reach one through OpenBao's PKCS#11 seal instead).
+
+### 9.2 Tenant keys and crypto-shredding
+
+Each tenant has a 256-bit **tenant key** per version (`tenant_key`, migration 0019), made on first use, sealed by
+the ring (associated data `tenant_key:<tenant>:<version>`) or by the tenant's own key. Tenant secrets — the SSO
+client secret, audit stream secrets and placement passwords — are sealed under it in format 3: `3 | tenant id |
+key version | nonce | AES-256-GCM(tenant key, value, aad + "|tenant:<id>")`. The ring hands format 3 to the
+tenant keys, so every place that opens secrets opens these too. Unwrapped tenant keys are cached for a minute.
+maturad turns tenant keys on by default (`MATURA_TENANT_KEYS=off` turns them off; existing secrets keep opening).
+
+- **Rotation:** owners `POST /v1/tenants/{tid}/keys:rotate`; earlier versions are retired and still open.
+- **Data keys for apps:** `POST /v1/apps/{app}/tenants/{tid}/data-keys` returns a fresh key and the same key sealed
+  under the tenant key (associated data `app_data_key:<app id>`); the app encrypts fields with it, stores the sealed
+  form, and opens it with `…/data-keys:unwrap` (the Go SDK's `FieldCipher` does both and caches).
+- **Customer-managed keys (BYOK):** owners `PUT /v1/tenants/{tid}/keys/provider` with a provider the installation
+  enabled in `MATURA_BYOK_PROVIDERS` (`transit`, `awskms`, `gcpkms`, `azurekv`). maturad checks the key wraps and
+  unwraps, then wraps every live version under it; its settings are kept sealed by the ring and never returned.
+  Cloud keys are used with the installation's own identity, which the tenant grants use of its key. If the tenant
+  revokes or disables its key, everything sealed under its tenant keys stops opening within the cache minute: data
+  keys answer 503 `tenant-key-unavailable`, and so do SSO and audit streaming. `DELETE …/keys/provider` moves the
+  keys back to the ring (the tenant's key must still work).
+- **Crypto-shredding:** when a deleted tenant is finished (`tenant.deleted`, §5.3) its key versions are erased
+  (`wrapped` set to NULL, `status` destroyed) and its key provider forgotten, in the same transaction, audited as
+  `tenant_key.destroyed`. From then on nothing sealed under them opens — copies in backups included, since backups
+  hold only sealed keys: data keys answer 410 `tenant-key-destroyed`, and an app's field-encrypted data is gone.
+
+Not built yet: tenant export bundles are still stored unsealed until downloaded or expired; PKCS#11.
 
 ## 10. Configuration
 
@@ -396,7 +444,11 @@ and reports `ready`. Expand-and-contract migrations are required, since tenants 
 | `MATURA_METRICS_ADDR` | default `:9090`; serves Prometheus `/metrics` (request counts and latency by route, queue backlogs) on its own listener; empty turns it off |
 | `MATURA_ISSUER` | Keycloak realm URL |
 | `MATURA_AUTH` | `oidc` (default) or `dev` |
-| `MATURA_KEK` | base64 key-encryption key |
+| `MATURA_KEK` | base64 local key-encryption key (with another provider: an earlier KEK kept to open old secrets) |
+| `MATURA_KEK_PROVIDER` | `local` (default), `transit`, `awskms`, `gcpkms` or `azurekv`, with that provider's settings (§9.1) |
+| `MATURA_KEK_PREVIOUS` | comma-separated earlier local KEKs that still open old secrets until `POST /admin/v1/keys:rewrap` |
+| `MATURA_TENANT_KEYS` | `on` (default) seals tenant secrets under per-tenant keys destroyed on deletion; `off` (§9.2) |
+| `MATURA_BYOK_PROVIDERS` | comma-separated providers tenants may bring their own key from (`transit`, `awskms`, `gcpkms`, `azurekv`); unset: off |
 | `MATURA_PUBLIC_URL` | where people reach maturad, for links in emails (default `http://localhost:8080`) |
 | `MATURA_INVITE_ACCEPT_URL` | page invitation links open (default `<MATURA_PUBLIC_URL>/invitations/accept`) |
 | `MATURA_PORTAL_CLIENT_ID` | public Keycloak client the portal and the accept page sign in with (default `matura-console`) |

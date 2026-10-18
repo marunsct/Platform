@@ -33,7 +33,7 @@ func intp(i int) *int { return &i }
 func fixedReport() readiness.Report {
 	now := time.Date(2026, 10, 17, 9, 30, 0, 0, time.UTC)
 	f := readiness.Facts{Now: now,
-		Install: readiness.Install{Product: "Acme Cloud", Env: "production", Auth: "oidc", KEKConfigured: true,
+		Install: readiness.Install{Product: "Acme Cloud", Env: "production", Auth: "oidc", KEKConfigured: true, TenantKeys: true,
 			SMTPConfigured: true, MetricsEnabled: true, PublicURL: "https://id.acme.example"},
 		Installation: readiness.Chain{OK: true, Events: 212},
 		Webhooks:     readiness.Webhooks{Active: 2, Failing: 1, Dropped: 3},
@@ -108,7 +108,7 @@ func TestCheckOutputs(t *testing.T) {
 	}
 	golden(t, "check.json", []byte(out))
 	var rep readiness.Report
-	if err := json.Unmarshal([]byte(out), &rep); err != nil || rep.Score != 61.1 || rep.Failed != 7 {
+	if err := json.Unmarshal([]byte(out), &rep); err != nil || rep.Score != 63.2 || rep.Failed != 7 {
 		t.Fatalf("report: score %v, %d failed, %v", rep.Score, rep.Failed, err)
 	}
 

@@ -21,6 +21,13 @@ Keycloak with Matura's extension. PostgreSQL is not in the chart: use a managed 
    | `smtp.existingSecret` (optional) | `user`, `password` |
 
    Keep the KEK somewhere other than the database backups: without it, stored app secrets and webhook keys cannot be read.
+   Better, keep it out of maturad altogether: set `keys.provider` to `transit` (OpenBao or Vault, with
+   `keys.transit.addr` and a Secret holding its token in `keys.transit.tokenSecret`), `awskms` (`keys.aws.keyId`,
+   `keys.aws.region`, credentials from IRSA or pod identity), `gcpkms` (`keys.gcp.key`, workload identity) or
+   `azurekv` (`keys.azure.keyUrl`, managed identity); `secrets.kek` is then optional. Moving an installation that
+   already has secrets: keep the old `kek` in the Secret, switch the provider, then call
+   `POST /admin/v1/keys:rewrap` and remove the old key (technical specification §9.1). `keys.byokProviders` lets
+   tenants bring their own key; `keys.tenantKeys` (on) gives each tenant its own key, destroyed when it is deleted.
 
 ## Install
 

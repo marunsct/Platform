@@ -176,6 +176,14 @@ func (s *Store) PurgeDueTenants(ctx context.Context) (int, error) {
 // FinishDeletedTenants marks deleting tenants deleted once none of their placements holds data any more.
 func (s *Store) FinishDeletedTenants(ctx context.Context) (int, error) {
 	n := 0
+	var finished []uuid.UUID
+	defer func() {
+		if s.tenantKeys != nil {
+			for _, id := range finished {
+				s.tenantKeys.forget(id)
+			}
+		}
+	}()
 	err := s.tx(ctx, Scope{Operator: true}, func(tx pgx.Tx) error {
 		rows, err := tx.Query(ctx, `SELECT id FROM tenant t WHERE status = 'deleting' AND NOT EXISTS
 			(SELECT 1 FROM placement p WHERE p.tenant_id = t.id AND p.state <> 'deleted') LIMIT 100 FOR UPDATE`)
@@ -186,6 +194,7 @@ func (s *Store) FinishDeletedTenants(ctx context.Context) (int, error) {
 		if err != nil {
 			return err
 		}
+		finished = done
 		for _, id := range done {
 			v, err := nextVersion(ctx, tx)
 			if err != nil {
@@ -197,6 +206,9 @@ func (s *Store) FinishDeletedTenants(ctx context.Context) (int, error) {
 				return err
 			}
 			if err := emit(ctx, tx, v, id, "tenant.deleted", "tenants/"+id.String(), t.Contract()); err != nil {
+				return err
+			}
+			if err := destroyTenantKeys(ctx, tx, id); err != nil { // crypto-shred (§9.2)
 				return err
 			}
 			n++

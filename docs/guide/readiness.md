@@ -55,6 +55,7 @@ a large installation takes a while; the trust page keeps its result for five min
 | Id | Control | Scope | Public | SOC 2 | ISO/IEC 27001:2022 | GDPR |
 |---|---|---|---|---|---|---|
 | [install-kek](#install-kek) | Stored secrets are encrypted under an operator-held key | installation | yes | CC6.1 | A.8.24 | Art. 32(1)(a) |
+| [install-tenant-keys](#install-tenant-keys) | Each tenant's secrets are sealed under its own key, destroyed when it is deleted | installation | yes | | A.8.10, A.8.24 | Art. 17, Art. 32(1)(a) |
 | [install-oidc](#install-oidc) | People sign in through OpenID Connect | installation | yes | CC6.1 | A.8.5 | |
 | [install-production](#install-production) | Development mode is off | installation | yes | | A.8.31 | |
 | [install-tls](#install-tls) | The public address uses HTTPS | installation | yes | CC6.7 | A.8.24 | Art. 32(1)(a) |
@@ -79,8 +80,16 @@ report lists each tenant's result, and the evidence names up to five failing ten
 
 ### install-kek
 
-Passes when `MATURA_KEK` is set. Without it (development only) maturad seals secrets with a random key for the run.
-Fix: `openssl rand -base64 32` into `MATURA_KEK`, and back the key up apart from the database backups.
+Passes when `MATURA_KEK` is set, or when the key-encryption key is held by OpenBao/Vault transit or a cloud KMS
+(`MATURA_KEK_PROVIDER`, technical specification §9.1). Without either (development only) maturad seals secrets with a
+random key for the run. Fix: `openssl rand -base64 32` into `MATURA_KEK`, and back the key up apart from the
+database backups, or move the key to a KMS.
+
+### install-tenant-keys
+
+Passes when tenant keys are on (`MATURA_TENANT_KEYS`, on by default): each tenant's secrets and the data keys its
+apps encrypt fields with are sealed under a key of its own, which is destroyed when the tenant is deleted, so its
+sealed data cannot be read again, from backups either (§9.2). Fix: remove `MATURA_TENANT_KEYS=off`.
 
 ### install-oidc
 

@@ -55,8 +55,23 @@ var Catalogue = []Control{
 		Fix:  "Set MATURA_KEK to 32 random bytes, base64 (openssl rand -base64 32), and back it up apart from the database.",
 		Refs: refs(soc2, "CC6.1", iso, "A.8.24", gdpr, "Art. 32(1)(a)"),
 		install: func(f Facts) (Status, string) {
+			if p := f.Install.KEKProvider; p != "" && p != "local" && f.Install.KEKConfigured {
+				return Pass, "secrets are sealed with AES-256-GCM envelope encryption under a " + p +
+					" key-encryption key that maturad never holds"
+			}
 			return check(f.Install.KEKConfigured, "MATURA_KEK is set; secrets are sealed with AES-256-GCM envelope encryption",
 				"MATURA_KEK is not set: a random key is used for this run")
+		},
+	},
+	{
+		ID: "install-tenant-keys", Title: "Each tenant's secrets are sealed under its own key, destroyed when it is deleted",
+		Scope: scIns, Public: true,
+		Fix:  "Leave MATURA_TENANT_KEYS on (the default): tenant secrets and app data keys are sealed under per-tenant keys, which are erased when a tenant is deleted.",
+		Refs: refs(iso, "A.8.10", iso, "A.8.24", gdpr, "Art. 17", gdpr, "Art. 32(1)(a)"),
+		install: func(f Facts) (Status, string) {
+			return check(f.Install.TenantKeys, "tenant keys are on: deleting a tenant destroys its keys, so its sealed data "+
+				"cannot be read again, from backups either (crypto-shredding)",
+				"tenant keys are off (MATURA_TENANT_KEYS=off): tenant secrets are sealed under the installation key only")
 		},
 	},
 	{

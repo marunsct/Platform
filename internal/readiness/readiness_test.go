@@ -21,7 +21,7 @@ func devFacts() Facts {
 }
 
 func prodFacts() Facts {
-	f := Facts{Now: now, Install: Install{Product: "Acme", Env: "production", Auth: "oidc", KEKConfigured: true,
+	f := Facts{Now: now, Install: Install{Product: "Acme", Env: "production", Auth: "oidc", KEKConfigured: true, TenantKeys: true,
 		SMTPConfigured: true, MetricsEnabled: true, PublicURL: "https://id.acme.example"},
 		Installation: Chain{OK: true, Events: 40},
 		Webhooks:     Webhooks{Active: 2},
@@ -64,7 +64,7 @@ func TestDevInstallFailsTheProductionControls(t *testing.T) {
 			t.Errorf("%s: %s, want not-applicable", id, got[id].Status)
 		}
 	}
-	if r.Passed != 2 || r.Failed != 8 || r.Score != 20 {
+	if r.Passed != 2 || r.Failed != 9 || r.Score != 18.2 {
 		t.Fatalf("score %v (%d passed, %d failed)", r.Score, r.Passed, r.Failed)
 	}
 	for _, c := range r.Controls {

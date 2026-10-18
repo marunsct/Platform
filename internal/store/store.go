@@ -42,7 +42,8 @@ type Scope struct {
 func (s Scope) InTenant(id uuid.UUID) Scope { s.TenantID = id; return s }
 
 type Store struct {
-	pool *pgxpool.Pool
+	pool       *pgxpool.Pool
+	tenantKeys *TenantKeys // per-tenant keys (TS17); nil until EnableTenantKeys
 }
 
 func New(pool *pgxpool.Pool) *Store { return &Store{pool: pool} }

@@ -2,8 +2,8 @@
   "generated_at": "2026-10-17T09:30:00Z",
   "product": "Acme Cloud",
   "notice": "Readiness shows which controls are in place on this installation and the evidence for them. It is not an audit and does not certify compliance with any framework; mappings are indicative and an auditor decides.",
-  "score": 61.1,
-  "passed": 11,
+  "score": 63.2,
+  "passed": 12,
   "failed": 7,
   "not_applicable": 0,
   "controls": [
@@ -25,6 +25,35 @@
         {
           "framework": "ISO/IEC 27001:2022",
           "id": "A.8.24"
+        },
+        {
+          "framework": "GDPR",
+          "id": "Art. 32(1)(a)"
+        }
+      ]
+    },
+    {
+      "id": "install-tenant-keys",
+      "title": "Each tenant's secrets are sealed under its own key, destroyed when it is deleted",
+      "scope": "installation",
+      "status": "pass",
+      "evidence": "tenant keys are on: deleting a tenant destroys its keys, so its sealed data cannot be read again, from backups either (crypto-shredding)",
+      "fix": "Leave MATURA_TENANT_KEYS on (the default): tenant secrets and app data keys are sealed under per-tenant keys, which are erased when a tenant is deleted.",
+      "docs": "https://github.com/marunsct/Platform/blob/main/docs/guide/readiness.md#install-tenant-keys",
+      "public": true,
+      "optional": false,
+      "refs": [
+        {
+          "framework": "ISO/IEC 27001:2022",
+          "id": "A.8.10"
+        },
+        {
+          "framework": "ISO/IEC 27001:2022",
+          "id": "A.8.24"
+        },
+        {
+          "framework": "GDPR",
+          "id": "Art. 17"
         },
         {
           "framework": "GDPR",

@@ -312,6 +312,7 @@ type Provisioned struct {
 
 // PlacementProvisioned stores what was created (passwords sealed) and marks the placement provisioned.
 func (s *Store) PlacementProvisioned(ctx context.Context, km secrets.KeyManager, j PlacementJob, in Provisioned) error {
+	km = s.forTenant(km, j.TenantID)
 	sealed, err := km.Seal([]byte(in.RolePassword), placementAAD(j.ID, "runtime"))
 	if err != nil {
 		return err

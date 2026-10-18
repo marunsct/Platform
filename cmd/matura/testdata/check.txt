@@ -1,7 +1,8 @@
-Acme Cloud readiness: 11 of 18 applicable controls pass (61.1%), 0 not applicable
+Acme Cloud readiness: 12 of 19 applicable controls pass (63.2%), 0 not applicable
 
 STATUS  CONTROL                     EVIDENCE
 pass    install-kek                 MATURA_KEK is set; secrets are sealed with AES-256-GCM envelope encryption
+pass    install-tenant-keys         tenant keys are on: deleting a tenant destroys its keys, so its sealed data cannot be read again, from backups either (crypto-shredding)
 pass    install-oidc                MATURA_AUTH=oidc: bearer tokens are verified against the issuer's keys
 pass    install-production          MATURA_ENV=production
 pass    install-tls                 MATURA_PUBLIC_URL is https://id.acme.example

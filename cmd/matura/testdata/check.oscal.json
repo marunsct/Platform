@@ -12,7 +12,7 @@
     },
     "results": [
       {
-        "description": "11 of 18 applicable controls pass (61.1%). Readiness shows which controls are in place on this installation and the evidence for them. It is not an audit and does not certify compliance with any framework; mappings are indicative and an auditor decides.",
+        "description": "12 of 19 applicable controls pass (63.2%). Readiness shows which controls are in place on this installation and the evidence for them. It is not an audit and does not certify compliance with any framework; mappings are indicative and an auditor decides.",
         "end": "2026-10-17T09:30:00Z",
         "findings": [
           {
@@ -31,6 +31,23 @@
             },
             "title": "Stored secrets are encrypted under an operator-held key",
             "uuid": "d1d42efb-d315-52c6-bf1f-322535ada442"
+          },
+          {
+            "description": "tenant keys are on: deleting a tenant destroys its keys, so its sealed data cannot be read again, from backups either (crypto-shredding). Fix: Leave MATURA_TENANT_KEYS on (the default): tenant secrets and app data keys are sealed under per-tenant keys, which are erased when a tenant is deleted.",
+            "related-observations": [
+              {
+                "observation-uuid": "e5457d9b-2416-57fb-8513-22af7af3f2d0"
+              }
+            ],
+            "target": {
+              "status": {
+                "state": "satisfied"
+              },
+              "target-id": "install-tenant-keys",
+              "type": "objective-id"
+            },
+            "title": "Each tenant's secrets are sealed under its own key, destroyed when it is deleted",
+            "uuid": "0edff757-6e96-5449-9abc-306ddb20fe63"
           },
           {
             "description": "MATURA_AUTH=oidc: bearer tokens are verified against the issuer's keys. Fix: Set MATURA_AUTH=oidc and MATURA_ISSUER to the Keycloak realm URL.",
@@ -369,6 +386,58 @@
               "control-objective"
             ],
             "uuid": "3b632cbd-a04c-51e9-9deb-aef5274a3aa8"
+          },
+          {
+            "collected": "2026-10-17T09:30:00Z",
+            "description": "tenant keys are on: deleting a tenant destroys its keys, so its sealed data cannot be read again, from backups either (crypto-shredding)",
+            "links": [
+              {
+                "href": "https://github.com/marunsct/Platform/blob/main/docs/guide/readiness.md#install-tenant-keys",
+                "rel": "reference"
+              }
+            ],
+            "methods": [
+              "TEST"
+            ],
+            "props": [
+              {
+                "name": "matura-status",
+                "ns": "https://matura.dev/ns/oscal",
+                "value": "pass"
+              },
+              {
+                "name": "framework-reference",
+                "ns": "https://matura.dev/ns/oscal",
+                "value": "ISO/IEC 27001:2022 A.8.10"
+              },
+              {
+                "name": "framework-reference",
+                "ns": "https://matura.dev/ns/oscal",
+                "value": "ISO/IEC 27001:2022 A.8.24"
+              },
+              {
+                "name": "framework-reference",
+                "ns": "https://matura.dev/ns/oscal",
+                "value": "GDPR Art. 17"
+              },
+              {
+                "name": "framework-reference",
+                "ns": "https://matura.dev/ns/oscal",
+                "value": "GDPR Art. 32(1)(a)"
+              }
+            ],
+            "subjects": [
+              {
+                "subject-uuid": "169313e3-1e15-5a04-a747-ef1d7e5a5c55",
+                "title": "Acme Cloud",
+                "type": "component"
+              }
+            ],
+            "title": "Each tenant's secrets are sealed under its own key, destroyed when it is deleted",
+            "types": [
+              "control-objective"
+            ],
+            "uuid": "e5457d9b-2416-57fb-8513-22af7af3f2d0"
           },
           {
             "collected": "2026-10-17T09:30:00Z",
