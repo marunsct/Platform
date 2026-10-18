@@ -16,6 +16,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/marunsct/Platform/internal/access"
+	"github.com/marunsct/Platform/internal/keycloak"
 	"github.com/marunsct/Platform/internal/portal"
 	"github.com/marunsct/Platform/internal/readiness"
 	"github.com/marunsct/Platform/internal/secrets"
@@ -35,7 +36,10 @@ type Server struct {
 	invites        Invitations // invitation links and accept page (TS6)
 	deleteGrace    time.Duration
 	trustedProxies []netip.Prefix
-	policies       sync.Map // tenant id -> cachedPolicy, for the IP allow-list
+	policies       sync.Map         // tenant id -> cachedPolicy, for the IP allow-list
+	kc             *keycloak.Client // admin API of the realm (TS12, TS13); nil: those endpoints answer 503
+	issuer         string           // public realm URL, for the SSO details shown to tenant admins
+	resolver       TXTResolver      // DNS for domain verification
 	portal         *portal.Portal
 	directory      UserDirectory     // identity provider accounts of erased users (TS17); nil skips
 	install        readiness.Install // this installation's configuration, for readiness (TS24)
@@ -84,6 +88,7 @@ func (s *Server) Handler() http.Handler {
 	s.handle(mux, "GET /healthz/ready", s.ready)
 	s.handle(mux, "GET /invitations/accept", s.acceptPageHandler)
 	s.handle(mux, "GET /invitations/preview", s.previewInvitation)
+	s.handle(mux, "GET /v1/sso/discover", s.discoverSSO) // public: home-realm discovery for sign-in pages
 	s.handle(mux, "GET /portal/config.json", s.portal.ConfigJSON)
 	s.handle(mux, "GET /portal/", s.portal.Files)
 	s.handle(mux, "GET /trust", s.trustPage(false))
@@ -145,6 +150,19 @@ func (s *Server) Handler() http.Handler {
 	s.handle(api, "POST /admin/v1/db-servers/{id}/test", s.testDBServer)
 
 	s.handle(api, "GET /v1/me/tenants", s.myTenants)
+	s.handle(api, "GET /v1/me/sessions", s.mySessions)
+	s.handle(api, "DELETE /v1/me/sessions", s.signOutEverywhere)
+	s.handle(api, "DELETE /v1/me/sessions/{id}", s.deleteMySession)
+	s.handle(api, "GET /v1/me/mfa", s.myMFA)
+	s.handle(api, "GET /v1/tenants/{tid}/members/{uid}/sessions", s.memberSessions)
+	s.handle(api, "POST /v1/tenants/{tid}/members/{uid}", s.memberAction) // {uid}:sign-out, {uid}:reset-mfa
+	s.handle(api, "GET /v1/tenants/{tid}/sso", s.getSSO)
+	s.handle(api, "POST /v1/tenants/{tid}/sso", s.createSSO)
+	s.handle(api, "DELETE /v1/tenants/{tid}/sso", s.deleteSSO)
+	s.handle(api, "GET /v1/tenants/{tid}/domains", s.listDomains)
+	s.handle(api, "POST /v1/tenants/{tid}/domains", s.addDomain)
+	s.handle(api, "POST /v1/tenants/{tid}/domains/{domain}", s.verifyDomain) // {domain}:verify
+	s.handle(api, "DELETE /v1/tenants/{tid}/domains/{domain}", s.deleteDomain)
 	s.handle(api, "GET /v1/me/export", s.exportMe)
 	s.handle(api, "DELETE /v1/me", s.deleteMe)
 	s.handle(api, "GET /v1/tenants/{tid}/exports", s.listExports)

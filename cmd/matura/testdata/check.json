@@ -327,7 +327,7 @@
           "tenant_id": "0192a000-0000-7000-8000-000000000001",
           "slug": "acme",
           "status": "pass",
-          "evidence": "require_mfa is set"
+          "evidence": "require_mfa is set; Keycloak's matura-mfa-policy step enforces it at sign-in"
         },
         {
           "tenant_id": "0192a000-0000-7000-8000-000000000002",
@@ -362,7 +362,7 @@
           "tenant_id": "0192a000-0000-7000-8000-000000000001",
           "slug": "acme",
           "status": "pass",
-          "evidence": "session_max_age and idle_timeout are set"
+          "evidence": "session_max_age and idle_timeout are set; enforced when tokens are issued"
         },
         {
           "tenant_id": "0192a000-0000-7000-8000-000000000002",

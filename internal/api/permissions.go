@@ -12,7 +12,7 @@ import (
 	"github.com/marunsct/Platform/internal/store"
 )
 
-// Fine-grained permissions (TS11, technical specification §16): app backends write relationship tuples for their
+// Fine-grained permissions (TS11, technical specification §18): app backends write relationship tuples for their
 // own resource types and ask OpenFGA whether a user may act on a resource, always inside one tenant that enabled
 // the app. maturad translates names (internal/fga.Namespace), so an app can never reach another tenant's or another
 // app's tuples.

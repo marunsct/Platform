@@ -63,7 +63,7 @@ or point maturad at an OpenFGA you run yourself with `--set openfga.url=http://o
 two replicas against its own Postgres database (an init container runs `openfga migrate`); a network policy lets
 only maturad reach it. `openfga.datastore.engine=memory` is for throwaway test installs (one replica; maturad writes
 its facts again when the store disappears, but tuples apps wrote are lost). How tenants and apps share the store:
-[technical specification §16](../spec/02-technical-specification.md).
+[technical specification §18](../spec/02-technical-specification.md).
 
 ## What the chart sets up
 

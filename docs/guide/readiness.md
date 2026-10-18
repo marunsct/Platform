@@ -149,12 +149,17 @@ Passes when a company or shared tenant has saved a security policy (personal ten
 
 ### tenant-mfa
 
-Passes when the tenant's policy has `require_mfa: true`. This checks the setting; enforcement at sign-in is
-Keycloak's (TS12), so until that sprint lands the control shows intent, not enforcement.
+Passes when the tenant's policy has `require_mfa: true`. Keycloak enforces it at sign-in (TS12): Matura's realm
+flows run the extension's `matura-mfa-policy` authenticator, which challenges members who have a second factor and
+makes members without one enrol TOTP before the sign-in finishes (password and social sign-ins; with the tenant's own
+SSO, MFA is the customer IdP's job). The control checks the setting, not how many members have enrolled, and it
+assumes Keycloak runs Matura's realm flows and extension.
 
 ### tenant-session-limits
 
-Passes when the policy sets both `session_max_age` and `idle_timeout`. As with MFA, Keycloak enforces them (TS12).
+Passes when the policy sets both `session_max_age` and `idle_timeout`. They are enforced when an app asks for a
+token (TS12): Matura's token mapper sends the Keycloak session's age and idle time, maturad refuses a session past
+either limit with `session_expired`, and the mapper ends that session so the person signs in again.
 
 ### tenant-invite-domains
 

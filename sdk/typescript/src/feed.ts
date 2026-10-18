@@ -155,7 +155,7 @@ export class MaturaAPI {
     return this.request("POST", this.placementPath(app, tenantId) + ":deleted");
   }
 
-  // --- fine-grained permissions (technical specification §16); maturad answers 501 without OpenFGA ---
+  // --- fine-grained permissions (technical specification §18); maturad answers 501 without OpenFGA ---
 
   private tenantPath(app: string, tenantId: string): string {
     return `/v1/apps/${MaturaAPI.seg(app)}/tenants/${MaturaAPI.seg(tenantId)}`;

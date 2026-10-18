@@ -1,5 +1,5 @@
 // Package fga is a small client for OpenFGA's HTTP API and the rules that map Matura apps and tenants onto one
-// OpenFGA store (ADR 0005, technical specification §16). It does not import the store: internal/access wires it up.
+// OpenFGA store (ADR 0005, technical specification §18). It does not import the store: internal/access wires it up.
 package fga
 
 import (

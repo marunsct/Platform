@@ -1,4 +1,4 @@
-// Package access connects maturad to OpenFGA (TS11, ADR 0005, technical specification §16): it keeps the
+// Package access connects maturad to OpenFGA (TS11, ADR 0005, technical specification §18): it keeps the
 // installation's store and models, mirrors Matura's own facts into it (Syncer), and serves apps' checks.
 package access
 

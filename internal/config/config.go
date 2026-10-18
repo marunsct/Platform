@@ -34,6 +34,9 @@ type Config struct {
 	SMTPPassword       string
 	DeleteGrace        time.Duration  // how long a deleted tenant can be restored; default 30 days
 	TrustedProxies     []netip.Prefix // reverse proxies whose X-Forwarded-For is believed (IP allow-lists, audit)
+	KeycloakURL        string         // Keycloak base URL maturad calls (default: from Issuer)
+	KeycloakClientID   string         // confidential client whose service account manages the realm
+	KeycloakSecret     string         // empty: session, MFA and SSO endpoints answer 503
 	ProductName        string         // name shown on the trust page and in readiness reports
 	TrustPage          bool           // serve the public trust page at /trust (MATURA_TRUST_PAGE=on)
 	SecurityContact    string         // optional address the trust page gives for security reports
@@ -71,6 +74,9 @@ func FromEnv() (Config, error) {
 		SMTPFrom:           getenv("MATURA_SMTP_FROM", "no-reply@matura.local"),
 		SMTPUser:           os.Getenv("MATURA_SMTP_USER"),
 		SMTPPassword:       os.Getenv("MATURA_SMTP_PASSWORD"),
+		KeycloakURL:        os.Getenv("MATURA_KEYCLOAK_URL"),
+		KeycloakClientID:   getenv("MATURA_KEYCLOAK_CLIENT_ID", "matura-admin"),
+		KeycloakSecret:     os.Getenv("MATURA_KEYCLOAK_CLIENT_SECRET"),
 		ProductName:        getenv("MATURA_PRODUCT_NAME", "Matura"),
 		SecurityContact:    os.Getenv("MATURA_SECURITY_CONTACT"),
 		OpenFGAURL:         os.Getenv("MATURA_OPENFGA_URL"),
@@ -126,6 +132,9 @@ func (c Config) Validate() error {
 		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
 			return fmt.Errorf("MATURA_OPENFGA_URL must be an http(s) URL such as http://openfga:8080, got %q", c.OpenFGAURL)
 		}
+	}
+	if c.KeycloakSecret != "" && c.Issuer == "" {
+		return errors.New("MATURA_KEYCLOAK_CLIENT_SECRET needs MATURA_ISSUER (the realm comes from it)")
 	}
 	switch c.Auth {
 	case "dev":

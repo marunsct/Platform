@@ -75,7 +75,7 @@ class MaturaAPI:
         """The app deleted a retiring tenant's data; Matura then drops platform-managed storage."""
         return await self._send("POST", f"/v1/apps/{self.app}/placements/{tenant}:deleted")
 
-    # --- fine-grained permissions (TS11, technical specification §16) ---
+    # --- fine-grained permissions (TS11, technical specification §18) ---
     # Objects are "type:id" of a type in the app's authorization model; users are "user:<id>", "type:id#relation"
     # (for example "role:editor#assignee") or "type:*". A tuple is (user, relation, object) or a dict with those keys.
     # maturad answers 501 when the installation runs without OpenFGA (httpx.HTTPStatusError).

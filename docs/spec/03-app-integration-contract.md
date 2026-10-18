@@ -380,7 +380,7 @@ tokens from a built-in test issuer for two tenants, sends signed events, and che
 
 `perms` in the token says what a user may do in the tenant; it cannot say which records. For record-level sharing
 an app declares an OpenFGA authorization model in its manifest and asks Matura. Mechanics and isolation are in the
-[technical specification §16](02-technical-specification.md); the guide's §6.1 shows how to design for it.
+[technical specification §18](02-technical-specification.md); the guide's §6.1 shows how to design for it.
 
 ```json
 "authorization": { "model": "model\n  schema 1.1\ntype folder\n  relations\n    define tenant: [tenant]\n    define viewer: [user] or member from tenant\n..." }

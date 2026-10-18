@@ -104,7 +104,7 @@ func (s *Syncer) Round(ctx context.Context) error {
 }
 
 // resync writes every current fact, then continues from the outbox position they were read at. Tuples of facts
-// that ended while no cursor was kept stay until their next change (doc: technical specification §16).
+// that ended while no cursor was kept stay until their next change (doc: technical specification §18).
 func (s *Syncer) resync(ctx context.Context) error {
 	storeID, base, err := s.Service.Ready(ctx)
 	if err != nil {

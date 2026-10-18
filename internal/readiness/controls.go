@@ -177,7 +177,8 @@ var Catalogue = []Control{
 			if t.Kind == "personal" {
 				return NotApplicable, "personal tenant"
 			}
-			return check(t.RequireMFA, "require_mfa is set", "require_mfa is off")
+			return check(t.RequireMFA, "require_mfa is set; Keycloak's matura-mfa-policy step enforces it at sign-in",
+				"require_mfa is off")
 		},
 	},
 	{
@@ -188,7 +189,8 @@ var Catalogue = []Control{
 			if t.Kind == "personal" {
 				return NotApplicable, "personal tenant"
 			}
-			return check(t.SessionMaxAge != nil && t.IdleTimeout != nil, "session_max_age and idle_timeout are set",
+			return check(t.SessionMaxAge != nil && t.IdleTimeout != nil,
+				"session_max_age and idle_timeout are set; enforced when tokens are issued",
 				"installation default session limits")
 		},
 	},

@@ -19,4 +19,4 @@ for document-level sharing).
 Built with **one store per installation** rather than per tenant: each app has its own model in that store, and
 maturad prefixes every object id with the tenant (and app types with the app's slug), so tenants and apps cannot
 reach each other's tuples while installations keep one store to operate and back up. Details: technical
-specification §16.
+specification §18.

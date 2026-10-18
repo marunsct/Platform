@@ -22,7 +22,7 @@ type Manifest struct {
 	Tenancy     Tenancy         `json:"tenancy"`
 	// Conformance is read by matura-conformance (docs/guide/conformance.md); maturad keeps it but does not use it.
 	Conformance json.RawMessage `json:"conformance,omitempty"`
-	// Authorization is the app's resource permission model for OpenFGA (TS11, technical specification §16).
+	// Authorization is the app's resource permission model for OpenFGA (TS11, technical specification §18).
 	Authorization *Authorization `json:"authorization,omitempty"`
 }
 

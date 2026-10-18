@@ -28,7 +28,7 @@ what is built first and how. The app-facing part is in the [app integration cont
 | Python SDK | `sdk/python`, FastAPI first | verify, principal, contract tables, sync, routing | Django, TypeScript, Go SDKs |
 | Consoles | React 19, Vite, Tailwind 4, TanStack Router and Query (`web/portal`, embedded in maturad at `/portal/`) | customer portal I (TS8): members, invitations, app access, workspaces, roles, My account | portal II and operator console (TS9–TS10) |
 
-OpenFGA is an optional component since TS11 (§16). Deferred until first needed: NATS (webhooks suffice until M5), Temporal (jobs table with `SKIP LOCKED` until
+OpenFGA is an optional component since TS11 (§18). Deferred until first needed: NATS (webhooks suffice until M5), Temporal (jobs table with `SKIP LOCKED` until
 tier moves in M5), OpenBao (secrets encrypted by a local key-encryption key behind a `KeyManager`
 interface until TS17).
 
@@ -123,13 +123,15 @@ that mode unless `MATURA_ENV=development`.
 | Database servers | `POST/GET /admin/v1/db-servers`, `PATCH/DELETE …/{id}`, `POST …/{id}/test` |
 | Placements | `GET /v1/tenants/{tid}/placements`; app: `GET /v1/apps/{app}/placements/{tid}`, `PUT` (app-managed register), `POST …:ready`, `POST …:deleted`; app: `POST /v1/apps/{app}/placements/{tid}/credentials` (short-lived connection) |
 | Sync | `GET /v1/apps/{app}/changes`, `GET /v1/apps/{app}/snapshot?tenant=` |
-| Permissions | app: `POST /v1/apps/{app}/tenants/{tid}/relations`, `POST …/tenants/{tid}:check`, `:batch-check`, `:list-objects` (§16; 501 without OpenFGA) |
+| Permissions | app: `POST /v1/apps/{app}/tenants/{tid}/relations`, `POST …/tenants/{tid}:check`, `:batch-check`, `:list-objects` (§18; 501 without OpenFGA) |
 | Webhooks | `POST/GET /admin/v1/apps/{app}/webhooks`, `PATCH/DELETE …/{id}`, `POST …/{id}/test` |
 | Audit | `GET /v1/tenants/{tid}/audit`, `GET …/audit/export` (NDJSON), `GET …/audit:verify`, `GET/POST …/audit/sinks`, `PATCH/DELETE …/audit/sinks/{id}`; operators: `GET /admin/v1/audit`, `GET /admin/v1/audit:verify` (§13) |
 | Security policy | `GET/PUT /v1/tenants/{tid}/security-policy` (§13.4) |
+| Sessions and MFA | `GET /v1/me/sessions`, `DELETE /v1/me/sessions[?keep_current=true]`, `DELETE /v1/me/sessions/{id}`, `GET /v1/me/mfa`; owners and admins: `GET /v1/tenants/{tid}/members/{uid}/sessions`, `POST …/members/{uid}:sign-out`, `POST …/members/{uid}:reset-mfa` (§16) |
+| Enterprise SSO | `GET/POST /v1/tenants/{tid}/domains`, `POST …/domains/{domain}:verify`, `DELETE …/domains/{domain}`, `GET/POST/DELETE /v1/tenants/{tid}/sso`; public: `GET /v1/sso/discover?email=` (§17) |
 | Privacy | `GET/POST /v1/tenants/{tid}/exports`, `GET …/exports/{id}`, `GET …/exports/{id}/download` (§14.1); `GET/PUT /v1/tenants/{tid}/retention` (§14.4) |
 | Readiness | operators: `GET /admin/v1/readiness`, `GET/POST /admin/v1/evidence`; unauthenticated, off by default: `GET /trust`, `GET /trust.json` (§15) |
-| Internal (Keycloak) | `POST /internal/v1/token-context` `{user_id, email, email_verified, name, locale, client_id, tenant, workspace}` → claims for the mapper, or `403 {error: access_denied, error_description}`; bearer `MATURA_INTERNAL_TOKEN` |
+| Internal (Keycloak) | `POST /internal/v1/token-context` `{user_id, email, email_verified, name, locale, client_id, tenant, workspace, session_started, session_last_use}` → claims for the mapper, or `403 {error: access_denied, error_description}`; `POST /internal/v1/mfa-policy {user_id}` → `{required, tenants}`; `POST /internal/v1/sso-login {alias, email, user_id?, name}` → `{tid, tenant, joined}` or 403; bearer `MATURA_INTERNAL_TOKEN` |
 | Health | `GET /healthz/live`, `GET /healthz/ready` |
 
 The OpenAPI 3.1 document lives in `api/openapi.yaml` and is the source for generated clients;
@@ -253,7 +255,10 @@ and adds the claims in contract §2. It fails closed: if `maturad` cannot be rea
 choice comes from the authorisation request parameter `matura_tenant=<slug|id>`, else the user's last-used tenant;
 `matura_workspace=<id>` picks a workspace, else the tenant's default. A user without a
 membership in the requested tenant gets `access_denied`. A tenant that has not enabled the app gets
-`access_denied` with `error_description=app_not_enabled`. A suspended tenant gets `tenant_suspended`, one pending deletion `tenant_pending_deletion` (§5.3).
+`access_denied` with `error_description=app_not_enabled`. A suspended tenant gets `tenant_suspended`, one pending deletion `tenant_pending_deletion` (§5.3). The mapper also sends the Keycloak session's start and the
+time it last issued a token in that session (user-session note `matura.last_token`); when the chosen tenant's
+`session_max_age` or `idle_timeout` (§13.4) is exceeded maturad refuses with `session_expired` and the mapper ends
+the session, so the next authorisation request signs in again.
 
 ### 6.1 Roles in the manifest and in Matura (ADR 0008)
 
@@ -397,12 +402,15 @@ and reports `ready`. Expand-and-contract migrations are required, since tenants 
 | `MATURA_PORTAL_CLIENT_ID` | public Keycloak client the portal and the accept page sign in with (default `matura-console`) |
 | `MATURA_SMTP_ADDR` | `host:port` of the mail relay; unset: emails are queued, not sent |
 | `MATURA_SMTP_FROM`, `MATURA_SMTP_USER`, `MATURA_SMTP_PASSWORD` | sender address (default `no-reply@matura.local`) and optional login |
+| `MATURA_KEYCLOAK_CLIENT_SECRET` | secret of the realm's `matura-admin` client; unset: the session, MFA and SSO endpoints answer 503 and erasure does not delete Keycloak accounts |
+| `MATURA_KEYCLOAK_CLIENT_ID` | default `matura-admin` |
+| `MATURA_KEYCLOAK_URL` | Keycloak base URL maturad calls (default: from `MATURA_ISSUER`; the realm is always the issuer's) |
 | `MATURA_TENANT_DELETE_GRACE` | how long a deleted tenant can be restored before it is purged (Go duration, default `720h`) |
 | `MATURA_TRUSTED_PROXIES` | comma-separated addresses or CIDR ranges of reverse proxies whose `X-Forwarded-For` is believed; unset: the connection's address is the client's |
 | `MATURA_PRODUCT_NAME` | name on the trust page and in readiness reports (default `Matura`) |
 | `MATURA_TRUST_PAGE` | `on` serves the public trust page at `/trust` and `/trust.json`; `off` (default) answers 404 |
 | `MATURA_SECURITY_CONTACT` | optional address the trust page gives for security reports |
-| `MATURA_OPENFGA_URL` | OpenFGA's HTTP API, e.g. `http://openfga:8080`; unset: fine-grained permissions are off (§16) |
+| `MATURA_OPENFGA_URL` | OpenFGA's HTTP API, e.g. `http://openfga:8080`; unset: fine-grained permissions are off (§18) |
 | `MATURA_OPENFGA_TOKEN` | OpenFGA preshared key, sent as a bearer token, when OpenFGA requires one |
 | `MATURA_OPENFGA_STORE` | name of the installation's OpenFGA store (default `matura`) |
 
@@ -417,7 +425,8 @@ and reports `ready`. Expand-and-contract migrations are required, since tenants 
 | Provisioner | creates and drops a shared database, a schema and a database on the test server; the runtime role cannot read another tenant's schema or database |
 | SDK | fake issuer, contract apply with shuffled duplicated events, routing in all three modes |
 | Permissions | `internal/fga` unit tests and an in-memory fake (`fga/fgatest`); the same client and API suites run against a real OpenFGA when `MATURA_TEST_OPENFGA_URL` is set (`openfga run --datastore-engine memory`) |
-| End to end | Compose stack with Keycloak and the example app (TS7) |
+| Keycloak | `internal/keycloak` against an in-memory fake (`keycloaktest`, also used by the API tests); with `MATURA_TEST_KEYCLOAK_URL` against a real Keycloak 26.4 in a throwaway realm (sessions, credentials, identity providers, the realm export when the server has the extension) |
+| End to end | Compose stack with Keycloak and the example app (TS7); `scripts/e2e_identity.py` (MFA enrolment and challenge, member MFA reset, tenant OIDC IdP with JIT join, auto-link and a refused foreign domain) |
 
 ## 12. Repository layout (first sprints)
 
@@ -524,7 +533,7 @@ and ranges (masked), and refuses an allow-list that excludes the caller's own ad
 tenant's policy for 5 s (cleared at once on the replica that took the `PUT`). Changes are audited
 (`security_policy.updated` with before and after); they are not contract events.
 
-Session listing and revocation need Keycloak's admin API and come with TS12.
+Keycloak enforces `require_mfa` through the extension (§16.2) and the session limits through the token mapper (§6).
 
 ## 14. Privacy: export, erasure, retention (TS17)
 
@@ -665,14 +674,82 @@ clears the cache on that replica. The HTML has no scripts, one inline stylesheet
 script-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`, plus `X-Content-Type-Options:
 nosniff` and `Referrer-Policy: no-referrer`. `/trust.json` allows any origin.
 
+## 16. Sessions and MFA (TS12)
 
-## 16. Fine-grained permissions (TS11)
+### 16.1 Keycloak admin API
+
+`internal/keycloak` is maturad's client for one realm's admin REST API. It signs in with the client-credentials grant
+of the confidential client `matura-admin` (realm export), whose service account holds only the realm-management
+roles `view-users`, `manage-users`, `view-identity-providers` and `manage-identity-providers`. The token is cached
+until 30 s before it expires and fetched again once on a 401. Every call has a timeout (10 s); errors are typed
+(`ErrNotFound`, `ErrConflict`, `ErrForbidden`, `ErrUnavailable`, `*Error` with status and Keycloak's message). The API
+answers 503 `keycloak-unavailable` when Keycloak does not answer and 502 `keycloak-error` when it refuses.
+
+### 16.2 MFA enforcement
+
+The realm's browser flow is `matura browser`: cookie, identity-provider redirector (`kc_idp_hint`), then password
+form, a conditional second-factor step (OTP, WebAuthn security key, passkey or recovery code, for users who have
+one) and the extension's `matura-mfa-policy` authenticator. That authenticator asks `POST /internal/v1/mfa-policy`
+whether the user is an active member of an active tenant whose policy has `require_mfa`; if so and the user has no
+OTP, WebAuthn or passkey credential, it adds the `CONFIGURE_TOTP` required action to the sign-in (SPI option
+`enrol-action` can name `webauthn-register` instead), so the sign-in finishes only after enrolment. It fails closed
+when maturad is unreachable. Social identity providers (Google, GitHub) run the same two steps as their post-login
+flow `matura post broker login`. Tenant SSO sign-ins are not challenged by Keycloak: the customer's IdP is
+responsible for MFA. Known gaps: a session started before the policy changed keeps working until it ends (sign
+members out to force it); step-up (`acr`) and recovery-code enrolment prompts are not built.
+
+### 16.3 Sessions and resets
+
+People list their sessions (`current` marks the one whose `sid` the token carries) and end one, all, or all but the
+current. Owners and admins list a member's sessions, sign them out everywhere and reset their second factors
+(removes OTP, WebAuthn, passkey and recovery-code credentials, then signs them out; not on oneself). Keycloak
+sessions and credentials belong to the person, not to a tenant, so a tenant acts only on people it **governs**: an
+active member of a company tenant whose email domain that tenant verified (§17), or who belongs to no other
+organisation (personal tenants do not count). Otherwise 403 `not-governed`. Admins cannot act on owners; operators
+need approved support access like for any tenant admin view and are then not limited by this rule. Each action is audited in the tenant's log (`member.signed_out`, `member.mfa_reset`) or, for
+one's own sessions, the installation's (`session.revoked`, `session.revoked_all`). Refresh tokens stop at once;
+access tokens already issued run out within their lifetime (5 min).
+
+## 17. Enterprise SSO (TS13)
+
+```
+tenant_domain(tenant_id, domain, challenge, verified_at, last_checked_at, last_error, version, created_at)
+              PK(tenant_id, domain); UNIQUE(domain) WHERE verified_at IS NOT NULL
+tenant_sso(tenant_id PK, alias UNIQUE, protocol oidc|saml, display_name, config jsonb, client_secret bytea (sealed,
+           AAD "tenant_sso:<tenant id>"), default_tenant_role, version, created_by, created_at, updated_at)
+```
+
+Both have forced RLS (migration 0011).
+
+- **Domains:** owners and admins claim a domain and publish `TXT _matura-challenge.<domain>` =
+  `matura-verification=<challenge>` (24 random bytes). `POST …:verify` looks it up (`net.Resolver`, 10 s) and marks
+  the domain verified; only one tenant can hold a domain verified (409). Changes are audited (`domain.*`).
+- **Connection:** one per company tenant, after at least one domain is verified. maturad has Keycloak import the
+  OIDC discovery document or SAML metadata (`identity-provider/import-config`, https only outside development) and
+  creates identity provider `t-<slug>` (trust email, hidden on the login page, PKCE for OIDC, signed assertions for
+  SAML, NameID email format) with email and name mappers, first-login flow `matura sso first login` and post-login
+  flow `matura sso post login`. The OIDC client secret is sealed with the KEK and never returned. The response
+  shows what the IdP's administrator registers: `redirect_uri` (OIDC redirect or SAML ACS URL), SAML `entity_id`
+  and `metadata_url`. Deleting the connection removes the Keycloak identity provider and its account links.
+- **Sign-in:** both flows start with the extension's `matura-sso` authenticator, which calls
+  `POST /internal/v1/sso-login`: the asserted email must be in a domain the provider's tenant verified, so a
+  tenant's IdP can never sign in someone else's address (`domain_not_verified`). The first-login flow then creates
+  the user or links the existing user with the same email (`idp-create-user-if-unique`, `idp-auto-link`); the
+  post-login flow passes the user id and maturad adds them to the tenant with the connection's
+  `default_tenant_role` and each enabled app's default role (just-in-time; a deactivated membership is refused).
+- **Home-realm discovery:** `GET /v1/sso/discover?email=` (public) returns `{sso, idp_hint, tenant}` for a verified
+  domain of an active tenant with a connection; sign-in pages add `kc_idp_hint=<idp_hint>` (and
+  `matura_tenant=<tenant>`) to the authorisation request. The Keycloak login theme does not do this itself yet.
+- **Not built yet:** SSO-only enforcement with break-glass, group-to-role mapping, Ory Polis, certificate expiry
+  warnings, test-connection trace, the portal wizard and the mock IdP.
+
+## 18. Fine-grained permissions (TS11)
 
 Token `perms` answer "may this user start runs in this tenant"; resource-level questions ("may Ana edit document
 D?") go to OpenFGA ([ADR 0005](../adr/0005-openfga-for-permissions.md)). OpenFGA is optional: without
 `MATURA_OPENFGA_URL` the endpoints below answer `501 permissions-not-configured` and nothing else changes.
 
-### 16.1 Store, models and names
+### 18.1 Store, models and names
 
 One OpenFGA store per installation (`MATURA_OPENFGA_STORE`, default `matura`; found by name or created on first
 use, its id kept in `fga_state`). Each app's manifest may carry an authorization model (`authorization.model`, the
@@ -711,7 +788,7 @@ name A's objects and A's users, and a check, batch check or listing in tenant B 
 follow B's tuples. `list-objects` results are also filtered by prefix before they are returned. Apps cannot write
 tuples on Matura's types, so they cannot make someone a tenant admin or a role holder.
 
-### 16.2 Matura's facts in OpenFGA
+### 18.2 Matura's facts in OpenFGA
 
 The sync worker (`internal/access.Syncer`, one replica at a time by advisory lock 7351009) reads the outbox in
 sequence order from its own cursor (`fga_state.cursor`) and applies each change before moving the cursor
@@ -733,7 +810,7 @@ removed by this; in practice that only happens when an existing store is reused 
 When OpenFGA answers that a remembered store or model is gone, maturad forgets the ids, the call answers 503, and
 the next call or round sets them up again.
 
-### 16.3 App API
+### 18.3 App API
 
 HTTP Basic with the app's client id and secret, like the change feed. `{tid}` must be a tenant that enabled the
 app (otherwise 404; suspended 403).

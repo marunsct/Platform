@@ -23,6 +23,7 @@ services:
     environment:
       MATURA_URL: http://maturad:8080
       MATURA_INTERNAL_TOKEN: &internal-token matura-internal-development-token-0001  # development only
+      MATURA_KEYCLOAK_CLIENT_SECRET: &kc-admin-secret matura-admin-development-secret-0001  # development only
       KC_BOOTSTRAP_ADMIN_USERNAME: admin
       KC_BOOTSTRAP_ADMIN_PASSWORD: admin
       KC_DB: postgres
@@ -73,6 +74,8 @@ services:
       MATURA_MIGRATE_DATABASE_URL: postgres://matura_owner:matura-owner-dev@postgres:5432/matura?sslmode=disable
       MATURA_KEK: bWF0dXJhLWRldmVsb3BtZW50LW9ubHkta2V5LTAwMDE=  # development only; production: openssl rand -base64 32
       MATURA_INTERNAL_TOKEN: *internal-token
+      MATURA_KEYCLOAK_URL: http://keycloak:8180       # admin API for sessions, MFA and SSO
+      MATURA_KEYCLOAK_CLIENT_SECRET: *kc-admin-secret
       MATURA_PUBLIC_URL: http://localhost:8080        # invitation links point here
       MATURA_SMTP_ADDR: mailpit:1025                  # invitation emails land in Mailpit
       MATURA_SMTP_FROM: no-reply@matura.local
