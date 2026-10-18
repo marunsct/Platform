@@ -1,0 +1,63 @@
+{
+  "_source": "Request shapes from Microsoft Entra ID's SCIM provisioning documentation (learn.microsoft.com/entra/identity/app-provisioning/use-scim-to-provision-users-and-groups, 'User Operations' and 'Group Operations'; the user and group ids there are placeholders). The update email is in the verified test domain. {{…}} are filled in by the test.",
+  "create_user": {
+    "schemas": ["urn:ietf:params:scim:schemas:core:2.0:User", "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User"],
+    "externalId": "0a21f0f2-8d2a-4f8e-bf98-7363c4aed4ef",
+    "userName": "Test_User_ab6490ee-1e48-479e-a20b-2d77186b5dd1",
+    "active": true,
+    "emails": [{"primary": true, "type": "work", "value": "Test_User_fd0ea19b-0777-472c-9f96-4f70d2226f2e@testuser.com"}],
+    "meta": {"resourceType": "User"},
+    "name": {"formatted": "givenName familyName", "familyName": "familyName", "givenName": "givenName"},
+    "roles": []
+  },
+  "update_user": {
+    "schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+    "Operations": [
+      {"op": "Replace", "path": "emails[type eq \"work\"].value", "value": "updatedEmail@testuser.com"},
+      {"op": "Replace", "path": "name.familyName", "value": "updatedFamilyName"}
+    ]
+  },
+  "rename_user": {
+    "schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+    "Operations": [{"op": "Replace", "path": "userName", "value": "5b50642d-79fc-4410-9e90-4c077cdd1a59@testuser.com"}]
+  },
+  "enterprise": {
+    "schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+    "Operations": [
+      {"op": "Add", "path": "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User:employeeNumber", "value": "701984"},
+      {"op": "Add", "path": "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User:department", "value": "Tour Operations"},
+      {"op": "Add", "path": "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User:manager", "value": "26118915-6090-4610-87e4-49d8ca9f808d"},
+      {"op": "Add", "path": "title", "value": "Tour Guide"}
+    ]
+  },
+  "disable_user": {
+    "schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+    "Operations": [{"op": "Replace", "path": "active", "value": false}]
+  },
+  "disable_user_legacy": {
+    "schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+    "Operations": [{"op": "Replace", "path": "active", "value": "False"}]
+  },
+  "enable_user": {
+    "schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+    "Operations": [{"op": "Replace", "path": "active", "value": "True"}]
+  },
+  "create_group": {
+    "schemas": ["urn:ietf:params:scim:schemas:core:2.0:Group", "http://schemas.microsoft.com/2006/11/ResourceManagement/ADSCIM/2.0/Group"],
+    "externalId": "8aa1a0c0-c4c3-4bc0-b4a5-2ef676900159",
+    "displayName": "displayName",
+    "meta": {"resourceType": "Group"}
+  },
+  "rename_group": {
+    "schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+    "Operations": [{"op": "Replace", "path": "displayName", "value": "1879db59-3bdf-4490-ad68-ab880a269474updatedDisplayName"}]
+  },
+  "add_member": {
+    "schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+    "Operations": [{"op": "Add", "path": "members", "value": [{"$ref": null, "value": "{{user_id}}"}]}]
+  },
+  "remove_member": {
+    "schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+    "Operations": [{"op": "Remove", "path": "members", "value": [{"$ref": null, "value": "{{user_id}}"}]}]
+  }
+}

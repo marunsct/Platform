@@ -1,0 +1,773 @@
+[
+ {
+  "id": "urn:ietf:params:scim:schemas:core:2.0:User",
+  "name": "User",
+  "description": "User account",
+  "attributes": [
+   {
+    "name": "userName",
+    "type": "string",
+    "multiValued": false,
+    "description": "Unique identifier for the user, typically the sign-in name. Matura uses it to match users; the account's email comes from emails (primary, else work, else first) or from userName when it is an email address.",
+    "required": true,
+    "mutability": "readWrite",
+    "returned": "default",
+    "caseExact": false,
+    "uniqueness": "server"
+   },
+   {
+    "name": "name",
+    "type": "complex",
+    "multiValued": false,
+    "description": "The user's name.",
+    "required": false,
+    "mutability": "readWrite",
+    "returned": "default",
+    "subAttributes": [
+     {
+      "name": "formatted",
+      "type": "string",
+      "multiValued": false,
+      "description": "",
+      "required": false,
+      "mutability": "readWrite",
+      "returned": "default",
+      "caseExact": false,
+      "uniqueness": "none"
+     },
+     {
+      "name": "familyName",
+      "type": "string",
+      "multiValued": false,
+      "description": "",
+      "required": false,
+      "mutability": "readWrite",
+      "returned": "default",
+      "caseExact": false,
+      "uniqueness": "none"
+     },
+     {
+      "name": "givenName",
+      "type": "string",
+      "multiValued": false,
+      "description": "",
+      "required": false,
+      "mutability": "readWrite",
+      "returned": "default",
+      "caseExact": false,
+      "uniqueness": "none"
+     },
+     {
+      "name": "middleName",
+      "type": "string",
+      "multiValued": false,
+      "description": "",
+      "required": false,
+      "mutability": "readWrite",
+      "returned": "default",
+      "caseExact": false,
+      "uniqueness": "none"
+     },
+     {
+      "name": "honorificPrefix",
+      "type": "string",
+      "multiValued": false,
+      "description": "",
+      "required": false,
+      "mutability": "readWrite",
+      "returned": "default",
+      "caseExact": false,
+      "uniqueness": "none"
+     },
+     {
+      "name": "honorificSuffix",
+      "type": "string",
+      "multiValued": false,
+      "description": "",
+      "required": false,
+      "mutability": "readWrite",
+      "returned": "default",
+      "caseExact": false,
+      "uniqueness": "none"
+     }
+    ]
+   },
+   {
+    "name": "displayName",
+    "type": "string",
+    "multiValued": false,
+    "description": "The name shown for the user.",
+    "required": false,
+    "mutability": "readWrite",
+    "returned": "default",
+    "caseExact": false,
+    "uniqueness": "none"
+   },
+   {
+    "name": "nickName",
+    "type": "string",
+    "multiValued": false,
+    "description": "",
+    "required": false,
+    "mutability": "readWrite",
+    "returned": "default",
+    "caseExact": false,
+    "uniqueness": "none"
+   },
+   {
+    "name": "profileUrl",
+    "type": "reference",
+    "multiValued": false,
+    "description": "",
+    "required": false,
+    "mutability": "readWrite",
+    "returned": "default",
+    "caseExact": false,
+    "uniqueness": "none",
+    "referenceTypes": [
+     "external"
+    ]
+   },
+   {
+    "name": "title",
+    "type": "string",
+    "multiValued": false,
+    "description": "",
+    "required": false,
+    "mutability": "readWrite",
+    "returned": "default",
+    "caseExact": false,
+    "uniqueness": "none"
+   },
+   {
+    "name": "userType",
+    "type": "string",
+    "multiValued": false,
+    "description": "",
+    "required": false,
+    "mutability": "readWrite",
+    "returned": "default",
+    "caseExact": false,
+    "uniqueness": "none"
+   },
+   {
+    "name": "preferredLanguage",
+    "type": "string",
+    "multiValued": false,
+    "description": "",
+    "required": false,
+    "mutability": "readWrite",
+    "returned": "default",
+    "caseExact": false,
+    "uniqueness": "none"
+   },
+   {
+    "name": "locale",
+    "type": "string",
+    "multiValued": false,
+    "description": "",
+    "required": false,
+    "mutability": "readWrite",
+    "returned": "default",
+    "caseExact": false,
+    "uniqueness": "none"
+   },
+   {
+    "name": "timezone",
+    "type": "string",
+    "multiValued": false,
+    "description": "",
+    "required": false,
+    "mutability": "readWrite",
+    "returned": "default",
+    "caseExact": false,
+    "uniqueness": "none"
+   },
+   {
+    "name": "active",
+    "type": "boolean",
+    "multiValued": false,
+    "description": "false deactivates the user's membership in the organisation and signs them out.",
+    "required": false,
+    "mutability": "readWrite",
+    "returned": "default"
+   },
+   {
+    "name": "emails",
+    "type": "complex",
+    "multiValued": true,
+    "description": "Email addresses; one must be in a verified domain of the organisation.",
+    "required": false,
+    "mutability": "readWrite",
+    "returned": "default",
+    "subAttributes": [
+     {
+      "name": "value",
+      "type": "string",
+      "multiValued": false,
+      "description": "The value.",
+      "required": false,
+      "mutability": "readWrite",
+      "returned": "default",
+      "caseExact": false,
+      "uniqueness": "none"
+     },
+     {
+      "name": "display",
+      "type": "string",
+      "multiValued": false,
+      "description": "A human-readable name.",
+      "required": false,
+      "mutability": "readWrite",
+      "returned": "default",
+      "caseExact": false,
+      "uniqueness": "none"
+     },
+     {
+      "name": "type",
+      "type": "string",
+      "multiValued": false,
+      "description": "A label.",
+      "required": false,
+      "mutability": "readWrite",
+      "returned": "default",
+      "caseExact": false,
+      "uniqueness": "none",
+      "canonicalValues": [
+       "work",
+       "home",
+       "other"
+      ]
+     },
+     {
+      "name": "primary",
+      "type": "boolean",
+      "multiValued": false,
+      "description": "The primary value.",
+      "required": false,
+      "mutability": "readWrite",
+      "returned": "default"
+     }
+    ]
+   },
+   {
+    "name": "phoneNumbers",
+    "type": "complex",
+    "multiValued": true,
+    "description": "Phone numbers.",
+    "required": false,
+    "mutability": "readWrite",
+    "returned": "default",
+    "subAttributes": [
+     {
+      "name": "value",
+      "type": "string",
+      "multiValued": false,
+      "description": "The value.",
+      "required": false,
+      "mutability": "readWrite",
+      "returned": "default",
+      "caseExact": false,
+      "uniqueness": "none"
+     },
+     {
+      "name": "display",
+      "type": "string",
+      "multiValued": false,
+      "description": "A human-readable name.",
+      "required": false,
+      "mutability": "readWrite",
+      "returned": "default",
+      "caseExact": false,
+      "uniqueness": "none"
+     },
+     {
+      "name": "type",
+      "type": "string",
+      "multiValued": false,
+      "description": "A label.",
+      "required": false,
+      "mutability": "readWrite",
+      "returned": "default",
+      "caseExact": false,
+      "uniqueness": "none",
+      "canonicalValues": [
+       "work",
+       "home",
+       "mobile",
+       "fax",
+       "pager",
+       "other"
+      ]
+     },
+     {
+      "name": "primary",
+      "type": "boolean",
+      "multiValued": false,
+      "description": "The primary value.",
+      "required": false,
+      "mutability": "readWrite",
+      "returned": "default"
+     }
+    ]
+   },
+   {
+    "name": "addresses",
+    "type": "complex",
+    "multiValued": true,
+    "description": "",
+    "required": false,
+    "mutability": "readWrite",
+    "returned": "default",
+    "subAttributes": [
+     {
+      "name": "formatted",
+      "type": "string",
+      "multiValued": false,
+      "description": "",
+      "required": false,
+      "mutability": "readWrite",
+      "returned": "default",
+      "caseExact": false,
+      "uniqueness": "none"
+     },
+     {
+      "name": "streetAddress",
+      "type": "string",
+      "multiValued": false,
+      "description": "",
+      "required": false,
+      "mutability": "readWrite",
+      "returned": "default",
+      "caseExact": false,
+      "uniqueness": "none"
+     },
+     {
+      "name": "locality",
+      "type": "string",
+      "multiValued": false,
+      "description": "",
+      "required": false,
+      "mutability": "readWrite",
+      "returned": "default",
+      "caseExact": false,
+      "uniqueness": "none"
+     },
+     {
+      "name": "region",
+      "type": "string",
+      "multiValued": false,
+      "description": "",
+      "required": false,
+      "mutability": "readWrite",
+      "returned": "default",
+      "caseExact": false,
+      "uniqueness": "none"
+     },
+     {
+      "name": "postalCode",
+      "type": "string",
+      "multiValued": false,
+      "description": "",
+      "required": false,
+      "mutability": "readWrite",
+      "returned": "default",
+      "caseExact": false,
+      "uniqueness": "none"
+     },
+     {
+      "name": "country",
+      "type": "string",
+      "multiValued": false,
+      "description": "",
+      "required": false,
+      "mutability": "readWrite",
+      "returned": "default",
+      "caseExact": false,
+      "uniqueness": "none"
+     },
+     {
+      "name": "type",
+      "type": "string",
+      "multiValued": false,
+      "description": "",
+      "required": false,
+      "mutability": "readWrite",
+      "returned": "default",
+      "caseExact": false,
+      "uniqueness": "none",
+      "canonicalValues": [
+       "work",
+       "home",
+       "other"
+      ]
+     },
+     {
+      "name": "primary",
+      "type": "boolean",
+      "multiValued": false,
+      "description": "",
+      "required": false,
+      "mutability": "readWrite",
+      "returned": "default"
+     }
+    ]
+   },
+   {
+    "name": "groups",
+    "type": "complex",
+    "multiValued": true,
+    "description": "Groups the user is in (change them through /Groups).",
+    "required": false,
+    "mutability": "readOnly",
+    "returned": "default",
+    "subAttributes": [
+     {
+      "name": "value",
+      "type": "string",
+      "multiValued": false,
+      "description": "",
+      "required": false,
+      "mutability": "readOnly",
+      "returned": "default",
+      "caseExact": false,
+      "uniqueness": "none"
+     },
+     {
+      "name": "$ref",
+      "type": "reference",
+      "multiValued": false,
+      "description": "",
+      "required": false,
+      "mutability": "readOnly",
+      "returned": "default",
+      "caseExact": false,
+      "uniqueness": "none",
+      "referenceTypes": [
+       "Group"
+      ]
+     },
+     {
+      "name": "display",
+      "type": "string",
+      "multiValued": false,
+      "description": "",
+      "required": false,
+      "mutability": "readOnly",
+      "returned": "default",
+      "caseExact": false,
+      "uniqueness": "none"
+     },
+     {
+      "name": "type",
+      "type": "string",
+      "multiValued": false,
+      "description": "",
+      "required": false,
+      "mutability": "readOnly",
+      "returned": "default",
+      "caseExact": false,
+      "uniqueness": "none",
+      "canonicalValues": [
+       "direct"
+      ]
+     }
+    ]
+   },
+   {
+    "name": "roles",
+    "type": "complex",
+    "multiValued": true,
+    "description": "Roles as sent by the identity provider (stored, not used for access; map groups to app roles instead).",
+    "required": false,
+    "mutability": "readWrite",
+    "returned": "default",
+    "subAttributes": [
+     {
+      "name": "value",
+      "type": "string",
+      "multiValued": false,
+      "description": "The value.",
+      "required": false,
+      "mutability": "readWrite",
+      "returned": "default",
+      "caseExact": false,
+      "uniqueness": "none"
+     },
+     {
+      "name": "display",
+      "type": "string",
+      "multiValued": false,
+      "description": "A human-readable name.",
+      "required": false,
+      "mutability": "readWrite",
+      "returned": "default",
+      "caseExact": false,
+      "uniqueness": "none"
+     },
+     {
+      "name": "type",
+      "type": "string",
+      "multiValued": false,
+      "description": "A label.",
+      "required": false,
+      "mutability": "readWrite",
+      "returned": "default",
+      "caseExact": false,
+      "uniqueness": "none"
+     },
+     {
+      "name": "primary",
+      "type": "boolean",
+      "multiValued": false,
+      "description": "The primary value.",
+      "required": false,
+      "mutability": "readWrite",
+      "returned": "default"
+     }
+    ]
+   },
+   {
+    "name": "entitlements",
+    "type": "complex",
+    "multiValued": true,
+    "description": "Entitlements as sent by the identity provider (stored only).",
+    "required": false,
+    "mutability": "readWrite",
+    "returned": "default",
+    "subAttributes": [
+     {
+      "name": "value",
+      "type": "string",
+      "multiValued": false,
+      "description": "The value.",
+      "required": false,
+      "mutability": "readWrite",
+      "returned": "default",
+      "caseExact": false,
+      "uniqueness": "none"
+     },
+     {
+      "name": "display",
+      "type": "string",
+      "multiValued": false,
+      "description": "A human-readable name.",
+      "required": false,
+      "mutability": "readWrite",
+      "returned": "default",
+      "caseExact": false,
+      "uniqueness": "none"
+     },
+     {
+      "name": "type",
+      "type": "string",
+      "multiValued": false,
+      "description": "A label.",
+      "required": false,
+      "mutability": "readWrite",
+      "returned": "default",
+      "caseExact": false,
+      "uniqueness": "none"
+     },
+     {
+      "name": "primary",
+      "type": "boolean",
+      "multiValued": false,
+      "description": "The primary value.",
+      "required": false,
+      "mutability": "readWrite",
+      "returned": "default"
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "id": "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User",
+  "name": "EnterpriseUser",
+  "description": "Enterprise user",
+  "attributes": [
+   {
+    "name": "employeeNumber",
+    "type": "string",
+    "multiValued": false,
+    "description": "Stored on the Keycloak account as attribute employeeNumber.",
+    "required": false,
+    "mutability": "readWrite",
+    "returned": "default",
+    "caseExact": false,
+    "uniqueness": "none"
+   },
+   {
+    "name": "costCenter",
+    "type": "string",
+    "multiValued": false,
+    "description": "",
+    "required": false,
+    "mutability": "readWrite",
+    "returned": "default",
+    "caseExact": false,
+    "uniqueness": "none"
+   },
+   {
+    "name": "organization",
+    "type": "string",
+    "multiValued": false,
+    "description": "",
+    "required": false,
+    "mutability": "readWrite",
+    "returned": "default",
+    "caseExact": false,
+    "uniqueness": "none"
+   },
+   {
+    "name": "division",
+    "type": "string",
+    "multiValued": false,
+    "description": "",
+    "required": false,
+    "mutability": "readWrite",
+    "returned": "default",
+    "caseExact": false,
+    "uniqueness": "none"
+   },
+   {
+    "name": "department",
+    "type": "string",
+    "multiValued": false,
+    "description": "Stored on the Keycloak account as attribute department.",
+    "required": false,
+    "mutability": "readWrite",
+    "returned": "default",
+    "caseExact": false,
+    "uniqueness": "none"
+   },
+   {
+    "name": "manager",
+    "type": "complex",
+    "multiValued": false,
+    "description": "",
+    "required": false,
+    "mutability": "readWrite",
+    "returned": "default",
+    "subAttributes": [
+     {
+      "name": "value",
+      "type": "string",
+      "multiValued": false,
+      "description": "The manager's id.",
+      "required": false,
+      "mutability": "readWrite",
+      "returned": "default",
+      "caseExact": false,
+      "uniqueness": "none"
+     },
+     {
+      "name": "$ref",
+      "type": "reference",
+      "multiValued": false,
+      "description": "",
+      "required": false,
+      "mutability": "readWrite",
+      "returned": "default",
+      "caseExact": false,
+      "uniqueness": "none",
+      "referenceTypes": [
+       "User"
+      ]
+     },
+     {
+      "name": "displayName",
+      "type": "string",
+      "multiValued": false,
+      "description": "",
+      "required": false,
+      "mutability": "readOnly",
+      "returned": "default",
+      "caseExact": false,
+      "uniqueness": "none"
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "id": "urn:ietf:params:scim:schemas:core:2.0:Group",
+  "name": "Group",
+  "description": "Group; mapped to app roles by the organisation's group mappings",
+  "attributes": [
+   {
+    "name": "displayName",
+    "type": "string",
+    "multiValued": false,
+    "description": "The group's name; group mappings match it (ignoring case).",
+    "required": true,
+    "mutability": "readWrite",
+    "returned": "default",
+    "caseExact": false,
+    "uniqueness": "server"
+   },
+   {
+    "name": "members",
+    "type": "complex",
+    "multiValued": true,
+    "description": "Users in the group (provisioned users of this organisation).",
+    "required": false,
+    "mutability": "readWrite",
+    "returned": "default",
+    "subAttributes": [
+     {
+      "name": "value",
+      "type": "string",
+      "multiValued": false,
+      "description": "",
+      "required": false,
+      "mutability": "immutable",
+      "returned": "default",
+      "caseExact": false,
+      "uniqueness": "none"
+     },
+     {
+      "name": "$ref",
+      "type": "reference",
+      "multiValued": false,
+      "description": "",
+      "required": false,
+      "mutability": "immutable",
+      "returned": "default",
+      "caseExact": false,
+      "uniqueness": "none",
+      "referenceTypes": [
+       "User"
+      ]
+     },
+     {
+      "name": "display",
+      "type": "string",
+      "multiValued": false,
+      "description": "",
+      "required": false,
+      "mutability": "readOnly",
+      "returned": "default",
+      "caseExact": false,
+      "uniqueness": "none"
+     },
+     {
+      "name": "type",
+      "type": "string",
+      "multiValued": false,
+      "description": "",
+      "required": false,
+      "mutability": "immutable",
+      "returned": "default",
+      "caseExact": false,
+      "uniqueness": "none",
+      "canonicalValues": [
+       "User"
+      ]
+     }
+    ]
+   }
+  ]
+ }
+]

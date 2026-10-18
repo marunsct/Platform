@@ -156,25 +156,31 @@ func (c *Client) accessToken(ctx context.Context, force bool) (string, error) {
 // do calls the admin API at path (relative to /admin/realms/{realm}/), sending in as JSON and decoding the answer
 // into out when both are non-nil. A 401 signs in again once.
 func (c *Client) do(ctx context.Context, method, path string, in, out any) error {
+	_, err := c.send(ctx, method, path, in, out)
+	return err
+}
+
+// send is do that also returns the response headers (Location of a created resource).
+func (c *Client) send(ctx context.Context, method, path string, in, out any) (http.Header, error) {
 	var body []byte
 	if in != nil {
 		var err error
 		if body, err = json.Marshal(in); err != nil {
-			return err
+			return nil, err
 		}
 	}
 	op := method + " " + path
 	for attempt := 0; ; attempt++ {
 		token, err := c.accessToken(ctx, attempt > 0)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		rctx, cancel := context.WithTimeout(ctx, c.cfg.Timeout)
 		req, err := http.NewRequestWithContext(rctx, method,
 			c.cfg.BaseURL+"/admin/realms/"+url.PathEscape(c.cfg.Realm)+"/"+path, bytes.NewReader(body))
 		if err != nil {
 			cancel()
-			return err
+			return nil, err
 		}
 		req.Header.Set("Authorization", "Bearer "+token)
 		req.Header.Set("Accept", "application/json")
@@ -185,28 +191,28 @@ func (c *Client) do(ctx context.Context, method, path string, in, out any) error
 		if err != nil {
 			cancel()
 			if ctx.Err() != nil {
-				return ctx.Err()
+				return nil, ctx.Err()
 			}
-			return fmt.Errorf("%w: %s: %v", ErrUnavailable, op, err)
+			return nil, fmt.Errorf("%w: %s: %v", ErrUnavailable, op, err)
 		}
 		raw, err := io.ReadAll(io.LimitReader(res.Body, 8<<20))
 		res.Body.Close()
 		cancel()
 		if err != nil {
-			return fmt.Errorf("%w: %s: %v", ErrUnavailable, op, err)
+			return nil, fmt.Errorf("%w: %s: %v", ErrUnavailable, op, err)
 		}
 		if res.StatusCode == http.StatusUnauthorized && attempt == 0 {
 			continue
 		}
 		if res.StatusCode >= 300 {
-			return &Error{Op: op, Status: res.StatusCode, Body: short(raw)}
+			return nil, &Error{Op: op, Status: res.StatusCode, Body: short(raw)}
 		}
 		if out != nil && len(raw) > 0 {
 			if err := json.Unmarshal(raw, out); err != nil {
-				return fmt.Errorf("keycloak: %s: unexpected answer: %w", op, err)
+				return nil, fmt.Errorf("keycloak: %s: unexpected answer: %w", op, err)
 			}
 		}
-		return nil
+		return res.Header, nil
 	}
 }
 

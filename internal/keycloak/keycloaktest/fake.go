@@ -50,8 +50,10 @@ type Server struct {
 	Mappers     map[string][]map[string]any
 	Imports     map[string]map[string]string // import-config answers by fromUrl
 	TokenCalls  int
-	Logouts     []string // user ids signed out everywhere
-	Deleted     []string // user ids whose accounts were deleted
+	Logouts     []string                  // user ids signed out everywhere
+	Deleted     []string                  // user ids whose accounts were deleted
+	Accounts    map[string]map[string]any // user representations by id
+	Down        bool                      // answer 503 to every admin call, as if Keycloak were failing
 	tokens      map[string]bool
 }
 
@@ -59,7 +61,7 @@ type Server struct {
 func New(t testing.TB) *Server {
 	f := &Server{Sessions: map[string][]Session{}, Credentials: map[string][]Credential{},
 		IdPs: map[string]map[string]any{}, Mappers: map[string][]map[string]any{},
-		Imports: map[string]map[string]string{}, tokens: map[string]bool{}}
+		Imports: map[string]map[string]string{}, Accounts: map[string]map[string]any{}, tokens: map[string]bool{}}
 	f.Server = httptest.NewServer(http.HandlerFunc(f.serve))
 	t.Cleanup(f.Close)
 	return f
@@ -89,6 +91,38 @@ func (f *Server) AddCredential(userID, typ, label string) string {
 	c := Credential{ID: randomID(), Type: typ, UserLabel: label, CreatedDate: time.Now().UnixMilli()}
 	f.Credentials[userID] = append(f.Credentials[userID], c)
 	return c.ID
+}
+
+// AddAccount records an account with this email (also its username) and returns its id.
+func (f *Server) AddAccount(email, first, last string) string {
+	f.Lock()
+	defer f.Unlock()
+	id := uuidLike()
+	f.Accounts[id] = map[string]any{"id": id, "username": strings.ToLower(email), "email": email,
+		"emailVerified": true, "enabled": true, "firstName": first, "lastName": last}
+	return id
+}
+
+// Account returns a copy of the account's representation, or nil.
+func (f *Server) Account(id string) map[string]any {
+	f.Lock()
+	defer f.Unlock()
+	a, ok := f.Accounts[id]
+	if !ok {
+		return nil
+	}
+	b, _ := json.Marshal(a)
+	var out map[string]any
+	_ = json.Unmarshal(b, &out)
+	return out
+}
+
+func uuidLike() string {
+	b := make([]byte, 16)
+	_, _ = rand.Read(b)
+	b[6], b[8] = b[6]&0x0f|0x40, b[8]&0x3f|0x80
+	h := hex.EncodeToString(b)
+	return h[:8] + "-" + h[8:12] + "-" + h[12:16] + "-" + h[16:20] + "-" + h[20:]
 }
 
 // ExpireTokens makes every issued access token invalid, as if Keycloak restarted with new keys.
@@ -135,9 +169,57 @@ func (f *Server) serve(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
 		return
 	}
+	if f.Down {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "unavailable"})
+		return
+	}
 	parts := strings.Split(strings.TrimPrefix(r.URL.Path, prefix), "/")
 	route := r.Method + " " + strings.Join(pattern(parts), "/")
 	switch route {
+	case "GET users":
+		email := strings.ToLower(r.URL.Query().Get("email"))
+		out := []map[string]any{}
+		for _, a := range f.Accounts {
+			if e, _ := a["email"].(string); email == "" || strings.ToLower(e) == email {
+				out = append(out, a)
+			}
+		}
+		writeJSON(w, http.StatusOK, out)
+	case "POST users":
+		var in map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&in)
+		email, _ := in["email"].(string)
+		for _, a := range f.Accounts {
+			if e, _ := a["email"].(string); strings.EqualFold(e, email) {
+				writeJSON(w, http.StatusConflict, map[string]string{"errorMessage": "User exists with same email"})
+				return
+			}
+		}
+		id := uuidLike()
+		in["id"] = id
+		if _, ok := in["username"]; !ok {
+			in["username"] = strings.ToLower(email)
+		}
+		f.Accounts[id] = in
+		w.Header().Set("Location", f.URL+prefix+"users/"+id)
+		w.WriteHeader(http.StatusCreated)
+	case "GET users/*":
+		a, ok := f.Accounts[parts[1]]
+		if !ok {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "User not found"})
+			return
+		}
+		writeJSON(w, http.StatusOK, a)
+	case "PUT users/*":
+		if _, ok := f.Accounts[parts[1]]; !ok {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "User not found"})
+			return
+		}
+		var in map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&in)
+		in["id"] = parts[1]
+		f.Accounts[parts[1]] = in
+		w.WriteHeader(http.StatusNoContent)
 	case "GET users/*/sessions":
 		writeJSON(w, http.StatusOK, orEmpty(f.Sessions[parts[1]]))
 	case "POST users/*/logout":
@@ -157,6 +239,7 @@ func (f *Server) serve(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "Sesssion not found"})
 	case "DELETE users/*":
 		f.Deleted = append(f.Deleted, parts[1])
+		delete(f.Accounts, parts[1])
 		delete(f.Sessions, parts[1])
 		delete(f.Credentials, parts[1])
 		w.WriteHeader(http.StatusNoContent)

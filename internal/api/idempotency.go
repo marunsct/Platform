@@ -61,6 +61,9 @@ func (s *Server) idempotent(next http.Handler) http.Handler {
 		if principal == uuid.Nil {
 			principal = p.AppID
 		}
+		if principal == uuid.Nil {
+			principal = scimTokenFrom(r.Context()).ID
+		}
 
 		stored, err := s.store.ClaimIdempotencyKey(r.Context(), principal, key, h.Sum(nil))
 		switch {
