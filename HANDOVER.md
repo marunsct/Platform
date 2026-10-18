@@ -74,9 +74,20 @@ self-hosted, open standards, nothing phones home).
   RLS, portal links, audit sink, v0.28.0) merged into AgentCanvas `main`. Full status and gaps: doc 21 §5.
 - **End to end, 2026-10-18:** onboarding, identity (sessions, MFA, SSO) and AgentCanvas conformance all pass against a
   real Keycloak. The run found pool starvation (fixed in `store.Open`) and the realm's hard-coded SMTP host (now env).
-- **Next:** the gaps in doc 21 §5; DevFlow (TS7d) only when the owner asks.
-- **Was next:** doc 21 §3: any-language kit
-  (TS7e: OpenAPI, TypeScript SDK, conformance CLI, contract SQL for other databases).
+- **Built 2026-10-18 on `portal-agents-scim-audit` (migrations 0016–0023):** portal pages for agents, directory sync,
+  audit log and SSO (source only); SCIM Bulk and per-connection audit; instant token revocation (§21) in API and
+  all SDKs; agent consent (§20.5); KEK providers (Vault Transit, AWS KMS, GCP KMS, Azure Key Vault), per-tenant keys,
+  BYOK and crypto-shredding (§9); metering, quotas and billing export to Stripe/Lago/OpenMeter (§22); access reviews
+  (§18.4); AI oversight records and EU AI Act / ISO 42001 readiness mapping (§20.6); temporary-password and bulk
+  invitations (§5.1); `matura import` from Auth0/Clerk/Keycloak (§5.1.1); `:list-users` (who has access);
+  `matura-mockidp`; sealed export bundles; whitepaper and questionnaire templates. Full Go suite passes with
+  `-race` against PostgreSQL 16; TS SDK 75/75. Doc 21 §5 lists what is left.
+- **Left for the owner (cannot be done in the cloud workspace, npm and most networks blocked):** build the portal
+  (`cd web/portal && npm ci && npm run typecheck && npm test && npm run build`, commit `internal/portal/dist`); run
+  the Python SDK suite (`uv run pytest`); build the Keycloak extension and rerun the e2e scripts against a real
+  Keycloak (SSO-only enforcement with break-glass and step-up `acr` need Java work in `keycloak/extensions`); real
+  cloud KMS and billing-provider accounts; a Kubernetes install, load tests at doc 17 scale, a DR game day, an
+  external pen test, and the 1.0 release. DevFlow (TS7d) only when the owner asks.
 - `main` holds LICENSE, SECURITY.md, CONTRIBUTING.md.
 
 ## 3. Where to read

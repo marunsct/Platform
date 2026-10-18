@@ -72,9 +72,22 @@ Checked end to end on 2026-10-18 against Keycloak 26.4 with the extension, matur
 (`scripts/e2e_invite_signup.mjs`), sessions, MFA reset and tenant SSO (`scripts/e2e_identity.py`), and AgentCanvas
 passing all 19 conformance checks.
 
-Not built yet: instant revocation (access tokens live up to 5 minutes), OpenBao or KMS for the key-encryption key and
-crypto-shredding, billing adapters, SCIM bulk operations, the portal pages for SSO, SCIM, agents and the audit log are written and await a full typecheck and a `dist` rebuild
-where npm can reach its registry.
+Built on 2026-10-18 (branch `portal-agents-scim-audit`, migrations 0016–0023), closing the earlier gaps: instant
+revocation (§21), agent consent (§20.5), KMS and Vault Transit for the key-encryption key with per-tenant keys, BYOK
+and crypto-shredding (§9), metering and billing adapters (§22), SCIM bulk, access reviews (§18.4), AI oversight
+(§20.6), temporary-password and bulk invitations (§5.1), user import (§5.1.1), `:list-users`, the mock OIDC IdP, and
+the whitepaper and questionnaire templates. The portal pages for SSO, SCIM, agents and the audit log are written.
+
+Still open, all needing an environment this workspace does not have:
+
+- **Portal build:** typecheck, tests and a `dist` rebuild where npm can reach its registry.
+- **Keycloak Java:** SSO-only enforcement with break-glass, step-up (`acr`), recovery-code prompts; then rerun the
+  e2e scripts against a real Keycloak.
+- **Real providers:** the KMS adapters and billing adapters are tested against recorded protocols and fakes, not
+  live accounts; a mock SAML IdP is not built (`matura-mockidp` speaks OIDC only).
+- **Operations:** a Kubernetes install, load tests at doc 17 scale, a DR game day, an external pen test, the 1.0
+  release.
+- **DevFlow (TS7d):** on hold at the owner's request.
 
 ## 6. Risks to finishing
 
