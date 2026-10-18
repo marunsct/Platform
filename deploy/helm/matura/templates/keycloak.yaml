@@ -66,6 +66,13 @@ spec:
               valueFrom: { secretKeyRef: { name: {{ include "matura.secrets" . }}, key: internalToken } }
             - name: MATURA_KEYCLOAK_CLIENT_SECRET
               valueFrom: { secretKeyRef: { name: {{ include "matura.secrets" . }}, key: keycloakClientSecret, optional: true } }
+            {{- with .Values.smtp }}
+            {{- if .addr }}
+            - { name: MATURA_KEYCLOAK_SMTP_HOST, value: {{ splitList ":" .addr | first | quote }} }
+            - { name: MATURA_KEYCLOAK_SMTP_PORT, value: {{ splitList ":" .addr | last | quote }} }
+            {{- end }}
+            - { name: MATURA_KEYCLOAK_SMTP_FROM, value: {{ .from | quote }} }
+            {{- end }}
           readinessProbe:
             httpGet: { path: /health/ready, port: management }
           startupProbe:

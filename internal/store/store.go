@@ -47,6 +47,24 @@ type Store struct {
 
 func New(pool *pgxpool.Pool) *Store { return &Store{pool: pool} }
 
+// LeaderConns is how many connections the background loops can hold at once: each leader keeps its advisory lock
+// on a connection of its own for as long as it leads (TryLeader).
+const LeaderConns = 9
+
+// Open connects a pool sized for maturad. pgx defaults to max(4, CPUs) connections, which the leader loops alone
+// can exhaust on a small machine and leave no connection for requests; unless the URL sets pool_max_conns, the
+// pool gets LeaderConns more than that default.
+func Open(ctx context.Context, url string) (*pgxpool.Pool, error) {
+	cfg, err := pgxpool.ParseConfig(url)
+	if err != nil {
+		return nil, err
+	}
+	if !strings.Contains(url, "pool_max_conns") {
+		cfg.MaxConns += LeaderConns
+	}
+	return pgxpool.NewWithConfig(ctx, cfg)
+}
+
 func (s *Store) Ping(ctx context.Context) error { return s.pool.Ping(ctx) }
 
 func uuidSetting(id uuid.UUID) string {

@@ -25,9 +25,9 @@
   "webAuthnPolicyPasswordlessRequireResidentKey": "Yes",
   "webAuthnPolicyPasswordlessPasskeysEnabled": true,
   "smtpServer": {
-    "host": "mailpit",
-    "port": "1025",
-    "from": "no-reply@matura.local"
+    "host": "${env.MATURA_KEYCLOAK_SMTP_HOST:mailpit}",
+    "port": "${env.MATURA_KEYCLOAK_SMTP_PORT:1025}",
+    "from": "${env.MATURA_KEYCLOAK_SMTP_FROM:no-reply@matura.local}"
   },
   "roles": {
     "realm": [

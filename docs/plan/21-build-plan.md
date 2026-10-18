@@ -61,7 +61,22 @@ Ordered so that each step is testable without the next one.
 | M5 | TS16–TS23 | Helm chart with the same three containers as Compose |
 | M6 | TS24–TS27 | `matura check` readiness score over settings that already exist |
 
-## 5. Risks to finishing
+## 5. Status (2026-10-18)
+
+M1 is built and merged, and so is most of M3 to M6: audit log (TS9), operator console backend (TS10), OpenFGA
+(TS11), MFA and sessions (TS12), per-tenant SSO (TS13), SCIM (TS14), agent identity (TS15), data rights (TS17),
+Helm chart, backups and metrics, readiness and trust page (TS24, TS25), the portal (TS3, TS8) and the Go SDK.
+AgentCanvas runs on Matura (AgentCanvas#49 and #50 merged). DevFlow (TS7d) is on hold at the owner's request.
+
+Checked end to end on 2026-10-18 against Keycloak 26.4 with the extension, maturad and Mailpit: invitation and sign-up
+(`scripts/e2e_invite_signup.mjs`), sessions, MFA reset and tenant SSO (`scripts/e2e_identity.py`), and AgentCanvas
+passing all 19 conformance checks.
+
+Not built yet: instant revocation (access tokens live up to 5 minutes), OpenBao or KMS for the key-encryption key and
+crypto-shredding, billing adapters, SCIM bulk operations, consent screens for agents, portal pages for SSO, SCIM,
+agents and audit, and per-actor audit of SCIM changes (recorded as `system/scim`).
+
+## 6. Risks to finishing
 
 | Risk | What we do |
 |---|---|

@@ -3,6 +3,39 @@
 ## Unreleased
 
 ### Added
+- Agents and service accounts as tenant principals (TS15): agent tokens through Keycloak carry `kind` and `act`
+  (who the agent acts for); SDK helpers for principal kind and protected resources; migration 0015
+  (docs/guide/agents.md, spec 02 §20).
+- SCIM 2.0 per tenant (TS14): users and groups provisioned from Okta or Entra ID, groups feeding OpenFGA; migration
+  0014 (docs/guide/scim.md, spec 02 §19).
+- Fine-grained permissions on OpenFGA (TS11): a syncer writes tuples from memberships and grants; check and list
+  endpoints answer 501 until `MATURA_OPENFGA_URL` is set; Compose runs OpenFGA (migration 0013, spec 02 §18).
+- MFA and sessions (TS12): tenants can require a second factor (Keycloak authenticator `matura-mfa-policy`); users
+  list and end their sessions; owners list members' sessions and reset their MFA (spec 02 §16).
+- Per-tenant SSO (TS13): tenants connect an OIDC or SAML identity provider, verify their email domains, and sign-ins
+  through it join the tenant just in time; other domains are refused (migration 0011, docs/guide/sso.md, §17).
+- Readiness and trust (TS24, TS25): `matura check` scores an installation's settings, collects evidence, and an
+  optional public trust page; policy templates in docs/templates (docs/guide/readiness.md, §15).
+- Data rights and retention (TS17): tenant export, user access and erasure requests (Keycloak accounts of erased
+  users are deleted), audit retention (migration 0012, §14).
+- Operator console backend (TS10): tenant lifecycle (suspend, delete with a grace period, purge), entitlements and
+  time-boxed support access (migration 0009, §5.3).
+- Audit log (TS9): every change is written with a hash chain in the same transaction, streamed to external sinks, and
+  readable per tenant; tenant security policies (migration 0008, §13).
+- Customer portal (TS3, TS8), served by maturad at `/portal/`: members, invitations, apps, workspaces, roles and the
+  user's own account, on a small design system with PKCE sign-in (docs/guide/portal.md).
+- Go SDK (`sdk/go`, its own module); placement changes are versioned on their own in the contract tables, which
+  closes the late-replay gap in the Python and TypeScript SDKs.
+- Helm chart (`deploy/helm/matura`: maturad, Keycloak, ingress, network policy, ServiceMonitor), backup and restore
+  tooling (`scripts/backup.sh`) and Prometheus metrics on a separate listener (`MATURA_METRICS_ADDR`)
+  (docs/guide/kubernetes.md, docs/guide/backup.md).
+- The realm's SMTP server comes from `MATURA_KEYCLOAK_SMTP_HOST`, `_PORT` and `_FROM` (the chart sets them from
+  `smtp`), so Keycloak's verification and reset emails reach a real mail server.
+
+### Fixed
+- maturad's connection pool now has room beside the background leaders. Each leader holds a connection for as long
+  as it leads, and pgx's default of max(4, CPUs) left none for requests on a small machine: sign-in hung on the MFA
+  policy call. The pool gets nine more connections unless the URL sets `pool_max_conns`.
 - Manifests may carry a `conformance` section (kept, not used by maturad). AgentCanvas passes all 19
   `matura-conformance` checks; the run found and fixed a role-mapping gap in AgentCanvas#49.
 - TypeScript SDK `@matura/sdk` (sdk/typescript, no runtime dependencies): token verification, `Principal`, webhook

@@ -16,7 +16,6 @@ import (
 
 	"github.com/MicahParks/keyfunc/v3"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/marunsct/Platform/internal/access"
 	"github.com/marunsct/Platform/internal/api"
@@ -65,7 +64,7 @@ func run(log *slog.Logger) error {
 		log.Info("migrations applied")
 	}
 
-	pool, err := pgxpool.New(ctx, cfg.DatabaseURL)
+	pool, err := store.Open(ctx, cfg.DatabaseURL)
 	if err != nil {
 		return err
 	}

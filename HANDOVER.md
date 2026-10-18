@@ -67,7 +67,14 @@ self-hosted, open standards, nothing phones home).
   dialect not yet run against a server). Known gap in both SDKs: placement events set `data_mode` without a version
   check, so a late replay of an older placement could overwrite a newer mode.
 - **Conformance on AgentCanvas, 2026-10-17:** 19/19 pass after fixing `role_for` in AgentCanvas#49 (a role skipping a rung no longer maps upward).
-- **Next:** Go SDK, Postgres run of the TypeScript SDK, then M2 (customer portal TS8, DevFlow TS7d).
+- **2026-10-17/18, owner grant:** build the complete product without waiting for permission (merging included);
+  **do not touch DevFlow**. Built and merged on `claude/project-thread-nhbr1g`: Go SDK, Helm chart, backups,
+  metrics, audit log, operator console backend, portal, data rights, readiness and trust page, MFA and sessions,
+  tenant SSO, OpenFGA, SCIM, agent identity (migrations 0008–0015; spec 02 §13–§20). AgentCanvas#50 (workspaces,
+  RLS, portal links, audit sink, v0.28.0) merged into AgentCanvas `main`. Full status and gaps: doc 21 §5.
+- **End to end, 2026-10-18:** onboarding, identity (sessions, MFA, SSO) and AgentCanvas conformance all pass against a
+  real Keycloak. The run found pool starvation (fixed in `store.Open`) and the realm's hard-coded SMTP host (now env).
+- **Next:** the gaps in doc 21 §5; DevFlow (TS7d) only when the owner asks.
 - **Was next:** doc 21 §3: any-language kit
   (TS7e: OpenAPI, TypeScript SDK, conformance CLI, contract SQL for other databases).
 - `main` holds LICENSE, SECURITY.md, CONTRIBUTING.md.

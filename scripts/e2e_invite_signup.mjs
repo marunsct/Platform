@@ -42,7 +42,7 @@ async function pkceLogin(ctx, clientId, redirectUri, creds) {
     redirect_uri: redirectUri, scope: "openid email profile", code_challenge: challenge, code_challenge_method: "S256" })).catch(() => {});
   if (creds) { await page.fill("#username", creds.user); await page.fill("#password", creds.password); await page.click("#kc-login").catch(() => {}); }
   for (let i = 0; i < 50 && !code; i++) await page.waitForTimeout(100);
-  if (!code) throw new Error("no code for " + clientId + " at " + page.url());
+  if (!code) throw new Error("no code for " + clientId + " at " + page.url() + "\n" + (await page.innerText("body").catch(() => "")).slice(0, 600));
   await page.close();
   return (await must(await fetch(REALM + "/protocol/openid-connect/token", form({ grant_type: "authorization_code",
     client_id: clientId, code, redirect_uri: redirectUri, code_verifier: verifier })), "token " + clientId)).access_token;
