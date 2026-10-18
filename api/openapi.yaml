@@ -50,6 +50,8 @@ tags:
     description: Tenant security policies.
   - name: sessions
     description: Keycloak sessions and second factors (TS12).
+  - name: agents
+    description: Tenant service accounts and AI agents, each a Keycloak confidential client (TS15).
   - name: sso
     description: Verified domains, per-tenant identity providers and home-realm discovery (TS13).
   - name: readiness
@@ -131,6 +133,44 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Trust'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /.well-known/oauth-protected-resource:
+    get:
+      operationId: getProtectedResourceMetadata
+      summary: maturad's API as an OAuth protected resource (RFC 9728)
+      description: |
+        Names the Keycloak realm as the authorisation server for maturad's API, so MCP clients and agents can
+        discover where to get a token. A 401 for a missing or invalid bearer token points here in
+        `WWW-Authenticate: Bearer resource_metadata="…"`. 404 when `MATURA_PUBLIC_URL` or the issuer is unset.
+      tags: [health]
+      security: []
+      responses:
+        '200':
+          description: The metadata.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [resource, authorization_servers]
+                properties:
+                  resource:
+                    type: string
+                    format: uri
+                  authorization_servers:
+                    type: array
+                    items:
+                      type: string
+                      format: uri
+                  bearer_methods_supported:
+                    type: array
+                    items:
+                      type: string
+                  resource_name:
+                    type: string
+                  resource_documentation:
+                    type: string
+                    format: uri
         '404':
           $ref: '#/components/responses/NotFound'
   /invitations/accept:
@@ -1020,6 +1060,217 @@ paths:
           $ref: '#/components/responses/Conflict'
 
   # --- placements (tenant view) -----------------------------------------------------------------------------------
+  /v1/tenants/{tid}/agents:
+    parameters:
+      - $ref: '#/components/parameters/tid'
+    get:
+      operationId: listAgents
+      summary: List the tenant's service accounts and agents
+      description: Owners and admins. Deleted agents are not listed.
+      tags: [agents]
+      responses:
+        '200':
+          description: The agents, by name, with their grants.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      operationId: createAgent
+      summary: Create a service account or AI agent
+      description: |
+        Owners and admins. Creates a Keycloak confidential client (client credentials and standard token exchange,
+        the Matura token mapper attached) whose service-account user becomes a user of `kind` service or agent and a
+        member of the tenant; `grants` are app roles as for people. The client secret is in this response only
+        (`Cache-Control: no-store`); rotate it with `:rotate-secret`. Apps receive `user.created`,
+        `membership.added` and `grant.added` events with the user's `kind`. Counts against the plan's `max_agents`.
+      tags: [agents]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [kind, name]
+              properties:
+                kind:
+                  type: string
+                  enum: [service, agent]
+                name:
+                  type: string
+                  maxLength: 100
+                description:
+                  type: string
+                  maxLength: 1000
+                owner_id:
+                  type: string
+                  format: uuid
+                  description: A person who is an active member; default the caller.
+                expires_at:
+                  type: string
+                  format: date-time
+                  description: After this time no token is issued for the agent or on its behalf.
+                grants:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/AgentGrantRequest'
+      responses:
+        '201':
+          description: The agent with its client secret, shown once.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentWithSecret'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '402':
+          $ref: '#/components/responses/PlanLimit'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '502':
+          $ref: '#/components/responses/IdentityRefused'
+        '503':
+          $ref: '#/components/responses/IdentityUnavailable'
+  /v1/tenants/{tid}/agents/{id}:
+    parameters:
+      - $ref: '#/components/parameters/tid'
+      - $ref: '#/components/parameters/id'
+    get:
+      operationId: getAgent
+      summary: One service account or agent
+      tags: [agents]
+      responses:
+        '200':
+          description: The agent; `ETag` is its version.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Agent'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      operationId: patchAgent
+      summary: Change, deactivate or reactivate an agent
+      description: |
+        Owners and admins. `status: deactivated` is the kill switch: maturad refuses every token for the agent and
+        every delegated token naming it at once (the mapper caches answers for 5 s), Keycloak's client is disabled,
+        and apps get `user.deactivated`. Tokens already issued expire within their lifetime (5 minutes).
+        `expires_at: null` removes the expiry. Audited as `agent.updated`, `agent.deactivated` or
+        `agent.reactivated`.
+      tags: [agents]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                name:
+                  type: string
+                  maxLength: 100
+                description:
+                  type: string
+                  maxLength: 1000
+                owner_id:
+                  type: string
+                  format: uuid
+                expires_at:
+                  type: [string, 'null']
+                  format: date-time
+                status:
+                  type: string
+                  enum: [active, deactivated]
+      responses:
+        '200':
+          description: The agent.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Agent'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '412':
+          $ref: '#/components/responses/PreconditionFailed'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '502':
+          $ref: '#/components/responses/IdentityRefused'
+        '503':
+          $ref: '#/components/responses/IdentityUnavailable'
+    delete:
+      operationId: deleteAgent
+      summary: Delete an agent
+      description: |
+        Owners and admins. Deletes the Keycloak client (and its service-account user), revokes the agent's grants,
+        removes its membership and marks its user deleted (contract events). Audited as `agent.deleted`.
+      tags: [agents]
+      responses:
+        '204':
+          description: Deleted.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '502':
+          $ref: '#/components/responses/IdentityRefused'
+        '503':
+          $ref: '#/components/responses/IdentityUnavailable'
+  /v1/tenants/{tid}/agents/{id}:rotate-secret:
+    parameters:
+      - $ref: '#/components/parameters/tid'
+      - $ref: '#/components/parameters/id'
+    post:
+      operationId: rotateAgentSecret
+      summary: Rotate an agent's client secret
+      description: Owners and admins. The old secret stops working at once. Audited as `agent.secret_rotated`.
+      tags: [agents]
+      responses:
+        '200':
+          description: The agent with its new client secret, shown once.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentWithSecret'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '502':
+          $ref: '#/components/responses/IdentityRefused'
+        '503':
+          $ref: '#/components/responses/IdentityUnavailable'
   /v1/tenants/{tid}/placements:
     parameters:
       - $ref: '#/components/parameters/tid'
@@ -3634,6 +3885,12 @@ paths:
                   description: |
                     When the mapper last issued a token in this session, Unix ms; checked against the
                     tenant's idle_timeout. A refusal for either is `session_expired`.
+                audience:
+                  type: string
+                  description: |
+                    For an agent's client: the `matura_app`, `audience` or `resource` parameter of the token
+                    request, an app's client id or one of its manifest's `auth.resources` (or maturad's own
+                    audience). Empty: the only app the agent holds grants in.
       responses:
         '200':
           description: The claims.
@@ -3977,6 +4234,12 @@ components:
         application/problem+json:
           schema:
             $ref: '#/components/schemas/Problem'
+    IdentityRefused:
+      description: Keycloak's admin API refused the change (`keycloak-error`).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
     IdentityUnavailable:
       description: Keycloak's admin API is not configured or not answering.
       content:
@@ -3985,8 +4248,8 @@ components:
             $ref: '#/components/schemas/Problem'
     PlanLimit:
       description: |
-        The tenant's plan does not allow it (`plan-limit`): `limit` names it (`max_members`, `max_workspaces` or
-        `apps`), with `max` and `used` for counted limits.
+        The tenant's plan does not allow it (`plan-limit`): `limit` names it (`max_members`, `max_workspaces`,
+        `max_agents` or `apps`), with `max` and `used` for counted limits.
       content:
         application/problem+json:
           schema:
@@ -3997,7 +4260,7 @@ components:
                 properties:
                   limit:
                     type: string
-                    enum: [max_members, max_workspaces, apps]
+                    enum: [max_members, max_workspaces, max_agents, apps]
                   max:
                     type: integer
                   used:
@@ -4310,6 +4573,9 @@ components:
           type: integer
         max_workspaces:
           type: integer
+        max_agents:
+          type: integer
+          description: Service accounts and AI agents that are not deleted.
         apps:
           type: array
           items:
@@ -4343,12 +4609,14 @@ components:
           $ref: '#/components/schemas/Limits'
         usage:
           type: object
-          required: [members, workspaces, apps]
+          required: [members, workspaces, agents, apps]
           properties:
             members:
               type: integer
-              description: Members holding a seat (active or deactivated).
+              description: People holding a seat (active or deactivated); agents are counted apart.
             workspaces:
+              type: integer
+            agents:
               type: integer
             apps:
               type: array
@@ -4464,6 +4732,10 @@ components:
         display_name:
           type: [string, 'null']
           description: In member lists.
+        kind:
+          type: string
+          enum: [human, service, agent]
+          description: The user's kind. Member lists show people only; agents are under `/agents`.
     MembershipList:
       type: object
       required: [items]
@@ -4760,6 +5032,89 @@ components:
         version:
           type: integer
           format: int64
+    AgentGrantRequest:
+      type: object
+      additionalProperties: false
+      required: [app, role]
+      properties:
+        app:
+          type: string
+          description: App slug; the app must be enabled for the tenant.
+        role:
+          type: string
+        workspace_id:
+          type: [string, 'null']
+          format: uuid
+    Agent:
+      type: object
+      required: [id, tenant_id, kind, name, description, owner_id, client_id, status, expires_at, secret_rotated_at,
+                 version, created_by, created_at, updated_at, grants]
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Also its user id, the `sub` of its tokens.
+        tenant_id:
+          type: string
+          format: uuid
+        kind:
+          type: string
+          enum: [service, agent]
+        name:
+          type: string
+        description:
+          type: [string, 'null']
+        owner_id:
+          type: [string, 'null']
+          format: uuid
+        client_id:
+          type: string
+          description: Its Keycloak client id (`agent-…` or `svc-…`), the `azp` of its tokens.
+        status:
+          type: string
+          enum: [active, deactivated]
+        expires_at:
+          type: [string, 'null']
+          format: date-time
+        secret_rotated_at:
+          type: string
+          format: date-time
+        version:
+          type: integer
+          format: int64
+        created_by:
+          type: [string, 'null']
+          format: uuid
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        grants:
+          type: array
+          items:
+            $ref: '#/components/schemas/Grant'
+    AgentWithSecret:
+      allOf:
+        - $ref: '#/components/schemas/Agent'
+        - type: object
+          required: [client_secret]
+          properties:
+            client_secret:
+              type: string
+              description: Shown once.
+            token_endpoint:
+              type: string
+              format: uri
+    AgentList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Agent'
     GrantList:
       type: object
       required: [items]
@@ -5179,6 +5534,26 @@ components:
             format: int64
         pmode:
           $ref: '#/components/schemas/DataMode'
+        kind:
+          type: string
+          enum: [human, service, agent]
+          description: The kind of the token's subject.
+        act:
+          type: object
+          description: "Delegated tokens (RFC 8693): the agent acting for the subject."
+          required: [sub, kind, client_id]
+          properties:
+            sub:
+              type: string
+              format: uuid
+            kind:
+              type: string
+              enum: [service, agent]
+            client_id:
+              type: string
+        aud:
+          type: string
+          description: Agent tokens only; the client id of the app the token is for, added to the token's audience.
     TokenRefusal:
       type: object
       required: [error, error_description, detail]
@@ -5219,12 +5594,16 @@ components:
           properties:
             kind:
               type: string
-              enum: [user, operator, app, system]
+              enum: [user, operator, app, system, agent, service]
             id:
               type: [string, 'null']
               format: uuid
             email:
               type: string
+            on_behalf_of:
+              type: string
+              format: uuid
+              description: A delegated agent call; the person the agent (id) acted for.
         action:
           type: string
           description: e.g. `membership.added`, `invitation.created`, `security_policy.updated`, `authz.denied`.

@@ -24,6 +24,11 @@ type TokenRequest struct {
 	SessionStarted time.Time
 	SessionLastUse time.Time
 	Now            time.Time // default time.Now()
+	// App is the audience an agent's client asked for (audience, resource or matura_app parameter): an app's client
+	// id or one of its manifest's auth resources. Empty: the one app the agent has grants for.
+	App string
+	// APIAudience is maturad's own API audience (MATURA_AUDIENCE): an agent may ask for a token for it.
+	APIAudience string
 }
 
 // TokenContext is the Matura part of an access token (contract §2).
@@ -37,6 +42,16 @@ type TokenContext struct {
 	PermsRef    string           `json:"perms_ref,omitempty"`
 	Versions    map[string]int64 `json:"ver"`
 	PlaceMode   string           `json:"pmode,omitempty"`
+	Kind        string           `json:"kind"`          // of the subject: human, service or agent (TS15)
+	Act         *TokenActor      `json:"act,omitempty"` // delegated tokens: the agent acting for sub (RFC 8693)
+	Audience    string           `json:"aud,omitempty"` // agent tokens: the app the token is for
+}
+
+// TokenActor is the act claim of a delegated token (RFC 8693 §4.1).
+type TokenActor struct {
+	Sub      uuid.UUID `json:"sub"`
+	Kind     string    `json:"kind"`
+	ClientID string    `json:"client_id"`
 }
 
 // TokenRefusal says why no token may be issued; Code becomes the OAuth error description.
@@ -50,6 +65,18 @@ func refuse(code, msg string) error { return &TokenRefusal{Code: code, Msg: msg}
 // they chose. It refuses inactive users, tenants the user does not belong to, inactive tenants and tenants that
 // have not enabled the app (RL-2). Suspended tenants and tenants pending deletion refuse everyone, owners too (TN-3).
 func (s *Store) TokenContextFor(ctx context.Context, req TokenRequest) (TokenContext, error) {
+	var ag Agent
+	err := s.tx(ctx, Scope{Operator: true}, func(tx pgx.Tx) error {
+		var err error
+		ag, err = agentByClient(ctx, tx, req.ClientID)
+		return err
+	})
+	switch {
+	case err == nil:
+		return s.agentTokenContext(ctx, ag, req)
+	case err != ErrNotFound:
+		return TokenContext{}, err
+	}
 	u, err := s.UpsertUser(ctx, req.User)
 	if err != nil {
 		return TokenContext{}, err
@@ -57,7 +84,8 @@ func (s *Store) TokenContextFor(ctx context.Context, req TokenRequest) (TokenCon
 	if u.Status != "active" {
 		return TokenContext{}, refuse("user_inactive", "this account is deactivated")
 	}
-	out := TokenContext{TenantRoles: []string{}, Roles: []string{}, Versions: map[string]int64{"u": u.Version}}
+	out := TokenContext{TenantRoles: []string{}, Roles: []string{}, Versions: map[string]int64{"u": u.Version},
+		Kind: u.Kind}
 	err = s.tx(ctx, Scope{UserID: u.ID}, func(tx pgx.Tx) error {
 		app, err := scanApp(tx.QueryRow(ctx, `SELECT `+appCols+` FROM app WHERE client_id = $1`, req.ClientID))
 		if err == ErrNotFound || (err == nil && app.Status != "active") {
@@ -73,14 +101,8 @@ func (s *Store) TokenContextFor(ctx context.Context, req TokenRequest) (TokenCon
 		if err := setTenant(ctx, tx, t.ID); err != nil {
 			return err
 		}
-		switch t.Status {
-		case "active":
-		case "suspended":
-			return refuse("tenant_suspended", "this organisation is suspended")
-		case "pending_deletion":
-			return refuse("tenant_pending_deletion", "this organisation is scheduled for deletion")
-		default:
-			return refuse("tenant_inactive", "this organisation is not available")
+		if err := tenantRefusal(*t); err != nil {
+			return err
 		}
 		if err := checkSessionLimits(ctx, tx, t.ID, req); err != nil {
 			return err

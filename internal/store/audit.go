@@ -20,12 +20,14 @@ import (
 // Actor is who caused a change, as the audit log records it. The API puts it in the request context; work with no
 // actor in its context (the provisioner, the relay) is recorded as "system".
 type Actor struct {
-	Kind      string // user, operator, app or system
-	ID        uuid.UUID
-	Email     string
-	RequestID string
-	IP        string
-	UserAgent string
+	Kind  string // user, operator, app, system, agent or service
+	ID    uuid.UUID
+	Email string
+	// OnBehalfOf is the person an agent acts for in a delegated call (token act claim): ID is then the agent.
+	OnBehalfOf uuid.UUID
+	RequestID  string
+	IP         string
+	UserAgent  string
 }
 
 type actorKey struct{}
@@ -64,9 +66,10 @@ type AuditEvent struct {
 }
 
 type AuditActor struct {
-	Kind  string     `json:"kind"`
-	ID    *uuid.UUID `json:"id"`
-	Email string     `json:"email"`
+	Kind       string     `json:"kind"`
+	ID         *uuid.UUID `json:"id"`
+	Email      string     `json:"email"`
+	OnBehalfOf *uuid.UUID `json:"on_behalf_of,omitempty"` // delegated agent calls (TS15)
 }
 
 var genesis = make([]byte, sha256.Size)
@@ -90,11 +93,15 @@ func (e AuditEvent) Canonical() ([]byte, error) {
 		}
 		return id.String()
 	}
+	actor := map[string]any{"kind": e.Actor.Kind, "id": str(e.Actor.ID), "email": e.Actor.Email}
+	if e.Actor.OnBehalfOf != nil { // only delegated events carry it, so older events hash as before
+		actor["on_behalf_of"] = str(e.Actor.OnBehalfOf)
+	}
 	rec := map[string]any{
 		"tenant_id":  str(e.TenantID),
 		"seq":        json.Number(strconv.FormatInt(e.Seq, 10)),
 		"time":       e.Time.UTC().Format("2006-01-02T15:04:05.000000Z"),
-		"actor":      map[string]any{"kind": e.Actor.Kind, "id": str(e.Actor.ID), "email": e.Actor.Email},
+		"actor":      actor,
 		"action":     e.Action,
 		"target":     e.Target,
 		"request_id": e.RequestID,
@@ -208,6 +215,9 @@ func audit(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, action, target st
 	if a.ID != uuid.Nil {
 		e.Actor.ID = &a.ID
 	}
+	if a.OnBehalfOf != uuid.Nil {
+		e.Actor.OnBehalfOf = &a.OnBehalfOf
+	}
 	canon, err := e.Canonical()
 	if err != nil {
 		return err
@@ -225,10 +235,11 @@ func audit(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, action, target st
 		return err
 	}
 	if _, err := tx.Exec(ctx, `INSERT INTO audit_event (tenant_id, seq, time, actor_kind, actor_id, actor_email,
-		action, target, request_id, ip, user_agent, data, prev_hash, hash)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+		action, target, request_id, ip, user_agent, data, prev_hash, hash, actor_on_behalf_of)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
 		e.TenantID, e.Seq, e.Time, e.Actor.Kind, e.Actor.ID, nullable(e.Actor.Email), action, target,
-		nullable(e.RequestID), nullable(e.IP), nullable(e.UserAgent), dataCanon.Bytes(), prev, sum[:]); err != nil {
+		nullable(e.RequestID), nullable(e.IP), nullable(e.UserAgent), dataCanon.Bytes(), prev, sum[:],
+		e.Actor.OnBehalfOf); err != nil {
 		return err
 	}
 	_, err = tx.Exec(ctx, `UPDATE audit_chain SET seq = $2, hash = $3 WHERE chain = $1`, tenantID, e.Seq, sum[:])
@@ -252,13 +263,13 @@ func (s *Store) RecordAudit(ctx context.Context, sc Scope, tenantID uuid.UUID, a
 }
 
 const auditCols = `id, tenant_id, seq, time, actor_kind, actor_id, coalesce(actor_email, ''), action, target,
-	coalesce(request_id, ''), coalesce(ip, ''), coalesce(user_agent, ''), data, prev_hash, hash`
+	coalesce(request_id, ''), coalesce(ip, ''), coalesce(user_agent, ''), data, prev_hash, hash, actor_on_behalf_of`
 
 func scanAudit(row pgx.Row) (AuditEvent, error) {
 	var e AuditEvent
 	var prev, hash []byte
 	err := row.Scan(&e.ID, &e.TenantID, &e.Seq, &e.Time, &e.Actor.Kind, &e.Actor.ID, &e.Actor.Email, &e.Action,
-		&e.Target, &e.RequestID, &e.IP, &e.UserAgent, &e.Data, &prev, &hash)
+		&e.Target, &e.RequestID, &e.IP, &e.UserAgent, &e.Data, &prev, &hash, &e.Actor.OnBehalfOf)
 	e.Time = e.Time.UTC()
 	e.PrevHash, e.Hash = hex.EncodeToString(prev), hex.EncodeToString(hash)
 	return e, mapErr(err)
@@ -324,7 +335,7 @@ func (q AuditQuery) where() (string, []any) {
 	}
 	if q.Actor != "" {
 		if id, err := uuid.Parse(q.Actor); err == nil {
-			add("actor_id = $?", id)
+			add("(actor_id = $? OR actor_on_behalf_of = $?)", id)
 		} else {
 			add("lower(actor_email) = lower($?)", q.Actor)
 		}

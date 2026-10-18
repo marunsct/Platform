@@ -118,6 +118,7 @@ func run(log *slog.Logger) error {
 	server.SetSource(cfg.EventSource)
 	server.SetTrustedProxies(cfg.TrustedProxies)
 	server.EnableInternal(cfg.InternalToken)
+	server.SetProtectedResource(cfg.PublicURL, cfg.Audience, cfg.Issuer)
 	if cfg.KeycloakSecret != "" {
 		base, realm, err := keycloak.SplitIssuer(cfg.Issuer)
 		if err != nil {
