@@ -236,3 +236,45 @@ export interface GroupMapping {
   version: number;
   created_at: string;
 }
+
+export interface Domain {
+  tenant_id: string;
+  domain: string;
+  verified: boolean;
+  verified_at: string | null;
+  last_checked_at: string | null;
+  last_error: string | null;
+  record_name: string;
+  record_value: string;
+  version: number;
+  created_at: string;
+}
+
+export type SSOProtocol = "oidc" | "saml";
+
+export interface SSOConnection {
+  tenant_id: string;
+  alias: string;
+  protocol: SSOProtocol;
+  display_name: string;
+  config: Record<string, string>;
+  default_tenant_role: TenantRole;
+  version: number;
+  created_at: string;
+  updated_at: string;
+  idp_hint: string;
+  redirect_uri: string;
+  entity_id?: string;
+  metadata_url?: string;
+  has_client_secret: boolean;
+}
+
+export interface SSOInput {
+  protocol: SSOProtocol;
+  display_name: string;
+  discovery_url?: string;
+  client_id?: string;
+  client_secret?: string;
+  metadata_url?: string;
+  default_tenant_role?: TenantRole;
+}

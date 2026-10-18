@@ -7,6 +7,7 @@ import {
   ChevronsUpDown,
   Bot,
   FolderKanban,
+  KeyRound,
   LayoutDashboard,
   LogOut,
   Mail,
@@ -35,6 +36,7 @@ const tenantNav = [
   { to: "/t/$tid/workspaces", label: "Workspaces", icon: FolderKanban },
   { to: "/t/$tid/roles", label: "Roles", icon: ShieldCheck },
   { to: "/t/$tid/agents", label: "Agents", icon: Bot },
+  { to: "/t/$tid/sso", label: "Single sign-on", icon: KeyRound },
   { to: "/t/$tid/scim", label: "Directory sync", icon: RefreshCw },
   { to: "/t/$tid/audit", label: "Audit log", icon: ScrollText },
 ] as const;

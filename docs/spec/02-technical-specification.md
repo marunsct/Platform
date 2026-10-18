@@ -589,9 +589,9 @@ Keycloak enforces `require_mfa` through the extension (§16.2) and the session l
 
 ## 14. Privacy: export, erasure, retention (TS17)
 
-The parts of TS17 that need no key service. OpenBao transit keys per tenant, SDK field encryption,
-customer-managed keys and crypto-shredding are not built yet; until they are, erasure in the audit log is a
-pseudonymised view (§14.3), not destruction of the stored bytes.
+Per-tenant keys, field encryption, customer-managed keys and crypto-shredding are in §9.2: deleting a tenant
+destroys its keys. A person's erasure inside a tenant that lives on is still a pseudonymised view of the audit log
+(§14.3), since the audit chain must keep verifying.
 
 ### 14.1 Tenant data export
 

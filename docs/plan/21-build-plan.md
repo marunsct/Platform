@@ -73,8 +73,8 @@ Checked end to end on 2026-10-18 against Keycloak 26.4 with the extension, matur
 passing all 19 conformance checks.
 
 Not built yet: instant revocation (access tokens live up to 5 minutes), OpenBao or KMS for the key-encryption key and
-crypto-shredding, billing adapters, SCIM bulk operations, consent screens for agents, a portal page for SSO
-(pages for SCIM, agents and the audit log are written and await a typecheck and `dist` rebuild), and per-actor audit of SCIM changes (recorded as `system/scim`).
+crypto-shredding, billing adapters, SCIM bulk operations, the portal pages for SSO, SCIM, agents and the audit log are written and await a full typecheck and a `dist` rebuild
+where npm can reach its registry.
 
 ## 6. Risks to finishing
 

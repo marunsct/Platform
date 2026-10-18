@@ -2,6 +2,9 @@
 import type { ApiClient } from "./api";
 import type {
   Agent,
+  Domain,
+  SSOConnection,
+  SSOInput,
   AgentWithSecret,
   App,
   AuditPage,
@@ -94,6 +97,15 @@ export function endpoints(api: ApiClient) {
     createGroupMapping: (tid: string, body: { group: string; app: string; role: string }) =>
       api.post<GroupMapping>(`${t(tid)}/scim/group-mappings`, body),
     deleteGroupMapping: (tid: string, id: string) => api.del(`${t(tid)}/scim/group-mappings/${id}`),
+
+    domains: (tid: string) => items(api.get<Items<Domain>>(`${t(tid)}/domains`)),
+    addDomain: (tid: string, domain: string) => api.post<Domain>(`${t(tid)}/domains`, { domain }),
+    verifyDomain: (tid: string, domain: string) =>
+      api.post<Domain>(`${t(tid)}/domains/${encodeURIComponent(domain)}:verify`),
+    deleteDomain: (tid: string, domain: string) => api.del(`${t(tid)}/domains/${encodeURIComponent(domain)}`),
+    sso: (tid: string) => api.get<SSOConnection>(`${t(tid)}/sso`),
+    createSSO: (tid: string, body: SSOInput) => api.post<SSOConnection>(`${t(tid)}/sso`, body),
+    deleteSSO: (tid: string) => api.del(`${t(tid)}/sso`),
   };
 }
 

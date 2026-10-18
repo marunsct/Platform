@@ -20,6 +20,8 @@ export const keys = {
   auditVerify: (tid: string) => ["tenant", tid, "audit", "verify"] as const,
   scimTokens: (tid: string) => ["tenant", tid, "scim", "tokens"] as const,
   groupMappings: (tid: string) => ["tenant", tid, "scim", "mappings"] as const,
+  domains: (tid: string) => ["tenant", tid, "domains"] as const,
+  sso: (tid: string) => ["tenant", tid, "sso"] as const,
   roles: (app: string) => ["roles", app] as const,
 };
 
