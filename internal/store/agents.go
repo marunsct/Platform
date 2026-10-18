@@ -26,6 +26,7 @@ type Agent struct {
 	ClientID        string     `json:"client_id"`
 	ClientUUID      string     `json:"-"`
 	Status          string     `json:"status"`
+	Consent         string     `json:"consent"` // implicit, or required: people approve it before it acts for them
 	ExpiresAt       *time.Time `json:"expires_at"`
 	SecretRotatedAt time.Time  `json:"secret_rotated_at"`
 	Version         int64      `json:"version"`
@@ -35,13 +36,13 @@ type Agent struct {
 	Grants          []Grant    `json:"grants"`
 }
 
-const agentCols = `id, tenant_id, kind, name, description, owner_id, client_id, client_uuid, status, expires_at,
+const agentCols = `id, tenant_id, kind, name, description, owner_id, client_id, client_uuid, status, consent, expires_at,
 	secret_rotated_at, version, created_by, created_at, updated_at`
 
 func scanAgent(row pgx.Row) (Agent, error) {
 	var a Agent
 	err := row.Scan(&a.ID, &a.TenantID, &a.Kind, &a.Name, &a.Description, &a.OwnerID, &a.ClientID, &a.ClientUUID,
-		&a.Status, &a.ExpiresAt, &a.SecretRotatedAt, &a.Version, &a.CreatedBy, &a.CreatedAt, &a.UpdatedAt)
+		&a.Status, &a.Consent, &a.ExpiresAt, &a.SecretRotatedAt, &a.Version, &a.CreatedBy, &a.CreatedAt, &a.UpdatedAt)
 	a.Grants = []Grant{}
 	return a, mapErr(err)
 }
@@ -63,6 +64,7 @@ type NewAgent struct {
 	Description string
 	OwnerID     uuid.UUID // empty: the creator
 	ExpiresAt   *time.Time
+	Consent     string // implicit (default) or required
 	Grants      []NewGrant
 }
 
@@ -78,6 +80,12 @@ func (in *NewAgent) Check(now time.Time) error {
 		return invalid("description is at most 1000 characters")
 	case in.ExpiresAt != nil && !in.ExpiresAt.After(now):
 		return invalid("expires_at must be in the future")
+	}
+	if in.Consent == "" {
+		in.Consent = "implicit"
+	}
+	if in.Consent != "implicit" && in.Consent != "required" {
+		return invalid("consent must be implicit or required")
 	}
 	return nil
 }
@@ -134,10 +142,10 @@ func (s *Store) CreateAgent(ctx context.Context, sc Scope, tenantID uuid.UUID, i
 		}
 		creator := ActorFrom(ctx).ID
 		out, err = scanAgent(tx.QueryRow(ctx, `INSERT INTO agent (id, tenant_id, kind, name, description, owner_id,
-			client_id, client_uuid, status, expires_at, version, created_by)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'active', $9, $10, $11) RETURNING `+agentCols,
+			client_id, client_uuid, status, consent, expires_at, version, created_by)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'active', $9, $10, $11, $12) RETURNING `+agentCols,
 			userID, tenantID, in.Kind, in.Name, nullable(in.Description), in.OwnerID, clientID, clientUUID,
-			in.ExpiresAt, v, nilIfZero(creator)))
+			in.Consent, in.ExpiresAt, v, nilIfZero(creator)))
 		if err != nil {
 			return err
 		}
@@ -243,6 +251,7 @@ type AgentPatch struct {
 	ExpiresAt   *time.Time
 	ClearExpiry bool
 	Status      *string
+	Consent     *string
 }
 
 // UpdateAgent applies p after the API changed the Keycloak client. A new name renames the user (user.updated);
@@ -284,6 +293,12 @@ func (s *Store) UpdateAgent(ctx context.Context, sc Scope, tenantID, id uuid.UUI
 			}
 			next.ExpiresAt = p.ExpiresAt
 		}
+		if p.Consent != nil {
+			if *p.Consent != "implicit" && *p.Consent != "required" {
+				return invalid("consent must be implicit or required")
+			}
+			next.Consent = *p.Consent
+		}
 		if p.Status != nil {
 			if *p.Status != "active" && *p.Status != "deactivated" {
 				return invalid("status can be active or deactivated; use DELETE to delete an agent")
@@ -295,9 +310,9 @@ func (s *Store) UpdateAgent(ctx context.Context, sc Scope, tenantID, id uuid.UUI
 			return err
 		}
 		if out, err = scanAgent(tx.QueryRow(ctx, `UPDATE agent SET name = $3, description = $4, owner_id = $5,
-			expires_at = $6, status = $7, version = $8, updated_at = now() WHERE tenant_id = $1 AND id = $2
+			expires_at = $6, status = $7, consent = $9, version = $8, updated_at = now() WHERE tenant_id = $1 AND id = $2
 			RETURNING `+agentCols, tenantID, id, next.Name, next.Description, next.OwnerID, next.ExpiresAt,
-			next.Status, v)); err != nil {
+			next.Status, v, next.Consent)); err != nil {
 			return err
 		}
 		action := "agent.updated"

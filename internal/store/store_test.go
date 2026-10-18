@@ -286,6 +286,7 @@ func TestRevocationRevokes(t *testing.T) {
 	tr := store.Revocation{UserID: user, TenantID: &tenant, NotBefore: at}
 	sr := store.Revocation{UserID: user, SessionID: &sid, NotBefore: at}
 	ar := store.Revocation{UserID: agent, NotBefore: at}
+	cr := store.Revocation{UserID: user, ActorID: &agent, NotBefore: at}
 	before, same, after := at.Add(-time.Minute), at.Truncate(time.Second), at.Add(time.Second)
 	cases := []struct {
 		name          string
@@ -306,6 +307,10 @@ func TestRevocationRevokes(t *testing.T) {
 		{"session: another session", sr, user, uuid.Nil, tenant, "s2", before, false},
 		{"agent: its own token", ar, agent, uuid.Nil, tenant, "", before, true},
 		{"agent: acting for a person", ar, user, agent, tenant, "", before, true},
+		{"consent: the agent acting for the person", cr, user, agent, tenant, "", before, true},
+		{"consent: the person's own token", cr, user, uuid.Nil, tenant, "", before, false},
+		{"consent: another agent for the person", cr, user, other, tenant, "", before, false},
+		{"consent: the agent's own token", cr, agent, uuid.Nil, tenant, "", before, false},
 	}
 	for _, c := range cases {
 		if got := c.r.Revokes(c.sub, c.act, c.tid, c.sid, c.iat); got != c.want {

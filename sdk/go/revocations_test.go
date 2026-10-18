@@ -65,9 +65,24 @@ func TestRevocationsStopTokens(t *testing.T) {
 		t.Fatal("delegated token of a revoked agent accepted")
 	}
 
+	// a consent withdrawn: only what that agent got for that person
+	revs.Add(matura.Revocation{ID: "r4", UserID: "u-7", ActorID: "a-2", NotBefore: time.Now()})
+	if _, err := v.Verify(ctx, tok("u-7", tid, old, map[string]any{"act": map[string]any{"sub": "a-2"}})); err == nil {
+		t.Fatal("token of a withdrawn consent accepted")
+	}
+	for _, other := range []string{
+		tok("u-7", tid, old, nil),
+		tok("u-7", tid, old, map[string]any{"act": map[string]any{"sub": "a-3"}}),
+		tok("a-2", tid, old, map[string]any{"kind": "agent"}),
+	} {
+		if _, err := v.Verify(ctx, other); err != nil {
+			t.Fatalf("a consent revocation stopped another token: %v", err)
+		}
+	}
+
 	// old revocations are forgotten; other events are ignored
 	revs.Add(matura.Revocation{ID: "ancient", UserID: "u-x", NotBefore: time.Now().Add(-time.Hour)})
-	if revs.Len() != 3 {
+	if revs.Len() != 4 {
 		t.Fatalf("held %d revocations", revs.Len())
 	}
 	if revs.Apply(&matura.Event{Type: "matura.user.updated", Data: matura.EventData{Object: "user"}}) {

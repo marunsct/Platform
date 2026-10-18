@@ -91,7 +91,15 @@ curl -s "$TOKEN_ENDPOINT" -d grant_type=urn:ietf:params:oauth:grant-type:token-e
   - The app's client adds the agent as an audience: an `oidc-audience-mapper` with
     `included.client.audience` set to the agent's client id.
 
-  Consent screens are not built yet. Until they are, set this up only for agents the tenant trusts.
+- **Consent.** Create the agent with `"consent": "required"` (or `PATCH` it later) and it gets a delegated token
+  for Ana only after she approves it. Until then token requests fail with `consent_required`, whose description
+  names the consent screen: send Ana to `<maturad>/agents/consent?client_id=<agent client id>`. There she sees what
+  the agent could do for her, can untick permissions and pick an expiry, and allows or refuses it. A narrowed
+  consent gives tokens with only those `perms` and no `roles`. She lists and withdraws her consents with
+  `GET /v1/me/consents` and `DELETE /v1/me/consents/{id}`; admins see and withdraw them under
+  `/v1/tenants/{tid}/agents/{id}/consents`. Withdrawing stops new tokens and revokes the ones the agent holds for
+  her at once (technical specification §21). With `"consent": "implicit"` (the default) the admin who created the
+  agent approved it for every member.
 
 ## 4. Checking agent tokens in an app
 
@@ -169,7 +177,7 @@ maturad's API, agents act as tenant members and never as admins or operators.
 
 ## 6. Not built yet
 
-- Consent screens and per-tool scopes.
+- Per-tool scopes (consent narrows by permission, not by MCP tool).
 - Client ID Metadata Documents and dynamic registration for MCP clients outside the installation.
 - Agent grants issued by a customer's identity provider.
 - SCIM provisioning of agents.

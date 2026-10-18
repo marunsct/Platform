@@ -27,8 +27,13 @@ describe("Revocations", () => {
     revs.add({ id: "r3", user_id: "agent", not_before: iso(now()) });
     await assert.rejects(v.verify(iss.token({ userId: "u9", tenantId: "t1", now: old, extra: { act: { sub: "agent" } } })), InvalidToken);
 
+    revs.add({ id: "r4", user_id: "u7", actor_id: "a2", not_before: iso(now()) });
+    await assert.rejects(v.verify(iss.token({ userId: "u7", tenantId: "t1", now: old, extra: { act: { sub: "a2" } } })), InvalidToken);
+    await v.verify(iss.token({ userId: "u7", tenantId: "t1", now: old }));
+    await v.verify(iss.token({ userId: "u7", tenantId: "t1", now: old, extra: { act: { sub: "a3" } } }));
+
     revs.add({ id: "old", user_id: "x", not_before: iso(now() - 3600) });
-    assert.equal(revs.size, 3);
+    assert.equal(revs.size, 4);
     assert.ok(!revs.apply({ type: "matura.user.updated", data: { object: "user", user: {} } }));
   });
 

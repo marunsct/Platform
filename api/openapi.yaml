@@ -201,6 +201,29 @@ paths:
             text/html:
               schema:
                 type: string
+  /agents/consent:
+    get:
+      operationId: agentConsentPage
+      summary: Agent consent screen
+      description: |
+        Self-contained HTML page an agent sends a person to (the `consent_required` refusal names it). It signs the
+        person in with Keycloak (authorization code with PKCE), shows the agent and what it could do for them from
+        `GET /v1/me/consent-request`, and records the answer with `POST /v1/me/consents` (or withdraws it).
+      tags: [agents]
+      security: []
+      parameters:
+        - name: client_id
+          in: query
+          description: The agent's client id. Read by the page's script, not by the server.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The page.
+          content:
+            text/html:
+              schema:
+                type: string
   /invitations/preview:
     get:
       operationId: previewInvitation
@@ -341,6 +364,117 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+  /v1/me/consent-request:
+    get:
+      operationId: getConsentRequest
+      summary: What an agent asks to do for me
+      description: |
+        For the consent screen (`/agents/consent?client_id=…`): the agent, its organisation, per app what it could do
+        for the caller (permissions both hold), and the caller's current consent. 404 unless the caller is an active
+        member of the agent's tenant. People only.
+      tags: [agents]
+      parameters:
+        - name: client_id
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConsentRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /v1/me/consents:
+    get:
+      operationId: listMyConsents
+      summary: Agents I let act for me
+      tags: [agents]
+      responses:
+        '200':
+          description: Active, unexpired consents in every tenant.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Consent'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      operationId: grantConsent
+      summary: Let an agent act for me
+      description: |
+        People only (not agents or delegated calls). Replaces an earlier consent for the same agent; tokens got under
+        the earlier one are revoked. `permissions` narrows delegated tokens to those (each must be something the agent
+        could do for the caller, 422 otherwise) and leaves `roles` empty in them; omit it to allow everything both
+        may do. Audited as `agent.consent_granted`.
+      tags: [agents]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [client_id]
+              properties:
+                client_id:
+                  type: string
+                permissions:
+                  type: array
+                  items:
+                    type: string
+                expires_at:
+                  type: [string, 'null']
+                  format: date-time
+      responses:
+        '201':
+          description: The consent.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Consent'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+  /v1/me/consents/{id}:
+    parameters:
+      - $ref: '#/components/parameters/id'
+    delete:
+      operationId: withdrawMyConsent
+      summary: Withdraw my consent for an agent
+      description: The agent gets no more tokens for the caller, and the ones it holds stop at once (§21).
+      tags: [agents]
+      responses:
+        '204':
+          description: Withdrawn.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /v1/me/tenants:
     get:
       operationId: listMyTenants
@@ -1137,6 +1271,9 @@ paths:
                   type: string
                   format: uuid
                   description: A person who is an active member; default the caller.
+                consent:
+                  type: string
+                  enum: [implicit, required]
                 expires_at:
                   type: string
                   format: date-time
@@ -1218,6 +1355,9 @@ paths:
                 owner_id:
                   type: string
                   format: uuid
+                consent:
+                  type: string
+                  enum: [implicit, required]
                 expires_at:
                   type: [string, 'null']
                   format: date-time
@@ -1267,6 +1407,58 @@ paths:
           $ref: '#/components/responses/IdentityRefused'
         '503':
           $ref: '#/components/responses/IdentityUnavailable'
+  /v1/tenants/{tid}/agents/{id}/consents:
+    parameters:
+      - $ref: '#/components/parameters/tid'
+      - $ref: '#/components/parameters/id'
+    get:
+      operationId: listAgentConsents
+      summary: Who approved an agent
+      description: Owners and admins. Active, unexpired consents (§20.5).
+      tags: [agents]
+      responses:
+        '200':
+          description: The consents.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Consent'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /v1/tenants/{tid}/agents/{id}/consents/{cid}:
+    parameters:
+      - $ref: '#/components/parameters/tid'
+      - $ref: '#/components/parameters/id'
+      - name: cid
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    delete:
+      operationId: withdrawAgentConsent
+      summary: Withdraw a person's consent for an agent
+      description: Owners and admins. The agent's tokens for that person stop at once (§21). Audited as `agent.consent_withdrawn`.
+      tags: [agents]
+      responses:
+        '204':
+          description: Withdrawn.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /v1/tenants/{tid}/agents/{id}:rotate-secret:
     parameters:
       - $ref: '#/components/parameters/tid'
@@ -6157,7 +6349,7 @@ components:
           format: uuid
     Agent:
       type: object
-      required: [id, tenant_id, kind, name, description, owner_id, client_id, status, expires_at, secret_rotated_at,
+      required: [id, tenant_id, kind, name, description, owner_id, client_id, status, consent, expires_at, secret_rotated_at,
                  version, created_by, created_at, updated_at, grants]
       properties:
         id:
@@ -6183,6 +6375,12 @@ components:
         status:
           type: string
           enum: [active, deactivated]
+        consent:
+          type: string
+          enum: [implicit, required]
+          description: |
+            `required`: a person must approve the agent (the consent screen, `POST /v1/me/consents`) before it gets a
+            delegated token for them (§20.5). `implicit`: the admin who created it approved it for every member.
         expires_at:
           type: [string, 'null']
           format: date-time
@@ -7279,7 +7477,7 @@ components:
                 additionalProperties: true
     Revocation:
       type: object
-      required: [id, tenant_id, user_id, session_id, not_before, reason, created_at]
+      required: [id, tenant_id, user_id, actor_id, session_id, not_before, reason, created_at]
       description: Tokens of `user_id` (as `sub` or `act.sub`) issued at or before `not_before` are refused (§21).
       properties:
         id:
@@ -7293,6 +7491,10 @@ components:
           type: string
           format: uuid
           description: A person, service account or agent.
+        actor_id:
+          type: [string, 'null']
+          format: uuid
+          description: Only tokens this agent got for `user_id` (sub = user_id, act.sub = actor_id); null for any.
         session_id:
           type: [string, 'null']
           description: Only tokens of this session (`sid`); null for all.
@@ -7307,6 +7509,99 @@ components:
         created_at:
           type: string
           format: date-time
+    Consent:
+      type: object
+      required: [id, tenant_id, agent_id, user_id, permissions, status, granted_at, expires_at, version]
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        agent_id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        permissions:
+          type: [array, 'null']
+          items:
+            type: string
+          description: Null allows everything both may do.
+        status:
+          type: string
+          enum: [active, withdrawn]
+        granted_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: [string, 'null']
+          format: date-time
+        withdrawn_at:
+          type: [string, 'null']
+          format: date-time
+        withdrawn_by:
+          type: [string, 'null']
+          format: uuid
+        version:
+          type: integer
+          format: int64
+        agent_name:
+          type: string
+        agent_client_id:
+          type: string
+        tenant_name:
+          type: string
+    ConsentRequest:
+      type: object
+      required: [agent, tenant_id, tenant_name, apps, current]
+      properties:
+        agent:
+          type: object
+          required: [id, client_id, kind, name, description, owner, consent]
+          properties:
+            id:
+              type: string
+              format: uuid
+            client_id:
+              type: string
+            kind:
+              type: string
+              enum: [service, agent]
+            name:
+              type: string
+            description:
+              type: [string, 'null']
+            owner:
+              type: [string, 'null']
+            consent:
+              type: string
+              enum: [implicit, required]
+        tenant_id:
+          type: string
+          format: uuid
+        tenant_name:
+          type: string
+        apps:
+          type: array
+          items:
+            type: object
+            required: [app, name, permissions]
+            properties:
+              app:
+                type: string
+              name:
+                type: string
+              permissions:
+                type: array
+                items:
+                  type: string
+        current:
+          oneOf:
+            - type: 'null'
+            - $ref: '#/components/schemas/Consent'
     SCIMGroupMapping:
       type: object
       required: [id, tenant_id, group, app, role, version, created_at]

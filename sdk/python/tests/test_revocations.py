@@ -35,8 +35,14 @@ def test_revocations_stop_tokens():
     with pytest.raises(InvalidToken):
         v.verify(iss.token("u9", tenant_id="t1", iat=old, act={"sub": "agent", "kind": "agent"}))
 
+    revs.add({"id": "r4", "user_id": "u7", "actor_id": "a2", "not_before": iso(time.time())})
+    with pytest.raises(InvalidToken):
+        v.verify(iss.token("u7", tenant_id="t1", iat=old, act={"sub": "a2"}))
+    v.verify(iss.token("u7", tenant_id="t1", iat=old))
+    v.verify(iss.token("u7", tenant_id="t1", iat=old, act={"sub": "a3"}))
+
     revs.add({"id": "old", "user_id": "x", "not_before": iso(time.time() - 3600)})
-    assert len(revs) == 3
+    assert len(revs) == 4
     assert not revs.apply({"type": "matura.user.updated", "data": {"object": "user", "user": {}}})
 
 

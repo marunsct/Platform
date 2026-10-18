@@ -1007,8 +1007,8 @@ The mapper sends maturad the client id and, on an agent's client, the audience t
 Refusals: `agent_inactive`, `agent_expired`, `unknown_audience`, `audience_required`, `not_delegable` (an agent
 acting for another agent), plus the tenant refusals of §6. Standard token exchange needs the requesting agent to be
 in the subject token's audience: either the person's token was issued to the agent's client itself, or the app's
-client adds the agent as an audience (an `oidc-audience-mapper`). Consent screens and per-tool scopes are not
-built.
+client adds the agent as an audience (an `oidc-audience-mapper`). An agent with consent `required` also needs the
+person's consent (§20.5).
 
 ### 20.3 maturad's own API and audit
 
@@ -1029,7 +1029,28 @@ TypeScript, `NewResourceMetadata` / `WWWAuthenticate` in Go) and list the server
 `auth.resources`, so an agent asking Keycloak with `resource=<that URL>` gets a token for the app
 ([agents guide](../guide/agents.md)).
 
-**Not built yet:** consent screens and per-tool scopes, Client ID Metadata Documents and dynamic registration for
+### 20.5 Consent
+
+`agent.consent` (migration 0018) is `implicit` (default: the admin who created the agent approved it for every
+member, the TS15 behaviour) or `required`. For `required`, a delegated token for a person needs their active,
+unexpired consent in `agent_consent`; otherwise the token request is refused with `consent_required`, whose detail
+names the consent screen `/agents/consent?client_id=<agent client id>`. The agent's own tokens need no consent.
+
+- The **consent screen** (embedded HTML, strict CSP, like the invitation accept page) signs the person in with the
+  portal's public client (PKCE), shows `GET /v1/me/consent-request?client_id=…` — the agent, its owner and tenant,
+  and per app the permissions both hold — and lets them untick permissions, choose an expiry (1, 30, 90 days or
+  none) and allow, refuse or withdraw. It never redirects anywhere afterwards (no open redirect).
+- `POST /v1/me/consents {client_id, permissions?, expires_at?}` (people only; 404 for non-members) records a
+  consent, replacing an earlier one for the same agent; each permission must be one the agent could do for the
+  person (422). A consent with `permissions` narrows delegated tokens to those and leaves `roles` empty (an app
+  could read wider permissions from roles), and the token always carries the list (never `perms_ref`).
+- Withdrawal — by the person (`DELETE /v1/me/consents/{id}`) or a tenant owner or admin
+  (`DELETE /v1/tenants/{tid}/agents/{id}/consents/{cid}`) — and replacement record a revocation (§21) with
+  `actor_id`: tokens whose `sub` is the person and `act.sub` the agent stop at once; the person's own tokens and the
+  agent's own tokens are untouched. Audited as `agent.consent_granted` and `agent.consent_withdrawn`.
+- `GET /v1/me/consents` and `GET /v1/tenants/{tid}/agents/{id}/consents` list active, unexpired consents.
+
+**Not built yet:** per-tool scopes, Client ID Metadata Documents and dynamic registration for
 outside MCP clients, customer-IdP-issued agent grants, SCIM provisioning of agents, OpenFGA relations, step-up,
 human-approval events mapped to EU AI Act articles, agents in the portal.
 
@@ -1038,7 +1059,8 @@ human-approval events mapped to EU AI Act articles, agents in the portal.
 Access tokens live 5 minutes and apps verify them locally, so ending a session at Keycloak alone leaves tokens
 working until they expire. A **revocation** closes that gap: tokens of a user issued at or before `not_before` are
 refused, everywhere or for one tenant, for all sessions or one. A token is covered when its `sub` **or** `act.sub` is
-`user_id` (so an agent's revocation also stops tokens it holds for people), its `tid` is `tenant_id` when that is
+`user_id` (so an agent's revocation also stops tokens it holds for people) — or, when `actor_id` is set, its `sub` is
+`user_id` and its `act.sub` is `actor_id` (a withdrawn consent) — its `tid` is `tenant_id` when that is
 set, its `sid` is `session_id` when that is set, and its `iat` is at or before `not_before` (`iat` is whole seconds,
 so a token issued in the same second counts as revoked; it is simply fetched again). Keycloak's and Postgres's
 clocks must be in sync (NTP), as for token expiry.
@@ -1059,6 +1081,7 @@ event `matura.revocation.created` (`data.revocation`: `id`, `tenant_id`, `user_i
 | `POST /v1/tenants/{tid}/members/{uid}:revoke-tokens` (owners, admins) | that tenant | `requested` |
 | `POST /v1/me/tokens:revoke` (a person, for a lost device) | everywhere | `requested` |
 | `POST /admin/v1/users/{uid}:revoke-tokens` (operators) | everywhere | `requested` |
+| a consent withdrawn or replaced (§20.5) | the agent acting for that person, in the tenant | `consent_withdrawn` |
 
 **maturad** checks every bearer token against the revocations of the last 15 minutes, read from the database at
 most once a second per replica and again after any write on the replica, so a revocation stops maturad access

@@ -90,6 +90,7 @@ func (s *Server) Handler() http.Handler {
 	s.handle(mux, "GET /healthz/live", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) })
 	s.handle(mux, "GET /healthz/ready", s.ready)
 	s.handle(mux, "GET /invitations/accept", s.acceptPageHandler)
+	s.handle(mux, "GET /agents/consent", s.consentPageHandler)
 	s.handle(mux, "GET /invitations/preview", s.previewInvitation)
 	s.handle(mux, "GET /v1/sso/discover", s.discoverSSO) // public: home-realm discovery for sign-in pages
 	s.handle(mux, "GET /portal/config.json", s.portal.ConfigJSON)
@@ -178,6 +179,12 @@ func (s *Server) Handler() http.Handler {
 
 	s.handle(api, "GET /v1/me/tenants", s.myTenants)
 	s.handle(api, "POST /v1/me/tokens:revoke", s.revokeMyTokens)
+	s.handle(api, "GET /v1/me/consent-request", s.consentRequest)
+	s.handle(api, "GET /v1/me/consents", s.myConsents)
+	s.handle(api, "POST /v1/me/consents", s.grantConsent)
+	s.handle(api, "DELETE /v1/me/consents/{id}", s.withdrawMyConsent)
+	s.handle(api, "GET /v1/tenants/{tid}/agents/{id}/consents", s.agentConsents)
+	s.handle(api, "DELETE /v1/tenants/{tid}/agents/{id}/consents/{cid}", s.withdrawAgentConsent)
 	s.handle(api, "GET /v1/me/sessions", s.mySessions)
 	s.handle(api, "DELETE /v1/me/sessions", s.signOutEverywhere)
 	s.handle(api, "DELETE /v1/me/sessions/{id}", s.deleteMySession)

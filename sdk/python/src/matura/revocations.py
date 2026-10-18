@@ -21,13 +21,18 @@ def _ts(v: Any) -> float:
 
 
 def covers(r: dict[str, Any], claims: dict[str, Any]) -> bool:
-    """Whether revocation ``r`` stops a token with ``claims``: sub (or act.sub) is its user, tid its tenant when it
-    names one, sid its session when it names one, and iat is at or before not_before."""
+    """Whether revocation ``r`` stops a token with ``claims``: sub (or act.sub) is its user (with ``actor_id``: sub is
+    its user and act.sub that agent), tid its tenant when it names one, sid its session when it names one, and iat is
+    at or before not_before."""
     iat = claims.get("iat")
     if not iat:
         return False
     act = claims.get("act") or {}
-    if r.get("user_id") not in (claims.get("sub"), act.get("sub") if isinstance(act, dict) else None):
+    act_sub = act.get("sub") if isinstance(act, dict) else None
+    if r.get("actor_id"):
+        if r.get("user_id") != claims.get("sub") or act_sub != r["actor_id"]:
+            return False
+    elif r.get("user_id") not in (claims.get("sub"), act_sub):
         return False
     if r.get("tenant_id") and r["tenant_id"] != claims.get("tid"):
         return False

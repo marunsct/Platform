@@ -16,6 +16,7 @@ type Revocation struct {
 	ID        uuid.UUID  `json:"id"`
 	TenantID  *uuid.UUID `json:"tenant_id"`
 	UserID    uuid.UUID  `json:"user_id"`
+	ActorID   *uuid.UUID `json:"actor_id"` // only tokens an agent got for UserID (sub = user, act.sub = actor)
 	SessionID *string    `json:"session_id"`
 	NotBefore time.Time  `json:"not_before"`
 	Reason    string     `json:"reason"`
@@ -42,17 +43,26 @@ const (
 	RevokeConsentWithdrawn  = "consent_withdrawn"
 )
 
-const revocationCols = `id, tenant_id, user_id, session_id, not_before, reason, created_at`
+const revocationCols = `id, tenant_id, user_id, actor_id, session_id, not_before, reason, created_at`
 
 func scanRevocation(row pgx.Row) (Revocation, error) {
 	var r Revocation
-	err := row.Scan(&r.ID, &r.TenantID, &r.UserID, &r.SessionID, &r.NotBefore, &r.Reason, &r.CreatedAt)
+	err := row.Scan(&r.ID, &r.TenantID, &r.UserID, &r.ActorID, &r.SessionID, &r.NotBefore, &r.Reason, &r.CreatedAt)
 	return r, err
 }
 
 // revokeTokens records a revocation in tx and emits matura.revocation.created (to apps by webhook and feed: those
 // the tenant enabled, or for a revocation everywhere, those of every tenant the user belongs to).
 func revokeTokens(ctx context.Context, tx pgx.Tx, tenantID, userID uuid.UUID, sessionID, reason string) (Revocation, error) {
+	return revokeTokensOf(ctx, tx, tenantID, userID, uuid.Nil, sessionID, reason)
+}
+
+// revokeTokensOf is revokeTokens limited, when actorID is set, to tokens that agent got for userID.
+func revokeTokensOf(ctx context.Context, tx pgx.Tx, tenantID, userID, actorID uuid.UUID, sessionID, reason string) (Revocation, error) {
+	var actor *uuid.UUID
+	if actorID != uuid.Nil {
+		actor = &actorID
+	}
 	var tid *uuid.UUID
 	if tenantID != uuid.Nil {
 		tid = &tenantID
@@ -62,8 +72,8 @@ func revokeTokens(ctx context.Context, tx pgx.Tx, tenantID, userID uuid.UUID, se
 		sid = &sessionID
 	}
 	r, err := scanRevocation(tx.QueryRow(ctx, `INSERT INTO token_revocation
-		(id, tenant_id, user_id, session_id, not_before, reason) VALUES ($1, $2, $3, $4, now(), $5)
-		RETURNING `+revocationCols, ids.New(), tid, userID, sid, reason))
+		(id, tenant_id, user_id, actor_id, session_id, not_before, reason) VALUES ($1, $2, $3, $4, $5, now(), $6)
+		RETURNING `+revocationCols, ids.New(), tid, userID, actor, sid, reason))
 	if err != nil {
 		return r, mapErr(err)
 	}
@@ -137,10 +147,15 @@ func (s *Store) PruneRevocations(ctx context.Context) (int64, error) {
 	return n, err
 }
 
-// Revokes says whether r makes a token unusable: the token's subject (or the agent acting, actor) is r's user, it
-// is for r's tenant when r names one, of r's session when r names one, and was issued at or before NotBefore.
+// Revokes says whether r makes a token unusable: the token's subject (or the agent acting, actor) is r's user — or,
+// when r names an actor, the subject is r's user and that agent acts — it is for r's tenant when r names one, of r's
+// session when r names one, and was issued at or before NotBefore.
 func (r Revocation) Revokes(subject, actor, tenant uuid.UUID, session string, issuedAt time.Time) bool {
-	if r.UserID != subject && (actor == uuid.Nil || r.UserID != actor) {
+	if r.ActorID != nil {
+		if r.UserID != subject || actor != *r.ActorID {
+			return false
+		}
+	} else if r.UserID != subject && (actor == uuid.Nil || r.UserID != actor) {
 		return false
 	}
 	if r.TenantID != nil && *r.TenantID != tenant {

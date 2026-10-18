@@ -8,11 +8,13 @@ import (
 )
 
 // Revocation stops tokens issued at or before NotBefore (technical specification §21): those whose sub, or act.sub,
-// is UserID; for TenantID only when it is set; for SessionID only when it is set.
+// is UserID (when ActorID is set: whose sub is UserID and act.sub is ActorID); for TenantID only when it is set; for
+// SessionID only when it is set.
 type Revocation struct {
 	ID        string    `json:"id"`
 	TenantID  string    `json:"tenant_id"`
 	UserID    string    `json:"user_id"`
+	ActorID   string    `json:"actor_id"` // only tokens this agent got for UserID (a consent withdrawn)
 	SessionID string    `json:"session_id"`
 	NotBefore time.Time `json:"not_before"`
 	Reason    string    `json:"reason"`
@@ -23,7 +25,11 @@ func (r Revocation) Covers(c *Claims) bool {
 	if c == nil || c.IssuedAt == 0 {
 		return false
 	}
-	if r.UserID != c.Subject && (c.Act == nil || r.UserID != c.Act.Sub) {
+	if r.ActorID != "" {
+		if r.UserID != c.Subject || c.Act == nil || c.Act.Sub != r.ActorID {
+			return false
+		}
+	} else if r.UserID != c.Subject && (c.Act == nil || r.UserID != c.Act.Sub) {
 		return false
 	}
 	if r.TenantID != "" && r.TenantID != c.TenantID {

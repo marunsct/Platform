@@ -6,6 +6,8 @@ export const REVOCATION_WINDOW_SECONDS = 15 * 60;
 export interface Revocation {
   id: string;
   user_id: string;
+  /** Only tokens this agent got for `user_id` (a consent withdrawn). */
+  actor_id?: string | null;
   tenant_id?: string | null;
   session_id?: string | null;
   /** RFC 3339 time: tokens issued at or before it are revoked. */
@@ -26,7 +28,9 @@ export function covers(r: Revocation, claims: Record<string, unknown>): boolean 
   if (typeof iat !== "number" || !iat) return false;
   const act = claims["act"];
   const actSub = act && typeof act === "object" ? (act as Record<string, unknown>)["sub"] : undefined;
-  if (r.user_id !== claims["sub"] && r.user_id !== actSub) return false;
+  if (r.actor_id) {
+    if (r.user_id !== claims["sub"] || actSub !== r.actor_id) return false;
+  } else if (r.user_id !== claims["sub"] && r.user_id !== actSub) return false;
   if (r.tenant_id && r.tenant_id !== claims["tid"]) return false;
   if (r.session_id && r.session_id !== claims["sid"]) return false;
   return iat <= seconds(r.not_before);
