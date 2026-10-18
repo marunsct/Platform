@@ -59,9 +59,10 @@ func (s *Store) Sequence(ctx context.Context) (int, error) {
 }
 
 // appChangeFilter limits outbox rows to what one app may see (technical specification §8): its own manifest and
-// roles, tenants that enabled it, its own grants and placements, and users who belong to those tenants.
+// roles, tenants that enabled it, its own grants and placements, and users who belong to those tenants. SCIM group
+// membership events are for the OpenFGA syncer only (apps get the grants groups make).
 // $1 is the app id, $2 its slug.
-const appChangeFilter = `(
+const appChangeFilter = `(o.type NOT LIKE 'matura.scim_group.%' AND (
 	(o.type LIKE 'matura.app.%' AND (o.subject = 'apps/' || $2 OR o.subject LIKE 'apps/' || $2 || '/%'))
 	OR (o.type LIKE 'matura.user.%' AND EXISTS (
 		SELECT 1 FROM membership m JOIN tenant_app ta ON ta.tenant_id = m.tenant_id
@@ -70,7 +71,7 @@ const appChangeFilter = `(
 		AND EXISTS (SELECT 1 FROM tenant_app ta WHERE ta.tenant_id = o.tenant_id AND ta.app_id = $1
 			AND (ta.status = 'enabled' OR o.type LIKE 'matura.tenant_app.%'))
 		AND (NOT o.payload ? 'app_id' OR o.payload->>'app_id' = $1::text))
-)`
+))`
 
 // Changes returns the app's changes after the cursor, in feed order, and the cursor to continue from.
 func (s *Store) Changes(ctx context.Context, app App, after int64, limit int) ([]Change, int64, error) {

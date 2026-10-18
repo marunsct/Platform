@@ -124,6 +124,9 @@ func (s *Syncer) resync(ctx context.Context) error {
 	for _, g := range facts.Grants {
 		writes = append(writes, grantTuple(g, g.Role))
 	}
+	for _, g := range facts.Groups {
+		writes = append(writes, groupTuple(g))
+	}
 	for len(writes) > 0 {
 		n := min(len(writes), fga.MaxWrite)
 		if err := s.Service.Client.Write(ctx, storeID, base, writes[:n], nil); err != nil {
@@ -163,6 +166,11 @@ func memberTuple(m store.Membership) fga.TupleKey {
 
 func workspaceTuple(w store.Workspace) fga.TupleKey {
 	return fga.TupleKey{User: fga.TenantObject(w.TenantID), Relation: "tenant", Object: fga.WorkspaceObject(w.TenantID, w.ID)}
+}
+
+func groupTuple(g store.SCIMGroupMember) fga.TupleKey {
+	return fga.TupleKey{User: fga.UserSubject(g.TenantID, g.UserID), Relation: "member",
+		Object: fga.GroupObject(g.TenantID, g.GroupID)}
 }
 
 func grantTuple(g store.Grant, role string) fga.TupleKey {
@@ -214,6 +222,16 @@ func (s *Syncer) apply(ctx context.Context, c store.Change) error {
 			writes = append(writes, grantTuple(g, g.Role))
 		} else {
 			deletes = append(deletes, grantTuple(g, g.Role))
+		}
+	case c.Type == "matura.scim_group.member_added" || c.Type == "matura.scim_group.member_removed":
+		var g store.SCIMGroupMember
+		if err := json.Unmarshal(c.Payload, &g); err != nil {
+			return err
+		}
+		if c.Type == "matura.scim_group.member_added" {
+			writes = append(writes, groupTuple(g))
+		} else {
+			deletes = append(deletes, groupTuple(g))
 		}
 	case c.Type == "matura.app.role.updated":
 		return s.renameRole(ctx, storeID, base, c)

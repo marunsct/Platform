@@ -154,6 +154,9 @@ func TenantObject(tid uuid.UUID) string { return "tenant:" + tenantPrefix(tid) +
 // UserSubject is the stored user, as members and grantees.
 func UserSubject(tid, uid uuid.UUID) string { return "user:" + tenantPrefix(tid) + uid.String() }
 
+// GroupObject is the stored group (a SCIM group of the tenant).
+func GroupObject(tid, gid uuid.UUID) string { return "group:" + tenantPrefix(tid) + gid.String() }
+
 // GroupMembers is the stored "everyone in the group" subject.
 func GroupMembers(tid, gid uuid.UUID) string {
 	return "group:" + tenantPrefix(tid) + gid.String() + "#member"

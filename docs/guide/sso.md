@@ -103,5 +103,6 @@ a new token.
 
 ## 6. Not built yet
 
-SSO-only enforcement (no passwords for the domain, with a break-glass owner), group-to-role mapping, certificate
+SSO-only enforcement (no passwords for the domain, with a break-glass owner), group-to-role mapping from groups
+asserted at sign-in (groups provisioned by SCIM can be mapped: see [SCIM provisioning](scim.md)), certificate
 expiry warnings, a test-connection trace, the guided setup in the customer portal and a mock IdP for CI.
