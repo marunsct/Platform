@@ -14,6 +14,9 @@ it at **`/portal/`**; there is nothing else to deploy. Technical details: [spec 
 | App access | enable or disable apps; grant a member an app role for the whole organisation or one workspace; revoke | everyone sees it; owners and admins change it |
 | Workspaces | list, create, rename | everyone sees them; owners and admins change them |
 | Roles | each app's roles, the permissions they grant and which is the default | everyone; installation operators also create, edit and delete roles (they apply in every organisation) |
+| Agents | create service accounts and AI agents (client secret shown once); rotate the secret; deactivate (kill switch) or reactivate; delete | owners and admins |
+| Directory sync | SCIM base URL and tokens (created, shown once, revoked); map identity-provider groups to app roles | owners manage tokens; owners and admins manage mappings |
+| Audit log | filter by actor and action; open an event for its details and hashes; verify the hash chain | owners and admins |
 | My account | your profile as Matura knows it, a link to edit it at the identity provider, your organisations | everyone |
 
 The organisation switcher at the top of the sidebar lists your organisations (operators see all of them) and keeps
@@ -88,6 +91,6 @@ flow works there against a local Keycloak. With a maturad in dev mode no Keycloa
 
 From doc 05 and TS8/TS9: API keys and service accounts, groups, per-workspace member lists, member deactivation,
 bulk CSV invitations and temporary passwords, tenant-scoped custom roles (RL-7; operators edit an app's roles today),
-sessions, security policies, audit, webhooks, branding, and translations. Doc 18's wider gates (Storybook, axe,
+sessions, security policies, per-tenant SSO pages, audit sinks and export, agent grants and expiry, webhooks, branding, and translations. Doc 18's wider gates (Storybook, axe,
 size-limit and Lighthouse in CI, DTCG tokens through Style Dictionary, Base UI, view transitions, command palette)
 are still to come.

@@ -150,3 +150,89 @@ export interface Invitation {
 export interface Items<T> {
   items: T[];
 }
+
+export interface Agent {
+  id: string;
+  tenant_id: string;
+  kind: "service" | "agent";
+  name: string;
+  description: string | null;
+  owner_id: string | null;
+  client_id: string;
+  status: "active" | "deactivated";
+  expires_at: string | null;
+  secret_rotated_at: string;
+  version: number;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+  grants: Grant[];
+}
+
+export interface AgentWithSecret extends Agent {
+  client_secret: string;
+  token_endpoint?: string;
+}
+
+export interface AuditEvent {
+  id: number;
+  tenant_id: string | null;
+  seq: number;
+  time: string;
+  actor: { kind: string; id: string | null; email: string; on_behalf_of?: string };
+  action: string;
+  target: string;
+  request_id: string;
+  ip: string;
+  user_agent: string;
+  data: unknown;
+  prev_hash: string;
+  hash: string;
+  redacted?: boolean;
+}
+
+export interface AuditPage {
+  items: AuditEvent[];
+  next_cursor: string | null;
+}
+
+export interface AuditVerification {
+  ok: boolean;
+  events: number;
+  anchor_seq: number;
+  anchor_hash: string;
+  head_seq: number;
+  head_hash: string;
+  first_break: { seq: number; reason: string } | null;
+}
+
+export interface ScimToken {
+  id: string;
+  tenant_id: string;
+  name: string;
+  prefix: string;
+  created_by?: string | null;
+  created_at: string;
+  expires_at?: string | null;
+  last_used_at?: string | null;
+}
+
+export interface ScimTokenList {
+  items: ScimToken[];
+  scim_base_url: string;
+}
+
+export interface ScimTokenWithSecret extends ScimToken {
+  token: string;
+  scim_base_url: string;
+}
+
+export interface GroupMapping {
+  id: string;
+  tenant_id: string;
+  group: string;
+  app: string;
+  role: string;
+  version: number;
+  created_at: string;
+}

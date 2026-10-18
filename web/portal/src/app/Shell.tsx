@@ -5,6 +5,7 @@ import {
   Building2,
   Check,
   ChevronsUpDown,
+  Bot,
   FolderKanban,
   LayoutDashboard,
   LogOut,
@@ -12,6 +13,8 @@ import {
   Menu as MenuIcon,
   Monitor,
   Moon,
+  RefreshCw,
+  ScrollText,
   ShieldCheck,
   Sun,
   UserRound,
@@ -31,6 +34,9 @@ const tenantNav = [
   { to: "/t/$tid/apps", label: "App access", icon: AppWindow },
   { to: "/t/$tid/workspaces", label: "Workspaces", icon: FolderKanban },
   { to: "/t/$tid/roles", label: "Roles", icon: ShieldCheck },
+  { to: "/t/$tid/agents", label: "Agents", icon: Bot },
+  { to: "/t/$tid/scim", label: "Directory sync", icon: RefreshCw },
+  { to: "/t/$tid/audit", label: "Audit log", icon: ScrollText },
 ] as const;
 
 function NavLink({ to, params, icon: Icon, label, exact, onNavigate }: { to: string; params?: Record<string, string>; icon: typeof Users; label: string; exact?: boolean; onNavigate?: () => void }) {

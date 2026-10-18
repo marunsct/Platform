@@ -3,6 +3,8 @@
 ## Unreleased
 
 ### Added
+- Portal pages for Agents, Directory sync (SCIM tokens and group mappings) and the Audit log. Source only: run
+  `npm ci && npm run typecheck && npm test && npm run build` in web/portal and commit `internal/portal/dist`.
 - Agents and service accounts as tenant principals (TS15): agent tokens through Keycloak carry `kind` and `act`
   (who the agent acts for); SDK helpers for principal kind and protected resources; migration 0015
   (docs/guide/agents.md, spec 02 §20).

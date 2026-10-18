@@ -1,7 +1,14 @@
 // One function per API call the portal makes. Paths follow api/openapi.yaml.
 import type { ApiClient } from "./api";
 import type {
+  Agent,
+  AgentWithSecret,
   App,
+  AuditPage,
+  AuditVerification,
+  GroupMapping,
+  ScimTokenList,
+  ScimTokenWithSecret,
   Grant,
   Invitation,
   InvitedRole,
@@ -62,6 +69,31 @@ export function endpoints(api: ApiClient) {
       api.patch<Role>(`/admin/v1/apps/${encodeURIComponent(app)}/roles/${encodeURIComponent(name)}`, body),
     deleteRole: (app: string, name: string) =>
       api.del(`/admin/v1/apps/${encodeURIComponent(app)}/roles/${encodeURIComponent(name)}`),
+
+    agents: (tid: string) => items(api.get<Items<Agent>>(`${t(tid)}/agents`)),
+    createAgent: (
+      tid: string,
+      body: { kind: "service" | "agent"; name: string; description?: string; expires_at?: string; grants?: { app: string; role: string }[] },
+    ) => api.post<AgentWithSecret>(`${t(tid)}/agents`, body),
+    setAgentStatus: (tid: string, id: string, status: "active" | "deactivated", version: number) =>
+      api.patch<Agent>(`${t(tid)}/agents/${id}`, { status }, version),
+    rotateAgentSecret: (tid: string, id: string) => api.post<AgentWithSecret>(`${t(tid)}/agents/${id}:rotate-secret`),
+    deleteAgent: (tid: string, id: string) => api.del(`${t(tid)}/agents/${id}`),
+
+    audit: (tid: string, q: { actor?: string; action?: string; cursor?: string }) => {
+      const p = new URLSearchParams({ limit: "50" });
+      for (const [k, v] of Object.entries(q)) if (v) p.set(k, v);
+      return api.get<AuditPage>(`${t(tid)}/audit?${p}`);
+    },
+    verifyAudit: (tid: string) => api.get<AuditVerification>(`${t(tid)}/audit:verify`),
+
+    scimTokens: (tid: string) => api.get<ScimTokenList>(`${t(tid)}/scim/tokens`),
+    createScimToken: (tid: string, name: string) => api.post<ScimTokenWithSecret>(`${t(tid)}/scim/tokens`, { name }),
+    revokeScimToken: (tid: string, id: string) => api.del(`${t(tid)}/scim/tokens/${id}`),
+    groupMappings: (tid: string) => items(api.get<Items<GroupMapping>>(`${t(tid)}/scim/group-mappings`)),
+    createGroupMapping: (tid: string, body: { group: string; app: string; role: string }) =>
+      api.post<GroupMapping>(`${t(tid)}/scim/group-mappings`, body),
+    deleteGroupMapping: (tid: string, id: string) => api.del(`${t(tid)}/scim/group-mappings/${id}`),
   };
 }
 
