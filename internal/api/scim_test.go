@@ -666,3 +666,35 @@ func TestSCIMGroupsInOpenFGA(t *testing.T) {
 		t.Fatalf("resync lost the group member: %v", fake.Tuples())
 	}
 }
+
+// TestSCIMAuditPerConnection: each SCIM connection appears in the audit log as itself (actor kind directory, its
+// token id, scim:<token name>), so two connected directories are told apart.
+func TestSCIMAuditPerConnection(t *testing.T) {
+	e := setupSCIM(t)
+	entra := e.owner.must(http.StatusCreated, "POST", "/v1/tenants/"+e.tid+"/scim/tokens", map[string]any{"name": "entra"})
+	second := scimClient{t: t, base: entra["scim_base_url"].(string), token: entra["token"].(string)}
+	okta := e.scim.must(http.StatusCreated, "POST", "/Users", fixture(t, "okta", "create_user", nil))
+	ent := second.must(http.StatusCreated, "POST", "/Users", map[string]any{
+		"schemas": []string{"urn:ietf:params:scim:schemas:core:2.0:User"}, "userName": "erin@acme.test",
+		"active": true, "emails": []map[string]any{{"value": "erin@acme.test", "primary": true}}})
+	page := e.owner.must(http.StatusOK, "GET", "/v1/tenants/"+e.tid+"/audit?action=membership.added", nil)
+	byTarget := map[string]map[string]any{}
+	for _, it := range page["items"].([]any) {
+		ev := it.(map[string]any)
+		byTarget[ev["target"].(string)] = ev["actor"].(map[string]any)
+	}
+	for uid, want := range map[string]string{okta["id"].(string): "scim:idp", ent["id"].(string): "scim:entra"} {
+		var actor map[string]any
+		for target, a := range byTarget {
+			if strings.HasSuffix(target, "/members/"+uid) {
+				actor = a
+			}
+		}
+		if actor == nil || actor["kind"] != "directory" || actor["email"] != want {
+			t.Fatalf("membership of %s: actor %v, want directory %s (%v)", uid, actor, want, byTarget)
+		}
+	}
+	if byEmail := e.owner.must(http.StatusOK, "GET", "/v1/tenants/"+e.tid+"/audit?actor=scim:entra", nil); len(byEmail["items"].([]any)) == 0 {
+		t.Fatal("the audit log cannot be filtered by connection")
+	}
+}

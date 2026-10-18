@@ -20,7 +20,7 @@ import (
 // Actor is who caused a change, as the audit log records it. The API puts it in the request context; work with no
 // actor in its context (the provisioner, the relay) is recorded as "system".
 type Actor struct {
-	Kind  string // user, operator, app, system, agent or service
+	Kind  string // user, operator, app, system, agent, service or directory (a SCIM connection)
 	ID    uuid.UUID
 	Email string
 	// OnBehalfOf is the person an agent acts for in a delegated call (token act claim): ID is then the agent.

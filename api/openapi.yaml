@@ -6574,7 +6574,7 @@ components:
           properties:
             kind:
               type: string
-              enum: [user, operator, app, system, agent, service]
+              enum: [user, operator, app, system, agent, service, directory]
             id:
               type: [string, 'null']
               format: uuid

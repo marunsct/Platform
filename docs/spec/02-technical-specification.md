@@ -863,7 +863,8 @@ At most five live tokens per tenant; rotation is create, reconfigure the IdP, re
 is looked up by hash within the path's tenant (row-level security), so another tenant's token is unknown (401);
 revoked or expired tokens answer 401; a tenant that is not active answers 403. `last_used_at` is updated at most
 once a minute. Token changes are audited (`scim.token_created`, `scim.token_revoked`). SCIM changes are audited
-with actor kind `system`, actor id the token's id and actor email `scim` (migration 0015 fixed the actor kinds).
+with actor kind `directory`, actor id the token's id and actor email `scim:<token name>`, so each connected
+directory is told apart (migration 0016).
 
 ### 19.2 Users
 
