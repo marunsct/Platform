@@ -157,4 +157,6 @@ curl "$MATURA/scim/v2/tenants/$TID/Users?filter=userName%20eq%20%22ana@acme.com%
 curl "$MATURA/scim/v2/tenants/$TID/ServiceProviderConfig" -H "Authorization: Bearer $SCIM_TOKEN"
 ```
 
-Matura does not support bulk requests, sorting or `or`/`co`/`sw` filters. Okta and Entra need none of them.
+Bulk requests (`POST …/Bulk`, up to 1000 operations) are supported; a later operation can refer to a user or group
+created earlier in the same request as `bulkId:<id>`. Each change is audited as the connection that made it
+(`scim:<token name>`). Matura does not support sorting or `or`/`co`/`sw` filters; Okta and Entra need neither.

@@ -154,6 +154,8 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 			} `json:"contextual_tuples"`
 		}
 		User, Relation, Type string
+		Object               *struct{ Type, ID string }
+		UserFilters          []struct{ Type string } `json:"user_filters"`
 	}
 	if parts[2] == "authorization-models" {
 		var m fga.Model
@@ -241,6 +243,35 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 		}
 		sort.Strings(objs)
 		ok(w, map[string]any{"objects": objs})
+	case "list-users":
+		ev.extra = contextual(body.Contextual)
+		if body.Object == nil || len(body.UserFilters) != 1 {
+			fail(w, http.StatusBadRequest, "validation_error", "object and one user filter are required")
+			return
+		}
+		object, want := body.Object.Type+":"+body.Object.ID, body.UserFilters[0].Type
+		seen := map[string]bool{}
+		var users []map[string]any
+		for _, k := range ev.all() {
+			for _, cand := range []string{k.User, k.Object} {
+				cand, _, _ = strings.Cut(cand, "#")
+				typ, id, _ := strings.Cut(cand, ":")
+				if typ != want || seen[cand] {
+					continue
+				}
+				seen[cand] = true
+				if !ev.check(object, body.Relation, cand, 0) {
+					continue
+				}
+				if id == "*" {
+					users = append(users, map[string]any{"wildcard": map[string]string{"type": typ}})
+				} else {
+					users = append(users, map[string]any{"object": map[string]string{"type": typ, "id": id}})
+				}
+			}
+		}
+		sort.Slice(users, func(i, j int) bool { return fmt.Sprint(users[i]) < fmt.Sprint(users[j]) })
+		ok(w, map[string]any{"users": users})
 	default:
 		fail(w, http.StatusNotFound, "not_found", "no route")
 	}

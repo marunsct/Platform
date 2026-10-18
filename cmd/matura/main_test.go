@@ -33,14 +33,15 @@ func intp(i int) *int { return &i }
 func fixedReport() readiness.Report {
 	now := time.Date(2026, 10, 17, 9, 30, 0, 0, time.UTC)
 	f := readiness.Facts{Now: now,
-		Install: readiness.Install{Product: "Acme Cloud", Env: "production", Auth: "oidc", KEKConfigured: true,
+		Install: readiness.Install{Product: "Acme Cloud", Env: "production", Auth: "oidc", KEKConfigured: true, TenantKeys: true,
 			SMTPConfigured: true, MetricsEnabled: true, PublicURL: "https://id.acme.example"},
 		Installation: readiness.Chain{OK: true, Events: 212},
 		Webhooks:     readiness.Webhooks{Active: 2, Failing: 1, Dropped: 3},
 		Tenants: []readiness.Tenant{
 			{ID: uuid.MustParse("0192a000-0000-7000-8000-000000000001"), Slug: "acme", Kind: "company", Status: "active",
 				PolicySet: true, RequireMFA: true, SessionMaxAge: intp(28800), IdleTimeout: intp(1800),
-				AllowedEmailDomains: 1, IPAllowlist: 1, Audit: readiness.Chain{OK: true, Events: 90}},
+				AllowedEmailDomains: 1, IPAllowlist: 1, Audit: readiness.Chain{OK: true, Events: 90},
+				LastAccessReview: timep(now.Add(-30 * 24 * time.Hour))},
 			{ID: uuid.MustParse("0192a000-0000-7000-8000-000000000002"), Slug: "globex", Kind: "company", Status: "active",
 				SinksActive: 1, Audit: readiness.Chain{OK: true, Events: 14}},
 		},
@@ -108,7 +109,7 @@ func TestCheckOutputs(t *testing.T) {
 	}
 	golden(t, "check.json", []byte(out))
 	var rep readiness.Report
-	if err := json.Unmarshal([]byte(out), &rep); err != nil || rep.Score != 61.1 || rep.Failed != 7 {
+	if err := json.Unmarshal([]byte(out), &rep); err != nil || rep.Score != 60 || rep.Failed != 8 {
 		t.Fatalf("report: score %v, %d failed, %v", rep.Score, rep.Failed, err)
 	}
 
@@ -165,7 +166,8 @@ func TestCheckFillsPolicies(t *testing.T) {
 	if !json.Valid([]byte(stdout)) {
 		t.Fatal("--json output mixed with policy messages")
 	}
-	for _, name := range []string{"access-control-policy.md", "incident-response-policy.md", "backup-policy.md"} {
+	for _, name := range []string{"access-control-policy.md", "incident-response-policy.md", "backup-policy.md",
+		"security-whitepaper.md", "questionnaire-answers.md"} {
 		if !strings.Contains(stderr, filepath.Join(out, name)) {
 			t.Errorf("no message for %s: %s", name, stderr)
 		}
@@ -217,3 +219,5 @@ func TestCheckAgainstMaturad(t *testing.T) {
 		t.Fatalf("a development install: exit %d, score %v, %d controls", code, rep.Score, len(rep.Controls))
 	}
 }
+
+func timep(t time.Time) *time.Time { return &t }

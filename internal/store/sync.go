@@ -64,9 +64,9 @@ func (s *Store) Sequence(ctx context.Context) (int, error) {
 // $1 is the app id, $2 its slug.
 const appChangeFilter = `(o.type NOT LIKE 'matura.scim_group.%' AND (
 	(o.type LIKE 'matura.app.%' AND (o.subject = 'apps/' || $2 OR o.subject LIKE 'apps/' || $2 || '/%'))
-	OR (o.type LIKE 'matura.user.%' AND EXISTS (
+	OR ((o.type LIKE 'matura.user.%' OR (o.type = 'matura.revocation.created' AND o.tenant_id IS NULL)) AND EXISTS (
 		SELECT 1 FROM membership m JOIN tenant_app ta ON ta.tenant_id = m.tenant_id
-		WHERE m.user_id = (o.payload->>'id')::uuid AND ta.app_id = $1 AND ta.status = 'enabled'))
+		WHERE m.user_id = coalesce(o.payload->>'user_id', o.payload->>'id')::uuid AND ta.app_id = $1 AND ta.status = 'enabled'))
 	OR (o.tenant_id IS NOT NULL
 		AND EXISTS (SELECT 1 FROM tenant_app ta WHERE ta.tenant_id = o.tenant_id AND ta.app_id = $1
 			AND (ta.status = 'enabled' OR o.type LIKE 'matura.tenant_app.%'))

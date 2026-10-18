@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -20,6 +21,7 @@ import (
 	"github.com/marunsct/Platform/internal/access"
 	"github.com/marunsct/Platform/internal/api"
 	"github.com/marunsct/Platform/internal/audit"
+	"github.com/marunsct/Platform/internal/billing"
 	"github.com/marunsct/Platform/internal/config"
 	"github.com/marunsct/Platform/internal/events"
 	"github.com/marunsct/Platform/internal/fga"
@@ -71,7 +73,7 @@ func run(log *slog.Logger) error {
 	defer pool.Close()
 
 	kek := cfg.KEK
-	if kek == "" { // only reachable in development (config.Validate)
+	if kek == "" && (cfg.KEKProvider == "" || cfg.KEKProvider == "local") { // only in development (config.Validate)
 		b := make([]byte, 32)
 		if _, err := rand.Read(b); err != nil {
 			return err
@@ -79,10 +81,17 @@ func run(log *slog.Logger) error {
 		kek = base64.StdEncoding.EncodeToString(b)
 		log.Warn("MATURA_KEK is not set: using a random key for this run; stored secrets will not open after a restart")
 	}
-	keys, err := secrets.NewLocal(kek)
+	var previous []string
+	for _, k := range strings.Split(os.Getenv("MATURA_KEK_PREVIOUS"), ",") {
+		if k = strings.TrimSpace(k); k != "" {
+			previous = append(previous, k)
+		}
+	}
+	keys, err := secrets.RingFromConfig(secrets.RingConfig{Provider: cfg.KEKProvider, LocalKEK: kek, Previous: previous})
 	if err != nil {
 		return err
 	}
+	log.Info("key-encryption key", "provider", cfg.KEKProvider, "key", keys.Primary().ID())
 
 	var auth api.Authenticator
 	switch cfg.Auth {
@@ -114,8 +123,26 @@ func run(log *slog.Logger) error {
 	go streamer.Run(ctx)
 	privacyWorker := &privacy.Worker{Store: st, Log: log}
 	go privacyWorker.Run(ctx)
+	if adapter, err := billingAdapter(); err != nil {
+		return err
+	} else if adapter != nil {
+		go (&billing.Exporter{Store: st, Adapter: adapter, Log: log}).Run(ctx)
+		log.Info("billing export on", "provider", adapter.Name())
+	}
 
 	server := api.New(st, auth, keys, log)
+	tenantKeysOn := false
+	if v := strings.ToLower(os.Getenv("MATURA_TENANT_KEYS")); v != "off" && v != "false" {
+		tenantKeysOn = true
+		var byok []string
+		for _, p := range strings.Split(os.Getenv("MATURA_BYOK_PROVIDERS"), ",") {
+			if p = strings.TrimSpace(strings.ToLower(p)); p != "" {
+				byok = append(byok, p)
+			}
+		}
+		server.EnableTenantKeys(keys, &secrets.CustomerKeys{Providers: byok, AllowHTTP: cfg.Env == "development"})
+		log.Info("tenant keys on", "customer_managed_providers", byok)
+	}
 	if cfg.OpenFGAURL != "" {
 		svc := &access.Service{Client: &fga.Client{URL: cfg.OpenFGAURL, Token: cfg.OpenFGAToken}, Store: st,
 			StoreName: cfg.OpenFGAStore, Log: log}
@@ -152,7 +179,8 @@ func run(log *slog.Logger) error {
 		Issuer: cfg.Issuer, ClientID: cfg.PortalClientID})
 	server.SetPortal(portal.Config{Auth: cfg.Auth, Issuer: cfg.Issuer, ClientID: cfg.PortalClientID})
 	server.SetReadiness(readiness.Install{Product: cfg.ProductName, Env: cfg.Env, Auth: cfg.Auth,
-		KEKConfigured: cfg.KEK != "", SMTPConfigured: cfg.SMTPAddr != "", MetricsEnabled: cfg.MetricsAddr != "",
+		KEKConfigured: cfg.KEK != "" || (cfg.KEKProvider != "" && cfg.KEKProvider != "local"), KEKProvider: cfg.KEKProvider,
+		TenantKeys: tenantKeysOn, SMTPConfigured: cfg.SMTPAddr != "", MetricsEnabled: cfg.MetricsAddr != "",
 		PublicURL: cfg.PublicURL, TrustPage: cfg.TrustPage, SecurityContact: cfg.SecurityContact})
 	if cfg.SMTPAddr != "" {
 		mailer := &mail.Mailer{Store: st, Log: log, Sender: mail.SMTP{Addr: cfg.SMTPAddr, From: cfg.SMTPFrom,
@@ -198,4 +226,34 @@ func run(log *slog.Logger) error {
 	shutdown, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	return srv.Shutdown(shutdown)
+}
+
+// billingAdapter reads MATURA_BILLING_PROVIDER (stripe, lago or openmeter; unset: no export), MATURA_BILLING_API_KEY,
+// MATURA_BILLING_URL and MATURA_BILLING_METERS ("devflow.runs=runs,…": Matura meter to the provider's name).
+func billingAdapter() (billing.Adapter, error) {
+	provider := strings.ToLower(strings.TrimSpace(os.Getenv("MATURA_BILLING_PROVIDER")))
+	key, base := os.Getenv("MATURA_BILLING_API_KEY"), os.Getenv("MATURA_BILLING_URL")
+	names := map[string]string{}
+	for _, pair := range strings.Split(os.Getenv("MATURA_BILLING_METERS"), ",") {
+		if k, v, ok := strings.Cut(strings.TrimSpace(pair), "="); ok && k != "" && v != "" {
+			names[k] = v
+		}
+	}
+	switch provider {
+	case "":
+		return nil, nil
+	case "stripe":
+		if key == "" {
+			return nil, errors.New("MATURA_BILLING_API_KEY is required for Stripe")
+		}
+		return &billing.Stripe{APIKey: key, BaseURL: base, Events: names}, nil
+	case "lago":
+		if key == "" {
+			return nil, errors.New("MATURA_BILLING_API_KEY is required for Lago")
+		}
+		return &billing.Lago{APIKey: key, BaseURL: base, Codes: names}, nil
+	case "openmeter":
+		return &billing.OpenMeter{APIKey: key, BaseURL: base, Types: names}, nil
+	}
+	return nil, fmt.Errorf("MATURA_BILLING_PROVIDER must be stripe, lago or openmeter, got %q", provider)
 }

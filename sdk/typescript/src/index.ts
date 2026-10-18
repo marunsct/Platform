@@ -24,5 +24,6 @@ export {
   Forbidden, authenticate, header, requirePermission, requireTenant, webhookHandler, type HeaderBag,
   type WebhookHandlerOptions, type WebhookResponse,
 } from "./http.js";
+export { REVOCATION_WINDOW_SECONDS, Revocations, covers, type Revocation } from "./revocations.js";
 export { FakeIssuer, signedEvent, type TokenOptions } from "./testing.js";
 export { POSTGRES_SHARED_RLS_SQL, POSTGRES_SQL, SQLITE_SQL } from "./sql.js";

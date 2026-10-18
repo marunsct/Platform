@@ -60,7 +60,7 @@ func (s *Store) CreateAuditSink(ctx context.Context, sc Scope, km secrets.KeyMan
 		return AuditSink{}, err
 	}
 	id := ids.New()
-	sealed, err := km.Seal([]byte(secret), auditSinkAAD(id))
+	sealed, err := s.forTenant(km, tenantID).Seal([]byte(secret), auditSinkAAD(id))
 	if err != nil {
 		return AuditSink{}, err
 	}

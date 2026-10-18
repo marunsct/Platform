@@ -1,0 +1,5 @@
+[{"id":"user_1","first_name":"Ana","last_name":"Silva","primary_email_address_id":"idn_1",
+  "email_addresses":[{"id":"idn_0","email_address":"old@acme.test","verification":{"status":"verified"}},
+                     {"id":"idn_1","email_address":"ana@acme.test","verification":{"status":"verified"}}]},
+ {"id":"user_2","first_name":"Bo","primary_email_address_id":"idn_2","banned":true,
+  "email_addresses":[{"id":"idn_2","email_address":"bo@acme.test","verification":{"status":"unverified"}}]}]

@@ -251,3 +251,14 @@ func (s *Store) UpdateWorkspace(ctx context.Context, sc Scope, tenantID, id uuid
 	})
 	return out, err
 }
+
+// TenantBySlug finds a tenant that is not deleted by its slug (operator scope).
+func (s *Store) TenantBySlug(ctx context.Context, slug string) (Tenant, error) {
+	var out Tenant
+	err := s.tx(ctx, Scope{Operator: true}, func(tx pgx.Tx) error {
+		var err error
+		out, err = scanTenant(tx.QueryRow(ctx, `SELECT `+tenantCols+` FROM tenant WHERE slug = $1 AND status <> 'deleted'`, slug))
+		return mapErr(err)
+	})
+	return out, err
+}

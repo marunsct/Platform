@@ -147,6 +147,12 @@ func TestTenantExport(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	var stored []byte // at rest the bundle is sealed under the tenant's key (technical specification §9.2)
+	asOperator(t, pool, `SELECT bundle FROM tenant_export WHERE id = $1`, []any{eid}, &stored)
+	if owner, _, sealed := store.TenantOf(stored); !sealed || owner.String() != aid {
+		t.Fatalf("the stored bundle is not sealed under acme's key")
+	}
+
 	status, h, body := alice.raw("GET", base+"/exports/"+eid+"/download", nil)
 	if status != http.StatusOK || h.Get("Matura-Export-SHA256") != got["sha256"] {
 		t.Fatalf("download: %d %v %s", status, h, body)

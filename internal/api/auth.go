@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -26,6 +27,8 @@ type Principal struct {
 	SessionID     string    // Keycloak SSO session (the token's sid), when known
 	Kind          string    // of UserID: human (also when the token has no kind claim), service or agent
 	Actor         *Actor    // set when an agent acts for UserID (the token's act claim, RFC 8693)
+	IssuedAt      time.Time // the token's iat, for revocations (§21); zero when unknown
+	TokenTenant   uuid.UUID // the token's tid, when it has one
 }
 
 // Actor is the agent a delegated token names in its act claim.
@@ -85,7 +88,23 @@ func (DevAuthenticator) Authenticate(r *http.Request) (Principal, error) {
 	if err != nil {
 		return Principal{}, err
 	}
+	issued := time.Now()
+	if v := r.Header.Get("X-Matura-Dev-Issued-At"); v != "" { // unix seconds, to test revocations
+		sec, err := strconv.ParseInt(v, 10, 64)
+		if err != nil {
+			return Principal{}, errors.New("X-Matura-Dev-Issued-At must be unix seconds")
+		}
+		issued = time.Unix(sec, 0)
+	}
+	var tenant uuid.UUID
+	if v := r.Header.Get("X-Matura-Dev-Tenant"); v != "" {
+		if tenant, err = uuid.Parse(v); err != nil {
+			return Principal{}, errors.New("X-Matura-Dev-Tenant must be a UUID")
+		}
+	}
 	return Principal{
+		IssuedAt:      issued,
+		TokenTenant:   tenant,
 		Actor:         actor,
 		UserID:        id,
 		Email:         r.Header.Get("X-Matura-Dev-Email"),
@@ -119,6 +138,7 @@ type claims struct {
 	Locale        string    `json:"locale"`
 	SessionID     string    `json:"sid"`
 	Kind          string    `json:"kind"`
+	TenantID      string    `json:"tid"`
 	Act           *actClaim `json:"act"`
 	RealmAccess   struct {
 		Roles []string `json:"roles"`
@@ -147,7 +167,14 @@ func (a JWTAuthenticator) Authenticate(r *http.Request) (Principal, error) {
 	if err != nil {
 		return Principal{}, err
 	}
+	var issued time.Time
+	if c.IssuedAt != nil {
+		issued = c.IssuedAt.Time
+	}
+	tenant, _ := uuid.Parse(c.TenantID)
 	return Principal{
+		IssuedAt:      issued,
+		TokenTenant:   tenant,
 		Kind:          kindOf(c.Kind),
 		Actor:         actor,
 		UserID:        id,

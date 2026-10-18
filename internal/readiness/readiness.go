@@ -21,7 +21,9 @@ type Install struct {
 	Product         string
 	Env             string // development, staging, production
 	Auth            string // oidc or dev
-	KEKConfigured   bool   // MATURA_KEK set (not a random key for the run)
+	KEKConfigured   bool   // a key-encryption key is configured (not a random key for the run)
+	KEKProvider     string // local, transit, awskms, gcpkms or azurekv ("" counts as local)
+	TenantKeys      bool   // tenant secrets are sealed under per-tenant keys, destroyed on deletion
 	SMTPConfigured  bool
 	MetricsEnabled  bool
 	PublicURL       string
@@ -51,6 +53,11 @@ type Tenant struct {
 	SinksActive         int // audit destinations delivering
 	SinksFailing        int
 	Audit               Chain
+	LastAccessReview    *time.Time // newest completed access review
+	Agents              int        // active agents and service accounts
+	AgentsWithoutOwner  int
+	Oversight90d        int // human oversight records in the last 90 days
+	RetentionDays       int // audit retention (0: unknown)
 }
 
 // Webhooks sums up the app webhook endpoints.

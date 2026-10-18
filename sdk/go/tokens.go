@@ -49,6 +49,8 @@ type VerifierOptions struct {
 	RefetchMin time.Duration // minimum time between refetches caused by an unknown kid (default 10s)
 	Now        func() time.Time
 	HTTPClient *http.Client // default: a client with a 10s timeout
+	// Revocations, when set, are checked after the signature and claims: a revoked token fails like an invalid one.
+	Revocations *Revocations
 }
 
 // Verifier verifies Matura access tokens: signature (JWKS, cached), issuer, audience (the app's client id), expiry.
@@ -61,6 +63,7 @@ type Verifier struct {
 	now                       func() time.Time
 	client                    *http.Client
 	static                    bool
+	revocations               *Revocations
 
 	mu        sync.Mutex // guards keys, fetchedAt and triedAt
 	keys      []JWK
@@ -77,6 +80,7 @@ func NewVerifier(o VerifierOptions) (*Verifier, error) {
 	v := &Verifier{
 		issuer: strings.TrimRight(o.Issuer, "/"), audience: o.Audience, jwksURL: o.JWKSURL,
 		leeway: o.Leeway, cacheTTL: o.CacheTTL, refetch: o.RefetchMin, now: o.Now, client: o.HTTPClient,
+		revocations: o.Revocations,
 	}
 	if v.jwksURL == "" {
 		v.jwksURL = v.issuer + "/protocol/openid-connect/certs"
@@ -125,6 +129,9 @@ func (v *Verifier) Verify(ctx context.Context, token string) (*Principal, error)
 	c, err := v.VerifyClaims(ctx, token)
 	if err != nil {
 		return nil, err
+	}
+	if v.revocations != nil && v.revocations.Revoked(c) {
+		return nil, invalid("token revoked")
 	}
 	return PrincipalFromClaims(c), nil
 }

@@ -91,7 +91,15 @@ curl -s "$TOKEN_ENDPOINT" -d grant_type=urn:ietf:params:oauth:grant-type:token-e
   - The app's client adds the agent as an audience: an `oidc-audience-mapper` with
     `included.client.audience` set to the agent's client id.
 
-  Consent screens are not built yet. Until they are, set this up only for agents the tenant trusts.
+- **Consent.** Create the agent with `"consent": "required"` (or `PATCH` it later) and it gets a delegated token
+  for Ana only after she approves it. Until then token requests fail with `consent_required`, whose description
+  names the consent screen: send Ana to `<maturad>/agents/consent?client_id=<agent client id>`. There she sees what
+  the agent could do for her, can untick permissions and pick an expiry, and allows or refuses it. A narrowed
+  consent gives tokens with only those `perms` and no `roles`. She lists and withdraws her consents with
+  `GET /v1/me/consents` and `DELETE /v1/me/consents/{id}`; admins see and withdraw them under
+  `/v1/tenants/{tid}/agents/{id}/consents`. Withdrawing stops new tokens and revokes the ones the agent holds for
+  her at once (technical specification §21). With `"consent": "implicit"` (the default) the admin who created the
+  agent approved it for every member.
 
 ## 4. Checking agent tokens in an app
 
@@ -167,13 +175,25 @@ maturad does the same for its own API. `GET /.well-known/oauth-protected-resourc
 401 answers point to it. An agent asks for `audience=<MATURA_AUDIENCE>` (default `matura-api`) to call maturad. On
 maturad's API, agents act as tenant members and never as admins or operators.
 
-## 6. Not built yet
+## 6. Human oversight
 
-- Consent screens and per-tool scopes.
+When a person approves, rejects, overrides, interrupts or stops something an agent did, have the app record it:
+
+```sh
+curl -u "$APP_ID:$APP_SECRET" -X POST "$MATURA/v1/apps/agentcanvas/tenants/$TID/oversight" -d '{
+  "id": "run-42-approval", "kind": "approval", "agent_id": "'$AGENT'", "person_id": "'$ANA'",
+  "action": "send the weekly report to the board"}'
+```
+
+The record lands in the tenant's audit log, with the person as actor and the EU AI Act articles it evidences
+(Art. 12, 14 and 26). A tenant with agents keeps its audit log at least six months. Readiness reports whether
+every agent has an owner and whether oversight is recorded.
+
+## 7. Not built yet
+
+- Per-tool scopes (consent narrows by permission, not by MCP tool).
 - Client ID Metadata Documents and dynamic registration for MCP clients outside the installation.
 - Agent grants issued by a customer's identity provider.
 - SCIM provisioning of agents.
 - OpenFGA relations.
 - Step-up authentication.
-- Human-approval events mapped to EU AI Act articles 12, 14 and 26.
-- Agents in the customer portal.

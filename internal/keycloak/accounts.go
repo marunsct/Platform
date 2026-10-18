@@ -19,6 +19,16 @@ type Account struct {
 	LastName      string              `json:"lastName,omitempty"`
 	Enabled       bool                `json:"enabled"`
 	Attributes    map[string][]string `json:"attributes,omitempty"`
+	// only when creating: a password credential, and actions the person must take at first sign-in
+	Credentials     []PasswordCredential `json:"credentials,omitempty"`
+	RequiredActions []string             `json:"requiredActions,omitempty"`
+}
+
+// PasswordCredential is a password set on a new account; Temporary makes Keycloak ask for a new one at sign-in.
+type PasswordCredential struct {
+	Type      string `json:"type"` // password
+	Value     string `json:"value"`
+	Temporary bool   `json:"temporary"`
 }
 
 // Attribute returns the first value of a user attribute.
@@ -105,4 +115,9 @@ func (c *Client) UpdateAccount(ctx context.Context, id string, ch AccountChange)
 		rep["attributes"] = attrs
 	}
 	return c.do(ctx, http.MethodPut, "users/"+url.PathEscape(id), rep, nil)
+}
+
+// ExecuteActionsEmail emails the person a link to do the actions (UPDATE_PASSWORD, VERIFY_EMAIL…) at Keycloak.
+func (c *Client) ExecuteActionsEmail(ctx context.Context, id string, actions []string) error {
+	return c.do(ctx, http.MethodPut, "users/"+url.PathEscape(id)+"/execute-actions-email", actions, nil)
 }

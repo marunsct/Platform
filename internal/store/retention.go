@@ -68,6 +68,17 @@ func (s *Store) PutRetention(ctx context.Context, sc Scope, tenantID uuid.UUID, 
 		if err := lockTenant(ctx, tx, tenantID); err != nil {
 			return err
 		}
+		if in.RetentionDays < AIRetentionDays {
+			var agents bool
+			if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM agent WHERE tenant_id = $1 AND status <> 'deleted')`,
+				tenantID).Scan(&agents); err != nil {
+				return err
+			}
+			if agents {
+				return invalid("an organisation with AI agents keeps its audit log at least %d days (EU AI Act Art. 26(6))",
+					AIRetentionDays)
+			}
+		}
 		before, err := getRetention(ctx, tx, tenantID)
 		if err != nil {
 			return err

@@ -3,6 +3,30 @@
 ## Unreleased
 
 ### Added
+- Instant token revocation (spec 02 §21): removing, deactivating or signing someone out revokes their tokens across
+  apps within seconds through a revocation feed the Go, Python and TypeScript SDKs apply (migration 0017).
+- Agent consent (§20.5): agents can require each person's consent, narrowed to the permissions they agreed to; a
+  consent page at `/agents/consent`; withdrawal revokes the agent's tokens (migration 0018).
+- Key providers and tenant keys (§9.1, §9.2): the key-encryption key can live in Vault Transit, AWS KMS, Google Cloud
+  KMS or Azure Key Vault (`MATURA_KEK_PROVIDER`); per-tenant keys with rotation, customer-managed keys (BYOK),
+  crypto-shredding on deletion, data keys for apps' field encryption (Go SDK `FieldCipher`) and `keys:rewrap`
+  (migration 0019). Tenant export bundles are sealed under the tenant key at rest.
+- Metering and billing (§22): usage events, atomic quotas, threshold events, app entitlements, and export to Stripe,
+  Lago or OpenMeter (migration 0020, docs/guide/billing.md).
+- Access reviews (§18.4): owners review who has access and the review closes at its deadline; readiness control
+  `tenant-access-review` (migration 0021).
+- AI oversight (§20.6): apps record human oversight of agents; audit retention of at least 183 days while a tenant has
+  agents; readiness controls mapped to the EU AI Act and ISO/IEC 42001 (migration 0022).
+- Onboarding (§5.1): temporary-password and set-up-email invitations, bulk invitations from CSV (migration 0023).
+- User import (§5.1.1): `matura import` from Auth0, Clerk or Keycloak exports (docs/guide/migrating.md).
+- SCIM Bulk and per-connection audit actors (migration 0016).
+- Who has access: `:list-users` on app permissions, in the API and the three SDKs (§18).
+- `cmd/matura-mockidp`: a mock OpenID Connect provider for CI (docs/guide/sso.md).
+- Templates: a security whitepaper and a questionnaire answer bank grouped by CSA CAIQ v4 domain and SIG Lite topic
+  (answers only), filled by `matura check --policies`.
+- Portal page for single sign-on (source only; build it as below).
+- Portal pages for Agents, Directory sync (SCIM tokens and group mappings) and the Audit log. Source only: run
+  `npm ci && npm run typecheck && npm test && npm run build` in web/portal and commit `internal/portal/dist`.
 - Agents and service accounts as tenant principals (TS15): agent tokens through Keycloak carry `kind` and `act`
   (who the agent acts for); SDK helpers for principal kind and protected resources; migration 0015
   (docs/guide/agents.md, spec 02 §20).

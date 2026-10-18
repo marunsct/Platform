@@ -83,16 +83,18 @@ func setupFull(t *testing.T) (*httptest.Server, *store.Store, secrets.KeyManager
 // setupPool also returns the runtime role's pool, for tests that change rows directly (say, to expire them).
 func setupPool(t *testing.T) (*httptest.Server, *store.Store, secrets.KeyManager, *pgxpool.Pool) {
 	pool := testdb.New(t)
-	keys, err := secrets.NewLocal(base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{7}, 32)))
+	local, err := secrets.NewLocal(base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{7}, 32)))
 	if err != nil {
 		t.Fatal(err)
 	}
+	keys := secrets.NewRing(local)
 	st := store.New(pool)
 	var logs io.Writer = io.Discard
 	if os.Getenv("MATURA_TEST_LOG") != "" {
 		logs = os.Stderr
 	}
 	server := api.New(st, api.DevAuthenticator{}, keys, slog.New(slog.NewTextHandler(logs, nil)))
+	server.EnableTenantKeys(keys, nil) // as maturad runs by default: tenant secrets sealed under tenant keys
 	server.EnableInternal(internalToken)
 	server.SetInvitations(api.Invitations{PublicURL: "http://matura.test", Issuer: "http://keycloak.test/realms/matura",
 		ClientID: "matura-console"})

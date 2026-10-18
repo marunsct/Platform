@@ -21,7 +21,7 @@ func devFacts() Facts {
 }
 
 func prodFacts() Facts {
-	f := Facts{Now: now, Install: Install{Product: "Acme", Env: "production", Auth: "oidc", KEKConfigured: true,
+	f := Facts{Now: now, Install: Install{Product: "Acme", Env: "production", Auth: "oidc", KEKConfigured: true, TenantKeys: true,
 		SMTPConfigured: true, MetricsEnabled: true, PublicURL: "https://id.acme.example"},
 		Installation: Chain{OK: true, Events: 40},
 		Webhooks:     Webhooks{Active: 2},
@@ -30,7 +30,8 @@ func prodFacts() Facts {
 		f.Latest[kind] = &Evidence{Kind: kind, Passed: true, RecordedAt: now.Add(-48 * time.Hour)}
 		f.Recent[kind] = 4
 	}
-	f.Tenants = []Tenant{{ID: uuid.New(), Slug: "acme", Kind: "company", Status: "active", PolicySet: true,
+	reviewed := now.Add(-10 * 24 * time.Hour)
+	f.Tenants = []Tenant{{ID: uuid.New(), Slug: "acme", Kind: "company", Status: "active", PolicySet: true, LastAccessReview: &reviewed,
 		RequireMFA: true, SessionMaxAge: ptr(28800), IdleTimeout: ptr(1800), AllowedEmailDomains: 1, SinksActive: 1,
 		Audit: Chain{OK: true, Events: 12}}}
 	return f
@@ -64,7 +65,7 @@ func TestDevInstallFailsTheProductionControls(t *testing.T) {
 			t.Errorf("%s: %s, want not-applicable", id, got[id].Status)
 		}
 	}
-	if r.Passed != 2 || r.Failed != 8 || r.Score != 20 {
+	if r.Passed != 2 || r.Failed != 9 || r.Score != 18.2 {
 		t.Fatalf("score %v (%d passed, %d failed)", r.Score, r.Passed, r.Failed)
 	}
 	for _, c := range r.Controls {
@@ -162,8 +163,10 @@ func TestMappingsUseKnownFrameworks(t *testing.T) {
 				ok = strings.HasPrefix(r.ID, "CC") || strings.HasPrefix(r.ID, "A1.")
 			case iso:
 				ok = strings.HasPrefix(r.ID, "A.5.") || strings.HasPrefix(r.ID, "A.8.")
-			case gdpr:
+			case gdpr, aiAct:
 				ok = strings.HasPrefix(r.ID, "Art. ")
+			case iso42:
+				ok = strings.HasPrefix(r.ID, "A.")
 			}
 			if !ok {
 				t.Errorf("%s: unexpected reference %s %s", c.ID, r.Framework, r.ID)

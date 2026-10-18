@@ -93,7 +93,14 @@ type NewInvitation struct {
 	DeliverTo  string
 	InvitedBy  uuid.UUID
 	Token      string // the secret in the link; only its hash is kept
+	// temporary-password invitations (TS6): the account maturad created, accepted at its first sign-in
+	Delivery  string        // link (default) or temp_password
+	AccountID uuid.UUID     // with temp_password
+	TTL       time.Duration // default InvitationTTL
 }
+
+// TempPasswordTTL is how long a temporary password may be used for a first sign-in (a variable for tests).
+var TempPasswordTTL = 72 * time.Hour
 
 // Compose writes the email for an invitation; the API supplies it because it knows the public URL and the token.
 type Compose func(Invitation) Email
@@ -122,6 +129,15 @@ func (s *Store) CreateInvitation(ctx context.Context, sc Scope, tenantID uuid.UU
 	}
 	if in.AppRoles == nil {
 		in.AppRoles = []InvitedRole{}
+	}
+	if in.Delivery == "" {
+		in.Delivery = "link"
+	}
+	if in.Delivery == "temp_password" && in.AccountID == uuid.Nil {
+		return Invitation{}, invalid("a temporary-password invitation needs the account it created")
+	}
+	if in.TTL <= 0 {
+		in.TTL = InvitationTTL
 	}
 	var out Invitation
 	err := s.tx(ctx, sc.InTenant(tenantID), func(tx pgx.Tx) error {
@@ -160,17 +176,28 @@ func (s *Store) CreateInvitation(ctx context.Context, sc Scope, tenantID uuid.UU
 		if in.InvitedBy != uuid.Nil {
 			invitedBy = in.InvitedBy
 		}
+		var account any
+		if in.AccountID != uuid.Nil {
+			account = in.AccountID
+		}
 		if out, err = scanInvitation(tx.QueryRow(ctx, `INSERT INTO invitation (id, tenant_id, email, tenant_role,
-			app_roles, delivery, deliver_to, token_hash, expires_at, state, invited_by, sent_count, version)
-			VALUES ($1, $2, $3, $4, $5, 'link', $6, $7, now() + $8 * interval '1 second', 'pending', $9, 1, $10)
+			app_roles, delivery, deliver_to, token_hash, expires_at, state, invited_by, sent_count, version, account_id)
+			VALUES ($1, $2, $3, $4, $5, $11, $6, $7, now() + $8 * interval '1 second', 'pending', $9, 1, $10, $12)
 			RETURNING `+invitationCols, ids.New(), tenantID, in.Email, in.TenantRole, roles, deliverTo,
-			HashToken(in.Token), int64(InvitationTTL.Seconds()), invitedBy, v)); err != nil {
+			HashToken(in.Token), int64(in.TTL.Seconds()), invitedBy, v, in.Delivery, account)); err != nil {
 			return err
 		}
 		if err := auditInvitation(ctx, tx, "invitation.created", out); err != nil {
 			return err
 		}
-		return enqueueEmail(ctx, tx, tenantID, compose(out))
+		if compose == nil {
+			return nil
+		}
+		mail := compose(out)
+		if mail.To == "" {
+			return nil
+		}
+		return enqueueEmail(ctx, tx, tenantID, mail)
 	})
 	return out, err
 }
@@ -307,43 +334,7 @@ func (s *Store) AcceptInvitation(ctx context.Context, userID uuid.UUID, email, t
 		if !strings.EqualFold(strings.TrimSpace(email), inv.Email) {
 			return ErrWrongInvitee
 		}
-		if err := lockTenant(ctx, tx, tenantID); err != nil {
-			return err
-		}
-		m, err = addMember(ctx, tx, tenantID, userID, inv.TenantRole, true)
-		if errors.Is(err, ErrConflict) { // already a member: keep the role they have
-			err = nil
-		}
-		if err != nil {
-			return err
-		}
-		named := map[string]bool{}
-		for _, r := range inv.AppRoles {
-			named[r.App] = true
-			// a savepoint, so a grant that fails (say it already exists) does not abort the acceptance
-			err := pgx.BeginFunc(ctx, tx, func(sp pgx.Tx) error {
-				_, err := createGrant(ctx, sp, tenantID, NewGrant{App: r.App, UserID: userID, Role: r.Role,
-					WorkspaceID: r.WorkspaceID})
-				return err
-			})
-			var bad *InvalidError
-			if err != nil && !errors.Is(err, ErrConflict) && !errors.As(err, &bad) {
-				return err
-			}
-		}
-		if err := grantDefaults(ctx, tx, tenantID, userID, named); err != nil {
-			return err
-		}
-		v, err := nextVersion(ctx, tx)
-		if err != nil {
-			return err
-		}
-		if inv, err = scanInvitation(tx.QueryRow(ctx, `UPDATE invitation SET state = 'accepted', accepted_by = $3,
-			accepted_at = now(), version = $4 WHERE tenant_id = $1 AND id = $2 RETURNING `+invitationCols,
-			tenantID, inv.ID, userID, v)); err != nil {
-			return err
-		}
-		if err := auditInvitation(ctx, tx, "invitation.accepted", inv); err != nil {
+		if inv, err = acceptPending(ctx, tx, tenantID, inv, userID); err != nil {
 			return err
 		}
 		m, err = getMember(ctx, tx, tenantID, userID, false)
@@ -380,4 +371,107 @@ func auditInvitation(ctx context.Context, tx pgx.Tx, action string, inv Invitati
 	return audit(ctx, tx, inv.TenantID, action, "tenants/"+inv.TenantID.String()+"/invitations/"+inv.ID.String(),
 		map[string]any{"id": inv.ID, "email": inv.Email, "tenant_role": inv.TenantRole, "app_roles": inv.AppRoles,
 			"deliver_to": inv.DeliverTo, "state": inv.State, "expires_at": inv.ExpiresAt, "sent_count": inv.SentCount})
+}
+
+// acceptPending makes the user a member with the invitation's roles and marks it accepted, in tx.
+func acceptPending(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, inv Invitation, userID uuid.UUID) (Invitation, error) {
+	if err := lockTenant(ctx, tx, tenantID); err != nil {
+		return inv, err
+	}
+	if _, err := addMember(ctx, tx, tenantID, userID, inv.TenantRole, true); err != nil && !errors.Is(err, ErrConflict) {
+		return inv, err // ErrConflict: already a member, who keeps the role they have
+	}
+	named := map[string]bool{}
+	for _, r := range inv.AppRoles {
+		named[r.App] = true
+		// a savepoint, so a grant that fails (say it already exists) does not abort the acceptance
+		err := pgx.BeginFunc(ctx, tx, func(sp pgx.Tx) error {
+			_, err := createGrant(ctx, sp, tenantID, NewGrant{App: r.App, UserID: userID, Role: r.Role,
+				WorkspaceID: r.WorkspaceID})
+			return err
+		})
+		var bad *InvalidError
+		if err != nil && !errors.Is(err, ErrConflict) && !errors.As(err, &bad) {
+			return inv, err
+		}
+	}
+	if err := grantDefaults(ctx, tx, tenantID, userID, named); err != nil {
+		return inv, err
+	}
+	v, err := nextVersion(ctx, tx)
+	if err != nil {
+		return inv, err
+	}
+	if inv, err = scanInvitation(tx.QueryRow(ctx, `UPDATE invitation SET state = 'accepted', accepted_by = $3,
+		accepted_at = now(), version = $4 WHERE tenant_id = $1 AND id = $2 RETURNING `+invitationCols,
+		tenantID, inv.ID, userID, v)); err != nil {
+		return inv, err
+	}
+	return inv, auditInvitation(ctx, tx, "invitation.accepted", inv)
+}
+
+// AcceptTempPasswordInvitations joins an account maturad created for a temporary-password invitation to its
+// tenant at the account's first sign-in (token issuance). An invitation past its expiry refuses the sign-in
+// (temporary_password_expired) while the account belongs to no tenant yet.
+func (s *Store) AcceptTempPasswordInvitations(ctx context.Context, userID uuid.UUID) error {
+	type pending struct {
+		tenant  uuid.UUID
+		id      uuid.UUID
+		expired bool
+	}
+	var list []pending
+	err := s.tx(ctx, Scope{Operator: true}, func(tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, `SELECT tenant_id, id, expires_at <= now() FROM invitation
+			WHERE account_id = $1 AND state = 'pending' AND delivery = 'temp_password' ORDER BY created_at`, userID)
+		if err != nil {
+			return err
+		}
+		list, err = pgx.CollectRows(rows, func(r pgx.CollectableRow) (pending, error) {
+			var p pending
+			return p, r.Scan(&p.tenant, &p.id, &p.expired)
+		})
+		return err
+	})
+	if err != nil || len(list) == 0 {
+		return err
+	}
+	accepted, expired := 0, 0
+	for _, p := range list {
+		if p.expired {
+			expired++
+			continue
+		}
+		err := s.tx(ctx, Scope{TenantID: p.tenant, UserID: userID}, func(tx pgx.Tx) error {
+			inv, err := getInvitation(ctx, tx, p.tenant, p.id)
+			if err != nil || inv.State != "pending" {
+				return err
+			}
+			var tenantStatus string
+			if err := tx.QueryRow(ctx, `SELECT status FROM tenant WHERE id = $1`, p.tenant).Scan(&tenantStatus); err != nil {
+				return mapErr(err)
+			}
+			if tenantStatus != "active" {
+				return nil
+			}
+			_, err = acceptPending(ctx, tx, p.tenant, inv, userID)
+			return err
+		})
+		if err != nil {
+			return err
+		}
+		accepted++
+	}
+	if accepted == 0 && expired > 0 {
+		var member bool
+		if err := s.tx(ctx, Scope{Operator: true}, func(tx pgx.Tx) error {
+			return tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM membership WHERE user_id = $1 AND status = 'active')`,
+				userID).Scan(&member)
+		}); err != nil {
+			return err
+		}
+		if !member {
+			return refuse("temporary_password_expired", "this temporary password expired; ask your administrator to invite you again")
+		}
+	}
+	return nil
 }

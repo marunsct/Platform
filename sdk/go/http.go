@@ -131,6 +131,9 @@ type WebhookHandler struct {
 	Now       func() time.Time
 	MaxBytes  int64                            // largest body accepted (default 1 MiB)
 	OnError   func(r *http.Request, err error) // database and hook errors, for logging
+	// Revocations, when set, get each matura.revocation.created event (the Verifier using them then refuses the
+	// revoked tokens at once).
+	Revocations *Revocations
 }
 
 // NewWebhookHandler returns a handler for one signing secret.
@@ -174,6 +177,9 @@ func (h *WebhookHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err := json.Unmarshal(body, &e); err != nil {
 		problem(w, http.StatusBadRequest, "the body is not a CloudEvent")
 		return
+	}
+	if h.Revocations != nil {
+		h.Revocations.Apply(&e)
 	}
 	err = pgx.BeginFunc(r.Context(), h.DB, func(tx pgx.Tx) error {
 		_, err := h.Contract.Apply(r.Context(), tx, &e)

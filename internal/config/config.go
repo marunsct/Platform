@@ -23,6 +23,7 @@ type Config struct {
 	OperatorRole       string // realm role that grants operator scope
 	Auth               string // oidc or dev
 	KEK                string // base64 key-encryption key for stored secrets
+	KEKProvider        string // where the key-encryption key lives: local (MATURA_KEK), transit, awskms, gcpkms, azurekv
 	InternalToken      string // shared with Keycloak's Matura extension for /internal/v1
 	EventSource        string // CloudEvents source of this installation
 	PublicURL          string // where people reach maturad, for links in emails
@@ -65,6 +66,7 @@ func FromEnv() (Config, error) {
 		OperatorRole:       getenv("MATURA_OPERATOR_ROLE", "matura-operator"),
 		Auth:               getenv("MATURA_AUTH", "oidc"),
 		KEK:                os.Getenv("MATURA_KEK"),
+		KEKProvider:        strings.ToLower(getenv("MATURA_KEK_PROVIDER", "local")),
 		InternalToken:      os.Getenv("MATURA_INTERNAL_TOKEN"),
 		EventSource:        getenv("MATURA_EVENT_SOURCE", "matura://installation/main"),
 		PublicURL:          getenv("MATURA_PUBLIC_URL", "http://localhost:8080"),
@@ -118,8 +120,14 @@ func (c Config) Validate() error {
 	if c.DatabaseURL == "" {
 		return errors.New("MATURA_DATABASE_URL is required")
 	}
-	if c.KEK == "" && c.Env != "development" {
-		return errors.New("MATURA_KEK is required outside development: 32 random bytes, base64 (openssl rand -base64 32)")
+	switch c.KEKProvider {
+	case "", "local":
+		if c.KEK == "" && c.Env != "development" {
+			return errors.New("MATURA_KEK is required outside development: 32 random bytes, base64 (openssl rand -base64 32)")
+		}
+	case "transit", "awskms", "gcpkms", "azurekv":
+	default:
+		return fmt.Errorf("MATURA_KEK_PROVIDER must be local, transit, awskms, gcpkms or azurekv, got %q", c.KEKProvider)
 	}
 	if c.InternalToken != "" && len(c.InternalToken) < 32 {
 		return errors.New("MATURA_INTERNAL_TOKEN must be at least 32 characters (openssl rand -hex 32)")

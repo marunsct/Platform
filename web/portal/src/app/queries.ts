@@ -15,6 +15,13 @@ export const keys = {
   tenantApps: (tid: string) => ["tenant", tid, "apps"] as const,
   grants: (tid: string) => ["tenant", tid, "grants"] as const,
   workspaces: (tid: string) => ["tenant", tid, "workspaces"] as const,
+  agents: (tid: string) => ["tenant", tid, "agents"] as const,
+  audit: (tid: string, actor: string, action: string) => ["tenant", tid, "audit", actor, action] as const,
+  auditVerify: (tid: string) => ["tenant", tid, "audit", "verify"] as const,
+  scimTokens: (tid: string) => ["tenant", tid, "scim", "tokens"] as const,
+  groupMappings: (tid: string) => ["tenant", tid, "scim", "mappings"] as const,
+  domains: (tid: string) => ["tenant", tid, "domains"] as const,
+  sso: (tid: string) => ["tenant", tid, "sso"] as const,
   roles: (app: string) => ["roles", app] as const,
 };
 

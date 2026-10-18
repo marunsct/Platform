@@ -174,7 +174,7 @@ func (q permissionQuery) build(c fgaCall) (fga.Query, error) {
 	return out, nil
 }
 
-// appPermissionAction handles POST {tid}:check, {tid}:batch-check and {tid}:list-objects.
+// appPermissionAction handles POST {tid}:check, {tid}:batch-check, {tid}:list-objects and {tid}:list-users.
 func (s *Server) appPermissionAction(w http.ResponseWriter, r *http.Request) {
 	c, action, ok := s.permissionTarget(w, r)
 	if !ok {
@@ -187,6 +187,8 @@ func (s *Server) appPermissionAction(w http.ResponseWriter, r *http.Request) {
 		s.permissionBatchCheck(w, r, c)
 	case "list-objects":
 		s.permissionListObjects(w, r, c)
+	case "list-users":
+		s.permissionListUsers(w, r, c)
 	default:
 		problem(w, http.StatusNotFound, "not-found", "not found")
 	}
@@ -303,4 +305,52 @@ func (s *Server) permissionListObjects(w http.ResponseWriter, r *http.Request, c
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"objects": out})
+}
+
+// permissionListUsers answers who has relation on an object, the "who has access" view (technical specification
+// §18): only this tenant's users (or groups, or the type:* wildcard), by the names the app uses.
+func (s *Server) permissionListUsers(w http.ResponseWriter, r *http.Request, c fgaCall) {
+	var in struct {
+		Object   string `json:"object"`
+		Relation string `json:"relation"`
+		UserType string `json:"user_type"` // default user
+		permissionQuery
+	}
+	if !decode(w, r, &in) {
+		return
+	}
+	if in.UserType == "" {
+		in.UserType = "user"
+	}
+	q, err := in.build(c)
+	if err != nil {
+		invalidTuple(w, err)
+		return
+	}
+	object, err := c.ns.Object(in.Object)
+	if err == nil {
+		err = fga.Relation(in.Relation)
+	}
+	userType := ""
+	if err == nil {
+		userType, err = c.ns.Type(in.UserType)
+	}
+	if err != nil {
+		invalidTuple(w, err)
+		return
+	}
+	users, err := s.access.Client.ListUsers(r.Context(), c.storeID, q, object, in.Relation, userType)
+	if err != nil {
+		s.fgaFail(w, r, err)
+		return
+	}
+	out := make([]string, 0, len(users))
+	for _, u := range users {
+		if strings.HasSuffix(u, ":*") {
+			out = append(out, in.UserType+":*")
+		} else if v, ok := c.ns.FromObject(u); ok {
+			out = append(out, v)
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"users": out})
 }

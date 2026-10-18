@@ -47,6 +47,8 @@ type Server struct {
 	access         *access.Service   // OpenFGA (TS11); nil: permission endpoints answer 501
 	resource       string            // maturad's public URL as an OAuth protected resource (TS15)
 	apiAudience    string            // the token audience maturad's API accepts
+	revocations    revocationCache   // recent token revocations (§21)
+	ring           *secrets.Ring     // the key ring, when keys is one (key rotation, tenant keys)
 }
 
 // seenProfile remembers a profile already written; it is re-checked after a minute so a deactivated account stops
@@ -89,6 +91,7 @@ func (s *Server) Handler() http.Handler {
 	s.handle(mux, "GET /healthz/live", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) })
 	s.handle(mux, "GET /healthz/ready", s.ready)
 	s.handle(mux, "GET /invitations/accept", s.acceptPageHandler)
+	s.handle(mux, "GET /agents/consent", s.consentPageHandler)
 	s.handle(mux, "GET /invitations/preview", s.previewInvitation)
 	s.handle(mux, "GET /v1/sso/discover", s.discoverSSO) // public: home-realm discovery for sign-in pages
 	s.handle(mux, "GET /portal/config.json", s.portal.ConfigJSON)
@@ -112,6 +115,7 @@ func (s *Server) Handler() http.Handler {
 	s.handle(mux, "PUT /scim/v2/tenants/{tid}/Groups/{id}", s.scim(s.scimReplaceGroup))
 	s.handle(mux, "PATCH /scim/v2/tenants/{tid}/Groups/{id}", s.scim(s.scimPatchGroup))
 	s.handle(mux, "DELETE /scim/v2/tenants/{tid}/Groups/{id}", s.scim(s.scimDeleteGroup))
+	s.handle(mux, "POST /scim/v2/tenants/{tid}/Bulk", s.scim(s.scimBulk))
 
 	api := http.NewServeMux()
 	s.handle(api, "GET /v1/me", s.getMe)
@@ -146,6 +150,7 @@ func (s *Server) Handler() http.Handler {
 	s.handle(api, "GET /v1/tenants/{tid}/placements", s.listPlacements)
 	s.handle(api, "GET /v1/tenants/{tid}/invitations", s.listInvitations)
 	s.handle(api, "POST /v1/tenants/{tid}/invitations", s.createInvitation)
+	s.handle(api, "POST /v1/tenants/{tid}/invitations:bulk", s.bulkInvitations)
 	s.handle(api, "POST /v1/tenants/{tid}/invitations/{id}", s.invitationAction) // {id}:resend
 	s.handle(api, "DELETE /v1/tenants/{tid}/invitations/{id}", s.revokeInvitation)
 	s.handle(api, "POST /v1/invitations:accept", s.acceptInvitation)
@@ -175,6 +180,13 @@ func (s *Server) Handler() http.Handler {
 	s.handle(api, "POST /admin/v1/db-servers/{id}/test", s.testDBServer)
 
 	s.handle(api, "GET /v1/me/tenants", s.myTenants)
+	s.handle(api, "POST /v1/me/tokens:revoke", s.revokeMyTokens)
+	s.handle(api, "GET /v1/me/consent-request", s.consentRequest)
+	s.handle(api, "GET /v1/me/consents", s.myConsents)
+	s.handle(api, "POST /v1/me/consents", s.grantConsent)
+	s.handle(api, "DELETE /v1/me/consents/{id}", s.withdrawMyConsent)
+	s.handle(api, "GET /v1/tenants/{tid}/agents/{id}/consents", s.agentConsents)
+	s.handle(api, "DELETE /v1/tenants/{tid}/agents/{id}/consents/{cid}", s.withdrawAgentConsent)
 	s.handle(api, "GET /v1/me/sessions", s.mySessions)
 	s.handle(api, "DELETE /v1/me/sessions", s.signOutEverywhere)
 	s.handle(api, "DELETE /v1/me/sessions/{id}", s.deleteMySession)
@@ -206,6 +218,21 @@ func (s *Server) Handler() http.Handler {
 	s.handle(api, "GET /admin/v1/users/{uid}", s.getUser)
 	s.handle(api, "PATCH /admin/v1/users/{uid}", s.patchUser)
 	s.handle(api, "DELETE /admin/v1/users/{uid}", s.deleteUser)
+	s.handle(api, "POST /admin/v1/users/{uid}", s.userAction) // {uid}:revoke-tokens
+	s.handle(api, "POST /admin/v1/keys:rewrap", s.rewrapKeys)
+	s.handle(api, "POST /admin/v1/users:import", s.importUsers)
+	s.handle(api, "GET /admin/v1/tenants/{tid}/billing", s.getBillingCustomer)
+	s.handle(api, "PUT /admin/v1/tenants/{tid}/billing", s.putBillingCustomer)
+	s.handle(api, "GET /admin/v1/billing/exports", s.billingExports)
+	s.handle(api, "GET /v1/tenants/{tid}/keys", s.getTenantKeys)
+	s.handle(api, "GET /v1/tenants/{tid}/access-reviews", s.listAccessReviews)
+	s.handle(api, "POST /v1/tenants/{tid}/access-reviews", s.startAccessReview)
+	s.handle(api, "GET /v1/tenants/{tid}/access-reviews/{id}", s.getAccessReview)
+	s.handle(api, "POST /v1/tenants/{tid}/access-reviews/{id}", s.accessReviewAction) // {id}:complete, :cancel
+	s.handle(api, "PATCH /v1/tenants/{tid}/access-reviews/{id}/items/{item}", s.decideAccessReviewItem)
+	s.handle(api, "POST /v1/tenants/{tid}/keys:rotate", s.rotateTenantKey)
+	s.handle(api, "PUT /v1/tenants/{tid}/keys/provider", s.putKeyProvider)
+	s.handle(api, "DELETE /v1/tenants/{tid}/keys/provider", s.deleteKeyProvider)
 	s.handle(api, "GET /admin/v1/apps/{slug}/secrets", s.listAppSecrets)
 	s.handle(api, "POST /admin/v1/apps/{slug}/secrets", s.createAppSecret)
 	s.handle(api, "DELETE /admin/v1/apps/{slug}/secrets/{id}", s.revokeAppSecret)
@@ -230,6 +257,13 @@ func (s *Server) Handler() http.Handler {
 	appAPI := http.NewServeMux()
 	s.handle(appAPI, "GET /v1/apps/{app}/changes", s.appChanges)
 	s.handle(appAPI, "GET /v1/apps/{app}/snapshot", s.appSnapshot)
+	s.handle(appAPI, "GET /v1/apps/{app}/revocations", s.appRevocations)
+	s.handle(appAPI, "POST /v1/apps/{app}/tenants/{tid}/data-keys", s.newDataKey)
+	s.handle(appAPI, "POST /v1/apps/{app}/tenants/{tid}/usage", s.recordUsage)
+	s.handle(appAPI, "POST /v1/apps/{app}/tenants/{tid}/oversight", s.recordOversight)
+	s.handle(appAPI, "POST /v1/apps/{app}/tenants/{tid}/quota:consume", s.consumeQuota)
+	s.handle(appAPI, "GET /v1/apps/{app}/tenants/{tid}/entitlements", s.appEntitlements)
+	s.handle(appAPI, "POST /v1/apps/{app}/tenants/{tid}/data-keys:unwrap", s.unwrapDataKey)
 	s.handle(appAPI, "GET /v1/apps/{app}/placements/{tid}", s.appGetPlacement)
 	s.handle(appAPI, "PUT /v1/apps/{app}/placements/{tid}", s.appPutPlacement)
 	s.handle(appAPI, "POST /v1/apps/{app}/placements/{tid}", s.appPlacementAction) // {tid}:ready, {tid}:deleted
@@ -243,7 +277,14 @@ func (s *Server) Handler() http.Handler {
 	for _, rt := range s.internalRoutes {
 		s.handle(mux, rt.pattern, rt.handler)
 	}
-	return mux
+	// A write on this replica may have revoked tokens (§21): check the database again on the next request rather
+	// than after the cache's second.
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mux.ServeHTTP(w, r)
+		if r.Method != http.MethodGet && r.Method != http.MethodHead && r.Method != http.MethodOptions {
+			s.revocations.forget()
+		}
+	})
 }
 
 type route struct {
@@ -301,6 +342,14 @@ func (s *Server) authenticate(next, appNext http.Handler) http.Handler {
 		if err != nil {
 			w.Header().Set("WWW-Authenticate", s.bearerChallenge())
 			problem(w, http.StatusUnauthorized, "unauthenticated", err.Error())
+			return
+		}
+		if gone, err := s.revoked(r.Context(), p); err != nil {
+			s.fail(w, r, err)
+			return
+		} else if gone {
+			w.Header().Set("WWW-Authenticate", s.bearerChallenge()+`, error="invalid_token", error_description="token revoked"`)
+			problem(w, http.StatusUnauthorized, "token-revoked", "this token was revoked; sign in again or get a new token")
 			return
 		}
 		profile := store.UserProfile{ID: p.UserID, Email: p.Email, EmailVerified: p.EmailVerified,
@@ -412,6 +461,11 @@ func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 			ext["max"], ext["used"] = *lim.Max, lim.Used
 		}
 		problemWith(w, http.StatusPaymentRequired, "plan-limit", lim.Msg, ext)
+	case errors.Is(err, store.ErrTenantKeyDestroyed):
+		problem(w, http.StatusGone, "tenant-key-destroyed", err.Error())
+	case errors.As(err, new(*store.TenantKeyUnavailableError)):
+		s.log.WarnContext(r.Context(), "tenant key unavailable", "err", err)
+		problem(w, http.StatusServiceUnavailable, "tenant-key-unavailable", err.Error())
 	case errors.Is(err, store.ErrSupportAccessOff):
 		s.auditDenied(r, "support-access-off")
 		problem(w, http.StatusForbidden, "support-access-off", err.Error())

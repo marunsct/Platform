@@ -41,6 +41,25 @@ secrets:
   internalToken: ""
   keycloakClientSecret: ""
 
+# Where the key-encryption key lives (technical specification §9.1) and per-tenant keys (§9.2).
+keys:
+  provider: local                       # local (secrets.kek), transit, awskms, gcpkms or azurekv
+  tenantKeys: true                      # seal tenant secrets under per-tenant keys, destroyed on deletion
+  byokProviders: []                     # providers tenants may bring their own key from, e.g. [awskms, transit]
+  transit:                              # OpenBao or Vault
+    addr: ""
+    mount: transit
+    key: matura
+    namespace: ""
+    tokenSecret: ""                     # Secret with key: token
+  aws:
+    keyId: ""                           # key ARN; credentials from the pod's environment (IRSA or pod identity)
+    region: ""
+  gcp:
+    key: ""                             # projects/<p>/locations/<l>/keyRings/<r>/cryptoKeys/<k>; workload identity
+  azure:
+    keyUrl: ""                          # https://<vault>.vault.azure.net/keys/<name>/<version>; managed identity
+
 smtp:
   addr: ""                              # host:port; empty queues emails without sending
   from: no-reply@matura.local

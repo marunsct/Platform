@@ -42,6 +42,7 @@ func (s *Store) agentTokenContext(ctx context.Context, ag Agent, req TokenReques
 		subject = u
 	}
 	out := TokenContext{TenantRoles: []string{}, Roles: []string{}, Perms: []string{}, Versions: map[string]int64{}}
+	var consented []string // permissions a consent narrows a delegated token to; nil: not narrowed
 	err := s.tx(ctx, Scope{UserID: ag.ID, TenantID: ag.TenantID}, func(tx pgx.Tx) error {
 		self, err := scanUser(tx.QueryRow(ctx, `SELECT `+userCols+` FROM app_user WHERE id = $1`, ag.ID))
 		if err != nil {
@@ -78,6 +79,17 @@ func (s *Store) agentTokenContext(ctx context.Context, ag Agent, req TokenReques
 			}
 			m = um
 			out.Act = &TokenActor{Sub: ag.ID, Kind: ag.Kind, ClientID: ag.ClientID}
+			if ag.Consent == "required" { // §20.5: the person must have approved this agent
+				c, err := activeConsent(ctx, tx, ag.ID, subject.ID, now)
+				if err == ErrNotFound {
+					return refuse("consent_required", "approve "+ag.Name+" to act for you first (consent screen: "+
+						"/agents/consent?client_id="+ag.ClientID+")")
+				}
+				if err != nil {
+					return err
+				}
+				consented = c.Permissions
+			}
 		}
 		out.TenantID, out.TenantSlug, out.Kind = &t.ID, t.Slug, subject.Kind
 		out.Versions["u"], out.Versions["m"], out.Versions["t"] = subject.Version, m.Version, t.Version
@@ -123,6 +135,10 @@ func (s *Store) agentTokenContext(ctx context.Context, ag Agent, req TokenReques
 			}
 			roles = slices.DeleteFunc(roles, func(r string) bool { return !slices.Contains(userRoles, r) })
 			perms = IntersectPerms(perms, userPerms)
+			if consented != nil {
+				// only what the person consented to; no roles, since an app could read more permissions from them
+				perms, roles = IntersectPerms(perms, consented), []string{}
+			}
 		}
 		var mode *string
 		if err := tx.QueryRow(ctx, `SELECT mode FROM placement WHERE tenant_id = $1 AND app_id = $2`, t.ID, app.ID).
@@ -133,7 +149,7 @@ func (s *Store) agentTokenContext(ctx context.Context, ag Agent, req TokenReques
 		if wid != uuid.Nil {
 			out.WorkspaceID = &wid
 		}
-		if len(perms) > MaxPermsInToken {
+		if len(perms) > MaxPermsInToken && consented == nil {
 			out.PermsRef, out.Perms = "matura_app_role", nil
 		} else {
 			out.Perms = perms

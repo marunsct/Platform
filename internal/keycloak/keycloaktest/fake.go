@@ -44,20 +44,21 @@ type Server struct {
 	*httptest.Server
 	sync.Mutex
 
-	Sessions    map[string][]Session    // by user id
-	Credentials map[string][]Credential // by user id
-	IdPs        map[string]map[string]any
-	Mappers     map[string][]map[string]any
-	Imports     map[string]map[string]string // import-config answers by fromUrl
-	TokenCalls  int
-	Logouts     []string                  // user ids signed out everywhere
-	Deleted     []string                  // user ids whose accounts were deleted
-	Accounts    map[string]map[string]any // user representations by id
-	Down        bool                      // answer 503 to every admin call, as if Keycloak were failing
-	Clients     map[string]map[string]any // client representations by internal id
-	Secrets     map[string]string         // client secrets by internal id
-	ServiceUser map[string]string         // service-account user id by client internal id
-	tokens      map[string]bool
+	Sessions     map[string][]Session    // by user id
+	Credentials  map[string][]Credential // by user id
+	IdPs         map[string]map[string]any
+	Mappers      map[string][]map[string]any
+	Imports      map[string]map[string]string // import-config answers by fromUrl
+	TokenCalls   int
+	Logouts      []string                  // user ids signed out everywhere
+	Deleted      []string                  // user ids whose accounts were deleted
+	ActionEmails []string                  // "<user id>:<actions>" of execute-actions emails sent
+	Accounts     map[string]map[string]any // user representations by id
+	Down         bool                      // answer 503 to every admin call, as if Keycloak were failing
+	Clients      map[string]map[string]any // client representations by internal id
+	Secrets      map[string]string         // client secrets by internal id
+	ServiceUser  map[string]string         // service-account user id by client internal id
+	tokens       map[string]bool
 }
 
 // New starts a fake Keycloak for the realm Realm, closed when the test ends.
@@ -227,6 +228,15 @@ func (f *Server) serve(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, http.StatusOK, a)
+	case "PUT users/*/execute-actions-email":
+		if _, ok := f.Accounts[parts[1]]; !ok {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "User not found"})
+			return
+		}
+		var actions []string
+		_ = json.NewDecoder(r.Body).Decode(&actions)
+		f.ActionEmails = append(f.ActionEmails, parts[1]+":"+strings.Join(actions, ","))
+		w.WriteHeader(http.StatusNoContent)
 	case "PUT users/*":
 		if _, ok := f.Accounts[parts[1]]; !ok {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "User not found"})
@@ -406,7 +416,7 @@ func (f *Server) serve(w http.ResponseWriter, r *http.Request) {
 func pattern(parts []string) []string {
 	fixed := map[string]bool{"users": true, "sessions": true, "logout": true, "credentials": true,
 		"identity-provider": true, "instances": true, "mappers": true, "import-config": true, "clients": true,
-		"service-account-user": true, "client-secret": true}
+		"service-account-user": true, "client-secret": true, "execute-actions-email": true}
 	out := make([]string, len(parts))
 	for i, p := range parts {
 		if fixed[p] {

@@ -9,6 +9,7 @@ import jwt
 from jwt import PyJWKClient, PyJWKSet
 
 from .principal import Principal
+from .revocations import Revocations
 
 ALGORITHMS = ["RS256", "RS384", "RS512", "ES256", "ES384", "PS256"]
 
@@ -21,6 +22,7 @@ class Verifier:
     """Verifies Matura access tokens: signature (JWKS, cached), issuer, audience (the app's client id), expiry.
 
     ``jwks`` (a JWK Set dict) skips the network, for tests with :class:`matura.testing.FakeIssuer`.
+    ``revocations`` (a :class:`matura.Revocations`) makes revoked tokens fail before they expire.
     """
 
     def __init__(
@@ -32,10 +34,12 @@ class Verifier:
         jwks: dict[str, Any] | None = None,
         leeway: int = 30,
         jwks_cache_seconds: int = 300,
+        revocations: Revocations | None = None,
     ):
         self.issuer = issuer.rstrip("/")
         self.audience = audience
         self.leeway = leeway
+        self.revocations = revocations
         self._static = PyJWKSet.from_dict(jwks) if jwks is not None else None
         url = jwks_url or f"{self.issuer}/protocol/openid-connect/certs"
         self._client = None if self._static else PyJWKClient(url, cache_jwk_set=True, lifespan=jwks_cache_seconds)
@@ -68,6 +72,8 @@ class Verifier:
             raise InvalidToken("token expired") from None
         except jwt.PyJWTError as exc:
             raise InvalidToken(f"invalid token: {exc}") from None
+        if self.revocations is not None and self.revocations.revoked(claims):
+            raise InvalidToken("token revoked")
         return Principal.from_claims(claims)
 
     async def averify(self, token: str) -> Principal:

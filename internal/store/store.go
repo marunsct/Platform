@@ -42,7 +42,8 @@ type Scope struct {
 func (s Scope) InTenant(id uuid.UUID) Scope { s.TenantID = id; return s }
 
 type Store struct {
-	pool *pgxpool.Pool
+	pool       *pgxpool.Pool
+	tenantKeys *TenantKeys // per-tenant keys (TS17); nil until EnableTenantKeys
 }
 
 func New(pool *pgxpool.Pool) *Store { return &Store{pool: pool} }
@@ -121,7 +122,52 @@ func emit(ctx context.Context, tx pgx.Tx, version int64, tenantID uuid.UUID, typ
 		version, tid, "matura."+typ, subject, body); err != nil {
 		return err
 	}
-	return audit(ctx, tx, tenantID, typ, subject, json.RawMessage(body))
+	if err := audit(ctx, tx, tenantID, typ, subject, json.RawMessage(body)); err != nil {
+		return err
+	}
+	return revokeOnChange(ctx, tx, tenantID, typ, payload)
+}
+
+// revokeOnChange revokes the tokens a change makes wrong at once (technical specification §21): a membership removed
+// or deactivated (in that tenant), a user (or agent) deactivated or deleted (everywhere).
+func revokeOnChange(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, typ string, payload any) error {
+	var err error
+	switch typ {
+	case "membership.removed", "membership.updated":
+		m, ok := payload.(Membership)
+		if !ok || (typ == "membership.updated" && m.Status == "active") {
+			return nil
+		}
+		reason := RevokeMembershipRemoved
+		if typ == "membership.updated" {
+			reason = RevokeMembershipStatus
+		}
+		_, err = revokeTokens(ctx, tx, tenantID, m.UserID, "", reason)
+	case "user.deactivated", "user.deleted":
+		u, ok := payload.(User)
+		if !ok {
+			return nil
+		}
+		reason := RevokeUserDeactivated
+		if typ == "user.deleted" {
+			reason = RevokeUserDeleted
+		}
+		// Everywhere in operator scope (an operator or the user acting on the account); in a tenant's scope (an agent,
+		// which belongs to one tenant) only there, as row-level security allows.
+		var scope, tid string
+		if err := tx.QueryRow(ctx, `SELECT current_setting('matura.scope', true), current_setting('matura.tenant_id', true)`).
+			Scan(&scope, &tid); err != nil {
+			return err
+		}
+		in := uuid.Nil
+		if scope != "operator" && tid != "" {
+			if in, err = uuid.Parse(tid); err != nil {
+				return err
+			}
+		}
+		_, err = revokeTokens(ctx, tx, in, u.ID, "", reason)
+	}
+	return err
 }
 
 // mapErr turns driver errors into the package's errors.

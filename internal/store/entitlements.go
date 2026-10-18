@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"slices"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -20,11 +21,12 @@ import (
 // key (features flag by flag).
 
 type Limits struct {
-	MaxMembers    *int            `json:"max_members,omitempty"`
-	MaxWorkspaces *int            `json:"max_workspaces,omitempty"`
-	MaxAgents     *int            `json:"max_agents,omitempty"` // service accounts and AI agents (TS15)
-	Apps          *[]string       `json:"apps,omitempty"`
-	Features      map[string]bool `json:"features,omitempty"`
+	MaxMembers    *int                  `json:"max_members,omitempty"`
+	MaxWorkspaces *int                  `json:"max_workspaces,omitempty"`
+	MaxAgents     *int                  `json:"max_agents,omitempty"` // service accounts and AI agents (TS15)
+	Apps          *[]string             `json:"apps,omitempty"`
+	Features      map[string]bool       `json:"features,omitempty"`
+	Meters        map[string]MeterLimit `json:"meters,omitempty"` // <app>.<meter> → limit per period (§22)
 }
 
 // ParseLimits checks the keys Matura enforces; it is used for plans and overrides.
@@ -39,7 +41,10 @@ func ParseLimits(raw json.RawMessage) (Limits, error) {
 			return l, invalid("limits must be a JSON object")
 		}
 		return l, invalid("limits: max_members, max_workspaces and max_agents are whole numbers, apps a list of app slugs, " +
-			"features an object of true or false")
+			"features an object of true or false, meters an object of {limit, period, hard}")
+	}
+	if err := validMeters(l.Meters); err != nil {
+		return l, err
 	}
 	return l, nil
 }
@@ -58,6 +63,15 @@ func (l Limits) merge(o Limits) Limits {
 	}
 	if o.Apps != nil {
 		out.Apps = o.Apps
+	}
+	if len(l.Meters)+len(o.Meters) > 0 {
+		out.Meters = map[string]MeterLimit{}
+		for k, v := range l.Meters {
+			out.Meters[k] = v
+		}
+		for k, v := range o.Meters {
+			out.Meters[k] = v
+		}
 	}
 	if len(l.Features)+len(o.Features) > 0 {
 		out.Features = map[string]bool{}
@@ -184,10 +198,11 @@ type PlanRef struct {
 }
 
 type Usage struct {
-	Members    int      `json:"members"`
-	Workspaces int      `json:"workspaces"`
-	Agents     int      `json:"agents"`
-	Apps       []string `json:"apps"` // enabled
+	Members    int          `json:"members"`
+	Workspaces int          `json:"workspaces"`
+	Agents     int          `json:"agents"`
+	Apps       []string     `json:"apps"`   // enabled
+	Meters     []MeterUsage `json:"meters"` // current period of each limited or used meter
 }
 
 // Entitlements is what a tenant may use and what it uses (GET /v1/tenants/{tid}/entitlements).
@@ -223,6 +238,9 @@ func entitlementsOf(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID) (Entitle
 		return out, err
 	}
 	out.Usage.Apps = append(out.Usage.Apps, apps...)
+	if out.Usage.Meters, err = meterUsage(ctx, tx, tenantID, out.Limits, time.Now()); err != nil {
+		return out, err
+	}
 	return out, nil
 }
 

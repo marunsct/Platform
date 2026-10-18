@@ -28,6 +28,8 @@ const (
 	soc2  = "SOC 2"              // AICPA Trust Services Criteria (2017, revised points of focus 2022)
 	iso   = "ISO/IEC 27001:2022" // Annex A
 	gdpr  = "GDPR"               // Regulation (EU) 2016/679
+	aiAct = "EU AI Act"          // Regulation (EU) 2024/1689
+	iso42 = "ISO/IEC 42001:2023" // AI management system, Annex A
 	scIns = "installation"
 	scTen = "tenant"
 )
@@ -55,8 +57,23 @@ var Catalogue = []Control{
 		Fix:  "Set MATURA_KEK to 32 random bytes, base64 (openssl rand -base64 32), and back it up apart from the database.",
 		Refs: refs(soc2, "CC6.1", iso, "A.8.24", gdpr, "Art. 32(1)(a)"),
 		install: func(f Facts) (Status, string) {
+			if p := f.Install.KEKProvider; p != "" && p != "local" && f.Install.KEKConfigured {
+				return Pass, "secrets are sealed with AES-256-GCM envelope encryption under a " + p +
+					" key-encryption key that maturad never holds"
+			}
 			return check(f.Install.KEKConfigured, "MATURA_KEK is set; secrets are sealed with AES-256-GCM envelope encryption",
 				"MATURA_KEK is not set: a random key is used for this run")
+		},
+	},
+	{
+		ID: "install-tenant-keys", Title: "Each tenant's secrets are sealed under its own key, destroyed when it is deleted",
+		Scope: scIns, Public: true,
+		Fix:  "Leave MATURA_TENANT_KEYS on (the default): tenant secrets and app data keys are sealed under per-tenant keys, which are erased when a tenant is deleted.",
+		Refs: refs(iso, "A.8.10", iso, "A.8.24", gdpr, "Art. 17", gdpr, "Art. 32(1)(a)"),
+		install: func(f Facts) (Status, string) {
+			return check(f.Install.TenantKeys, "tenant keys are on: deleting a tenant destroys its keys, so its sealed data "+
+				"cannot be read again, from backups either (crypto-shredding)",
+				"tenant keys are off (MATURA_TENANT_KEYS=off): tenant secrets are sealed under the installation key only")
 		},
 	},
 	{
@@ -156,6 +173,58 @@ var Catalogue = []Control{
 		Refs: refs(soc2, "CC7.2", iso, "A.8.15"),
 		tenant: func(_ Facts, t Tenant) (Status, string) {
 			return check(t.Audit.OK, fmt.Sprintf("%d events verified", t.Audit.Events), "chain broken: "+t.Audit.Reason)
+		},
+	},
+	{
+		ID: "tenant-access-review", Title: "Organisations review who has access at least quarterly", Scope: scTen,
+		Fix:  "Owners or admins start one with POST /v1/tenants/{tid}/access-reviews and complete it; un-reviewed access is revoked at its deadline.",
+		Refs: refs(soc2, "CC6.2", soc2, "CC6.3", iso, "A.5.18"),
+		tenant: func(f Facts, t Tenant) (Status, string) {
+			if t.Kind == "personal" {
+				return NotApplicable, "personal tenant"
+			}
+			if t.LastAccessReview == nil {
+				return Fail, "no access review completed"
+			}
+			age := f.Now.Sub(*t.LastAccessReview)
+			return check(age <= 92*24*time.Hour, "access review completed "+t.LastAccessReview.Format("2006-01-02"),
+				"last access review "+t.LastAccessReview.Format("2006-01-02")+", over a quarter ago")
+		},
+	},
+	{
+		ID: "tenant-agent-accountability", Title: "Every AI agent has a person accountable for it", Scope: scTen, Public: true,
+		Fix:  "Give each agent an owner who is an active member: PATCH /v1/tenants/{tid}/agents/{id} {\"owner_id\": …}.",
+		Refs: refs(aiAct, "Art. 26(2)", iso42, "A.3.2"),
+		tenant: func(_ Facts, t Tenant) (Status, string) {
+			if t.Agents == 0 {
+				return NotApplicable, "no agents"
+			}
+			return check(t.AgentsWithoutOwner == 0, fmt.Sprintf("all %d agents have an active owner", t.Agents),
+				fmt.Sprintf("%d of %d agents have no active person as owner", t.AgentsWithoutOwner, t.Agents))
+		},
+	},
+	{
+		ID: "tenant-agent-oversight", Title: "People oversee what AI agents do, and it is recorded", Scope: scTen, Public: true,
+		Fix:  "Have the app record approvals, rejections, overrides and stops with POST /v1/apps/{app}/tenants/{tid}/oversight, and require consent for delegated agents.",
+		Refs: refs(aiAct, "Art. 14", aiAct, "Art. 26(5)", iso42, "A.9.2"),
+		tenant: func(_ Facts, t Tenant) (Status, string) {
+			if t.Agents == 0 {
+				return NotApplicable, "no agents"
+			}
+			return check(t.Oversight90d > 0, fmt.Sprintf("%d human oversight records in the last 90 days", t.Oversight90d),
+				"agents are active but no human oversight was recorded in the last 90 days")
+		},
+	},
+	{
+		ID: "tenant-agent-logs", Title: "AI agent activity is logged and kept at least six months", Scope: scTen, Public: true,
+		Fix:  "Keep audit_retention at 183 days or more (maturad does not purge earlier for tenants with agents).",
+		Refs: refs(aiAct, "Art. 12", aiAct, "Art. 26(6)", iso42, "A.6.2.8"),
+		tenant: func(_ Facts, t Tenant) (Status, string) {
+			if t.Agents == 0 {
+				return NotApplicable, "no agents"
+			}
+			days := max(t.RetentionDays, 183)
+			return Pass, fmt.Sprintf("agents' own and delegated actions are in the tamper-evident audit log, kept %d days", days)
 		},
 	},
 	{

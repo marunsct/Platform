@@ -52,7 +52,27 @@ spec:
             - name: MATURA_MIGRATE_DATABASE_URL
               valueFrom: { secretKeyRef: { name: {{ include "matura.dbSecret" . }}, key: migrateUrl } }
             - name: MATURA_KEK
-              valueFrom: { secretKeyRef: { name: {{ include "matura.secrets" . }}, key: kek } }
+              valueFrom: { secretKeyRef: { name: {{ include "matura.secrets" . }}, key: kek, optional: {{ ne .Values.keys.provider "local" }} } }
+            - { name: MATURA_KEK_PROVIDER, value: {{ .Values.keys.provider | quote }} }
+            - { name: MATURA_TENANT_KEYS, value: {{ ternary "on" "off" .Values.keys.tenantKeys | quote }} }
+            {{- with .Values.keys.byokProviders }}
+            - { name: MATURA_BYOK_PROVIDERS, value: {{ join "," . | quote }} }
+            {{- end }}
+            {{- if eq .Values.keys.provider "transit" }}
+            - { name: MATURA_TRANSIT_ADDR, value: {{ required "keys.transit.addr is required" .Values.keys.transit.addr | quote }} }
+            - { name: MATURA_TRANSIT_MOUNT, value: {{ .Values.keys.transit.mount | quote }} }
+            - { name: MATURA_TRANSIT_KEY, value: {{ .Values.keys.transit.key | quote }} }
+            - { name: MATURA_TRANSIT_NAMESPACE, value: {{ .Values.keys.transit.namespace | quote }} }
+            - name: MATURA_TRANSIT_TOKEN
+              valueFrom: { secretKeyRef: { name: {{ required "keys.transit.tokenSecret is required" .Values.keys.transit.tokenSecret }}, key: token } }
+            {{- else if eq .Values.keys.provider "awskms" }}
+            - { name: MATURA_AWS_KMS_KEY_ID, value: {{ required "keys.aws.keyId is required" .Values.keys.aws.keyId | quote }} }
+            - { name: MATURA_AWS_REGION, value: {{ required "keys.aws.region is required" .Values.keys.aws.region | quote }} }
+            {{- else if eq .Values.keys.provider "gcpkms" }}
+            - { name: MATURA_GCP_KMS_KEY, value: {{ required "keys.gcp.key is required" .Values.keys.gcp.key | quote }} }
+            {{- else if eq .Values.keys.provider "azurekv" }}
+            - { name: MATURA_AZURE_KEY_URL, value: {{ required "keys.azure.keyUrl is required" .Values.keys.azure.keyUrl | quote }} }
+            {{- end }}
             - name: MATURA_INTERNAL_TOKEN
               valueFrom: { secretKeyRef: { name: {{ include "matura.secrets" . }}, key: internalToken } }
             - name: MATURA_KEYCLOAK_CLIENT_SECRET

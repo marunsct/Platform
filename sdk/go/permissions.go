@@ -95,3 +95,21 @@ func (c *Client) ListObjects(ctx context.Context, app, tenant, user, relation, t
 		o.body(map[string]any{"user": user, "relation": relation, "type": typ}), &out, false)
 	return out.Objects, err
 }
+
+// ListUsers returns who has relation on object in the tenant: users ("user:<id>"), or userType such as "group",
+// and "type:*" when the object is public. An empty userType means user.
+func (c *Client) ListUsers(ctx context.Context, app, tenant, object, relation, userType string, opts ...CheckOptions) ([]string, error) {
+	var o CheckOptions
+	if len(opts) > 0 {
+		o = opts[0]
+	}
+	body := map[string]any{"object": object, "relation": relation}
+	if userType != "" {
+		body["user_type"] = userType
+	}
+	var out struct {
+		Users []string `json:"users"`
+	}
+	err := c.do(ctx, http.MethodPost, tenantPath(app, tenant)+":list-users", nil, o.body(body), &out, false)
+	return out.Users, err
+}

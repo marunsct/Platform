@@ -52,26 +52,31 @@ a large installation takes a while; the trust page keeps its result for five min
 
 ## Controls
 
-| Id | Control | Scope | Public | SOC 2 | ISO/IEC 27001:2022 | GDPR |
-|---|---|---|---|---|---|---|
-| [install-kek](#install-kek) | Stored secrets are encrypted under an operator-held key | installation | yes | CC6.1 | A.8.24 | Art. 32(1)(a) |
-| [install-oidc](#install-oidc) | People sign in through OpenID Connect | installation | yes | CC6.1 | A.8.5 | |
-| [install-production](#install-production) | Development mode is off | installation | yes | | A.8.31 | |
-| [install-tls](#install-tls) | The public address uses HTTPS | installation | yes | CC6.7 | A.8.24 | Art. 32(1)(a) |
-| [install-smtp](#install-smtp) | Outgoing email is configured | installation | | | | |
-| [install-metrics](#install-metrics) | Metrics are exported for monitoring | installation | | CC7.2 | A.8.16 | |
-| [install-audit-chain](#install-audit-chain) | The installation audit log verifies | installation | yes | CC7.2 | A.8.15 | |
-| [install-webhooks](#install-webhooks) | Webhook deliveries to apps are healthy | installation | | | | |
-| [install-restore-test](#install-restore-test) | Backups are restored and checked regularly | installation | yes | A1.3 | A.8.13 | Art. 32(1)(c), 32(1)(d) |
-| [install-access-review](#install-access-review) | Access is reviewed at least quarterly | installation | yes | CC6.2, CC6.3 | A.5.18 | |
-| [install-vulnerability-scan](#install-vulnerability-scan) | Images and dependencies are scanned for vulnerabilities | installation | yes | CC7.1 | A.8.8 | |
-| [tenant-audit-chain](#tenant-audit-chain) | Every tenant's audit log verifies | tenant | yes | CC7.2 | A.8.15 | |
-| [tenant-security-policy](#tenant-security-policy) | Each organisation has a security policy | tenant | | CC6.1 | | |
-| [tenant-mfa](#tenant-mfa) | Organisations require multi-factor authentication | tenant | yes | CC6.1 | A.8.5 | |
-| [tenant-session-limits](#tenant-session-limits) | Organisations limit session length and idle time | tenant | | CC6.1 | A.8.5 | |
-| [tenant-invite-domains](#tenant-invite-domains) | Company invitations are limited to the company's domains | tenant | | CC6.2 | A.5.16 | |
-| [tenant-audit-streaming](#tenant-audit-streaming) | Company audit logs stream to the company's own systems | tenant | | CC7.2 | A.8.15 | |
-| [tenant-ip-allowlist](#tenant-ip-allowlist) | Organisations restrict API access by network (optional) | tenant | | CC6.6 | A.8.20 | |
+| Id | Control | Scope | Public | SOC 2 | ISO/IEC 27001:2022 | GDPR | EU AI Act | ISO/IEC 42001 |
+|---|---|---|---|---|---|---|---|---|
+| [install-kek](#install-kek) | Stored secrets are encrypted under an operator-held key | installation | yes | CC6.1 | A.8.24 | Art. 32(1)(a) | | |
+| [install-tenant-keys](#install-tenant-keys) | Each tenant's secrets are sealed under its own key, destroyed when it is deleted | installation | yes | | A.8.10, A.8.24 | Art. 17, Art. 32(1)(a) | | |
+| [install-oidc](#install-oidc) | People sign in through OpenID Connect | installation | yes | CC6.1 | A.8.5 | | | |
+| [install-production](#install-production) | Development mode is off | installation | yes | | A.8.31 | | | |
+| [install-tls](#install-tls) | The public address uses HTTPS | installation | yes | CC6.7 | A.8.24 | Art. 32(1)(a) | | |
+| [install-smtp](#install-smtp) | Outgoing email is configured | installation | | | | | | |
+| [install-metrics](#install-metrics) | Metrics are exported for monitoring | installation | | CC7.2 | A.8.16 | | | |
+| [install-audit-chain](#install-audit-chain) | The installation audit log verifies | installation | yes | CC7.2 | A.8.15 | | | |
+| [install-webhooks](#install-webhooks) | Webhook deliveries to apps are healthy | installation | | | | | | |
+| [install-restore-test](#install-restore-test) | Backups are restored and checked regularly | installation | yes | A1.3 | A.8.13 | Art. 32(1)(c), 32(1)(d) | | |
+| [install-access-review](#install-access-review) | Access is reviewed at least quarterly | installation | yes | CC6.2, CC6.3 | A.5.18 | | | |
+| [install-vulnerability-scan](#install-vulnerability-scan) | Images and dependencies are scanned for vulnerabilities | installation | yes | CC7.1 | A.8.8 | | | |
+| [tenant-audit-chain](#tenant-audit-chain) | Every tenant's audit log verifies | tenant | yes | CC7.2 | A.8.15 | | | |
+| [tenant-access-review](#tenant-access-review) | Organisations review who has access at least quarterly | tenant | | CC6.2, CC6.3 | A.5.18 | | | |
+| [tenant-agent-accountability](#tenant-agent-accountability) | Every AI agent has a person accountable for it | tenant | yes | | | | Art. 26(2) | A.3.2 |
+| [tenant-agent-oversight](#tenant-agent-oversight) | People oversee what AI agents do, and it is recorded | tenant | yes | | | | Art. 14, Art. 26(5) | A.9.2 |
+| [tenant-agent-logs](#tenant-agent-logs) | AI agent activity is logged and kept at least six months | tenant | yes | | | | Art. 12, Art. 26(6) | A.6.2.8 |
+| [tenant-security-policy](#tenant-security-policy) | Each organisation has a security policy | tenant | | CC6.1 | | | | |
+| [tenant-mfa](#tenant-mfa) | Organisations require multi-factor authentication | tenant | yes | CC6.1 | A.8.5 | | | |
+| [tenant-session-limits](#tenant-session-limits) | Organisations limit session length and idle time | tenant | | CC6.1 | A.8.5 | | | |
+| [tenant-invite-domains](#tenant-invite-domains) | Company invitations are limited to the company's domains | tenant | | CC6.2 | A.5.16 | | | |
+| [tenant-audit-streaming](#tenant-audit-streaming) | Company audit logs stream to the company's own systems | tenant | | CC7.2 | A.8.15 | | | |
+| [tenant-ip-allowlist](#tenant-ip-allowlist) | Organisations restrict API access by network (optional) | tenant | | CC6.6 | A.8.20 | | | |
 
 Tenant controls are evaluated for every **active** tenant they apply to and pass only when all of them pass; the
 report lists each tenant's result, and the evidence names up to five failing tenants. The catalogue is
@@ -79,8 +84,16 @@ report lists each tenant's result, and the evidence names up to five failing ten
 
 ### install-kek
 
-Passes when `MATURA_KEK` is set. Without it (development only) maturad seals secrets with a random key for the run.
-Fix: `openssl rand -base64 32` into `MATURA_KEK`, and back the key up apart from the database backups.
+Passes when `MATURA_KEK` is set, or when the key-encryption key is held by OpenBao/Vault transit or a cloud KMS
+(`MATURA_KEK_PROVIDER`, technical specification §9.1). Without either (development only) maturad seals secrets with a
+random key for the run. Fix: `openssl rand -base64 32` into `MATURA_KEK`, and back the key up apart from the
+database backups, or move the key to a KMS.
+
+### install-tenant-keys
+
+Passes when tenant keys are on (`MATURA_TENANT_KEYS`, on by default): each tenant's secrets and the data keys its
+apps encrypt fields with are sealed under a key of its own, which is destroyed when the tenant is deleted, so its
+sealed data cannot be read again, from backups either (§9.2). Fix: remove `MATURA_TENANT_KEYS=off`.
 
 ### install-oidc
 
@@ -142,6 +155,31 @@ severity in `details`). "Passed" is your judgement against your own remediation 
 ### tenant-audit-chain
 
 The same verification for each active tenant's chain.
+
+### tenant-access-review
+
+Passes when the organisation completed an access review (technical specification §18.4) in the last 92 days.
+Owners and admins start one (`POST /v1/tenants/{tid}/access-reviews`), mark each grant and admin role keep or
+revoke, and complete it. At the deadline, anything nobody decided is revoked, unless the review was started with
+`on_pending: keep`. Personal tenants are not applicable.
+
+### tenant-agent-accountability
+
+Not applicable without agents. Passes when every active agent and service account has an owner who is an active
+person in the organisation. Fix: set `owner_id` on the agent.
+
+### tenant-agent-oversight
+
+Not applicable without agents. Passes when the organisation's apps recorded at least one human oversight decision
+in the last 90 days (`POST /v1/apps/{app}/tenants/{tid}/oversight`, technical specification §20.6): an approval,
+rejection, override, intervention or stop. Requiring consent for delegated agents (§20.5) and the kill switch
+(deactivation) are the other oversight measures Matura gives.
+
+### tenant-agent-logs
+
+Not applicable without agents. Passes while agents are active: their own and delegated actions are in the
+tamper-evident audit log, and a tenant with agents keeps it at least 183 days whatever its retention setting (Art.
+26(6) of the EU AI Act asks deployers to keep logs at least six months).
 
 ### tenant-security-policy
 
@@ -212,8 +250,9 @@ your own site, or put a CDN in front of it.
 
 ## Policy templates
 
-[`docs/templates`](../templates/README.md) holds three templates: access control, incident response and backup.
-They are marked as templates; adopting one means reviewing, changing and approving it. `matura check` fills the
+[`docs/templates`](../templates/README.md) holds five templates: access control, incident response and backup
+policies, a security whitepaper for customers, and a questionnaire answer bank grouped by CSA CAIQ v4 domain and SIG
+Lite topic (answers only; the questionnaires are not reproduced). They are marked as templates; adopting one means reviewing, changing and approving it. `matura check` fills the
 placeholders it can from the report and leaves the rest:
 
 ```sh
@@ -234,10 +273,11 @@ It writes each filled template to `--out` (default `./policies`) and lists the p
 | `last_restore_test`, `last_restore_test_result`, `restore_tests_90d` | restore-test evidence |
 | `last_access_review`, `last_vulnerability_scan` | evidence |
 | `control_<id>` (dashes as underscores, e.g. `control_tenant_mfa`) | each control's status |
-| `organisation`, `policy_owner`, `approver`, `effective_date`, `review_cycle`, `leaver_sla`, `access_review_cycle`, `incident_contact`, `incident_lead`, `communications_lead`, `sev1_response`, `sev2_response`, `review_window`, `record_retention`, `backup_frequency`, `backup_retention`, `backup_location`, `rpo`, `rto`, `restore_test_frequency`, `backup_admins` | `--set` only: organisational choices |
+| `organisation`, `policy_owner`, `approver`, `effective_date`, `review_cycle`, `leaver_sla`, `access_review_cycle`, `incident_contact`, `incident_lead`, `communications_lead`, `sev1_response`, `sev2_response`, `review_window`, `record_retention`, `backup_frequency`, `backup_retention`, `backup_location`, `rpo`, `rto`, `restore_test_frequency`, `backup_admins`, `security_contact`, `hosting_provider`, `hosting_region`, `kek_location`, `storage_encryption`, `data_location`, `subprocessors`, `patch_sla`, `pen_test`, `customer_notification_window`, `independent_audits`, `change_process`, `policy_set`, `hr_controls`, `network_controls`, `endpoint_controls`, `vendor_review` | `--set` only: organisational choices |
 
 ## Not built yet
 
-Control packs for ISO/IEC 42001 and the EU AI Act, opening fix pull requests, MFA coverage measured from Keycloak
+Fuller control packs for ISO/IEC 42001 and the EU AI Act (risk classification, conformity documentation and
+other organisational controls), opening fix pull requests, MFA coverage measured from Keycloak
 (rather than the policy setting), SSO and SCIM status, the SIG Lite and CAIQ answer banks, the generated security
 whitepaper, and readiness views in the consoles (doc 13 TS24, TS25).

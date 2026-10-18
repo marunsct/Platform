@@ -2,10 +2,10 @@
   "generated_at": "2026-10-17T09:30:00Z",
   "product": "Acme Cloud",
   "notice": "Readiness shows which controls are in place on this installation and the evidence for them. It is not an audit and does not certify compliance with any framework; mappings are indicative and an auditor decides.",
-  "score": 61.1,
-  "passed": 11,
-  "failed": 7,
-  "not_applicable": 0,
+  "score": 60,
+  "passed": 12,
+  "failed": 8,
+  "not_applicable": 3,
   "controls": [
     {
       "id": "install-kek",
@@ -25,6 +25,35 @@
         {
           "framework": "ISO/IEC 27001:2022",
           "id": "A.8.24"
+        },
+        {
+          "framework": "GDPR",
+          "id": "Art. 32(1)(a)"
+        }
+      ]
+    },
+    {
+      "id": "install-tenant-keys",
+      "title": "Each tenant's secrets are sealed under its own key, destroyed when it is deleted",
+      "scope": "installation",
+      "status": "pass",
+      "evidence": "tenant keys are on: deleting a tenant destroys its keys, so its sealed data cannot be read again, from backups either (crypto-shredding)",
+      "fix": "Leave MATURA_TENANT_KEYS on (the default): tenant secrets and app data keys are sealed under per-tenant keys, which are erased when a tenant is deleted.",
+      "docs": "https://github.com/marunsct/Platform/blob/main/docs/guide/readiness.md#install-tenant-keys",
+      "public": true,
+      "optional": false,
+      "refs": [
+        {
+          "framework": "ISO/IEC 27001:2022",
+          "id": "A.8.10"
+        },
+        {
+          "framework": "ISO/IEC 27001:2022",
+          "id": "A.8.24"
+        },
+        {
+          "framework": "GDPR",
+          "id": "Art. 17"
         },
         {
           "framework": "GDPR",
@@ -268,6 +297,158 @@
           "slug": "globex",
           "status": "pass",
           "evidence": "14 events verified"
+        }
+      ]
+    },
+    {
+      "id": "tenant-access-review",
+      "title": "Organisations review who has access at least quarterly",
+      "scope": "tenant",
+      "status": "fail",
+      "evidence": "1 of 2 tenants fail: globex",
+      "fix": "Owners or admins start one with POST /v1/tenants/{tid}/access-reviews and complete it; un-reviewed access is revoked at its deadline.",
+      "docs": "https://github.com/marunsct/Platform/blob/main/docs/guide/readiness.md#tenant-access-review",
+      "public": false,
+      "optional": false,
+      "refs": [
+        {
+          "framework": "SOC 2",
+          "id": "CC6.2"
+        },
+        {
+          "framework": "SOC 2",
+          "id": "CC6.3"
+        },
+        {
+          "framework": "ISO/IEC 27001:2022",
+          "id": "A.5.18"
+        }
+      ],
+      "tenants": [
+        {
+          "tenant_id": "0192a000-0000-7000-8000-000000000001",
+          "slug": "acme",
+          "status": "pass",
+          "evidence": "access review completed 2026-09-17"
+        },
+        {
+          "tenant_id": "0192a000-0000-7000-8000-000000000002",
+          "slug": "globex",
+          "status": "fail",
+          "evidence": "no access review completed"
+        }
+      ]
+    },
+    {
+      "id": "tenant-agent-accountability",
+      "title": "Every AI agent has a person accountable for it",
+      "scope": "tenant",
+      "status": "not-applicable",
+      "evidence": "no active tenant this control applies to",
+      "fix": "Give each agent an owner who is an active member: PATCH /v1/tenants/{tid}/agents/{id} {\"owner_id\": …}.",
+      "docs": "https://github.com/marunsct/Platform/blob/main/docs/guide/readiness.md#tenant-agent-accountability",
+      "public": true,
+      "optional": false,
+      "refs": [
+        {
+          "framework": "EU AI Act",
+          "id": "Art. 26(2)"
+        },
+        {
+          "framework": "ISO/IEC 42001:2023",
+          "id": "A.3.2"
+        }
+      ],
+      "tenants": [
+        {
+          "tenant_id": "0192a000-0000-7000-8000-000000000001",
+          "slug": "acme",
+          "status": "not-applicable",
+          "evidence": "no agents"
+        },
+        {
+          "tenant_id": "0192a000-0000-7000-8000-000000000002",
+          "slug": "globex",
+          "status": "not-applicable",
+          "evidence": "no agents"
+        }
+      ]
+    },
+    {
+      "id": "tenant-agent-oversight",
+      "title": "People oversee what AI agents do, and it is recorded",
+      "scope": "tenant",
+      "status": "not-applicable",
+      "evidence": "no active tenant this control applies to",
+      "fix": "Have the app record approvals, rejections, overrides and stops with POST /v1/apps/{app}/tenants/{tid}/oversight, and require consent for delegated agents.",
+      "docs": "https://github.com/marunsct/Platform/blob/main/docs/guide/readiness.md#tenant-agent-oversight",
+      "public": true,
+      "optional": false,
+      "refs": [
+        {
+          "framework": "EU AI Act",
+          "id": "Art. 14"
+        },
+        {
+          "framework": "EU AI Act",
+          "id": "Art. 26(5)"
+        },
+        {
+          "framework": "ISO/IEC 42001:2023",
+          "id": "A.9.2"
+        }
+      ],
+      "tenants": [
+        {
+          "tenant_id": "0192a000-0000-7000-8000-000000000001",
+          "slug": "acme",
+          "status": "not-applicable",
+          "evidence": "no agents"
+        },
+        {
+          "tenant_id": "0192a000-0000-7000-8000-000000000002",
+          "slug": "globex",
+          "status": "not-applicable",
+          "evidence": "no agents"
+        }
+      ]
+    },
+    {
+      "id": "tenant-agent-logs",
+      "title": "AI agent activity is logged and kept at least six months",
+      "scope": "tenant",
+      "status": "not-applicable",
+      "evidence": "no active tenant this control applies to",
+      "fix": "Keep audit_retention at 183 days or more (maturad does not purge earlier for tenants with agents).",
+      "docs": "https://github.com/marunsct/Platform/blob/main/docs/guide/readiness.md#tenant-agent-logs",
+      "public": true,
+      "optional": false,
+      "refs": [
+        {
+          "framework": "EU AI Act",
+          "id": "Art. 12"
+        },
+        {
+          "framework": "EU AI Act",
+          "id": "Art. 26(6)"
+        },
+        {
+          "framework": "ISO/IEC 42001:2023",
+          "id": "A.6.2.8"
+        }
+      ],
+      "tenants": [
+        {
+          "tenant_id": "0192a000-0000-7000-8000-000000000001",
+          "slug": "acme",
+          "status": "not-applicable",
+          "evidence": "no agents"
+        },
+        {
+          "tenant_id": "0192a000-0000-7000-8000-000000000002",
+          "slug": "globex",
+          "status": "not-applicable",
+          "evidence": "no agents"
         }
       ]
     },

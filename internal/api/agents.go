@@ -111,6 +111,7 @@ func (s *Server) createAgent(w http.ResponseWriter, r *http.Request) {
 		Description string         `json:"description"`
 		OwnerID     uuid.UUID      `json:"owner_id"`
 		ExpiresAt   *time.Time     `json:"expires_at"`
+		Consent     string         `json:"consent"`
 		Grants      []agentGrantIn `json:"grants"`
 	}
 	if !decode(w, r, &in) {
@@ -125,7 +126,7 @@ func (s *Server) createAgent(w http.ResponseWriter, r *http.Request) {
 		in.OwnerID = principalFrom(r.Context()).UserID
 	}
 	na := store.NewAgent{Kind: in.Kind, Name: in.Name, Description: in.Description, OwnerID: in.OwnerID,
-		ExpiresAt: in.ExpiresAt}
+		ExpiresAt: in.ExpiresAt, Consent: in.Consent}
 	for _, g := range in.Grants {
 		na.Grants = append(na.Grants, store.NewGrant{App: g.App, Role: g.Role, WorkspaceID: g.WorkspaceID})
 	}
@@ -189,6 +190,7 @@ func (s *Server) patchAgent(w http.ResponseWriter, r *http.Request) {
 		OwnerID     *uuid.UUID      `json:"owner_id"`
 		ExpiresAt   json.RawMessage `json:"expires_at"` // null clears it
 		Status      *string         `json:"status"`
+		Consent     *string         `json:"consent"`
 	}
 	if !decode(w, r, &in) {
 		return
@@ -198,7 +200,8 @@ func (s *Server) patchAgent(w http.ResponseWriter, r *http.Request) {
 		problem(w, http.StatusBadRequest, "bad-request", err.Error())
 		return
 	}
-	p := store.AgentPatch{Name: in.Name, Description: in.Description, OwnerID: in.OwnerID, Status: in.Status}
+	p := store.AgentPatch{Name: in.Name, Description: in.Description, OwnerID: in.OwnerID, Status: in.Status,
+		Consent: in.Consent}
 	switch raw := bytes.TrimSpace(in.ExpiresAt); {
 	case len(raw) == 0:
 	case string(raw) == "null":

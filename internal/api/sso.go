@@ -360,7 +360,7 @@ func (s *Server) createSSO(w http.ResponseWriter, r *http.Request) {
 	}
 	var sealed []byte
 	if in.ClientSecret != "" && in.Protocol == "oidc" {
-		if sealed, err = s.keys.Seal([]byte(in.ClientSecret), store.SSOAAD(tid)); err != nil {
+		if sealed, err = s.store.ForTenant(s.keys, tid).Seal([]byte(in.ClientSecret), store.SSOAAD(tid)); err != nil {
 			s.fail(w, r, err)
 			return
 		}

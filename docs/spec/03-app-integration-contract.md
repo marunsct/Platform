@@ -267,6 +267,7 @@ Delivered as signed webhooks (TS7c) and, from M5, NATS subjects `matura.<tenant>
 | `matura.placement.requested`, `.provisioned`, `.ready`, `.moving`, `.retiring`, `.deleted` | data placements (doc 02 §7) |
 | `matura.app.manifest.updated` | the app's manifest (permission catalogue, settings) changed |
 | `matura.app.role.created`, `.updated`, `.deleted` | a role was created or edited in Matura; the app updates `matura_app_role`, and new tokens carry the new `perms` |
+| `matura.revocation.created` | tokens were revoked before they expire (technical specification §21): refuse tokens whose `sub` or `act.sub` is `user_id`, whose `tid` is `tenant_id` and `sid` is `session_id` when those are set, and whose `iat` is at or before `not_before`. Nothing to store in the contract tables; the SDKs keep these in memory for 15 minutes. `GET /v1/apps/{app}/revocations` lists the recent ones at start-up |
 
 Webhook headers: `Matura-Signature: t=<unix>,v1=<hex HMAC-SHA256 of "t.body">`, `Matura-Event-Id`. The receiver
 rejects signatures older than 5 minutes, records `id` in `matura_inbox`, applies, answers 2xx. Matura retries with
@@ -305,7 +306,8 @@ matura.on("placement.provisioned", run_migrations_for_tenant)
 `mfa`, `session_id`, `is_service`, `kind` (`human`, `service`, `agent`), `actor` (the agent of a delegated token, or
 none). Helpers for apps that expose an MCP server or an API agents call: protected-resource metadata (RFC 9728) and
 the `WWW-Authenticate` challenge pointing to it. Helpers: `require_role`, `require_permission`, `require_tenant_role`,
-`require_mfa`.
+`require_mfa`. `Revocations` (load at start, fed by the webhook handler and `Sync`) makes the verifier refuse
+revoked tokens before they expire (§6).
 
 ## 9. Adopting the contract in an existing app
 

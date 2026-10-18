@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -274,5 +275,46 @@ func TestEveryChangeIsVersionedAndInTheOutbox(t *testing.T) {
 	_ = pool.QueryRow(ctx, `SELECT count(*) FROM outbox`).Scan(&n)
 	if n != len(want) {
 		t.Fatalf("unchanged profile emitted an event (%d rows)", n)
+	}
+}
+
+func TestRevocationRevokes(t *testing.T) {
+	user, agent, tenant, other := ids.New(), ids.New(), ids.New(), ids.New()
+	at := time.Date(2026, 10, 18, 9, 0, 0, 500_000_000, time.UTC)
+	sid := "s1"
+	r := store.Revocation{UserID: user, NotBefore: at}
+	tr := store.Revocation{UserID: user, TenantID: &tenant, NotBefore: at}
+	sr := store.Revocation{UserID: user, SessionID: &sid, NotBefore: at}
+	ar := store.Revocation{UserID: agent, NotBefore: at}
+	cr := store.Revocation{UserID: user, ActorID: &agent, NotBefore: at}
+	before, same, after := at.Add(-time.Minute), at.Truncate(time.Second), at.Add(time.Second)
+	cases := []struct {
+		name          string
+		r             store.Revocation
+		sub, act, tid uuid.UUID
+		sid           string
+		iat           time.Time
+		want          bool
+	}{
+		{"older token", r, user, uuid.Nil, other, "", before, true},
+		{"issued in the same second (iat is whole seconds)", r, user, uuid.Nil, other, "", same, true},
+		{"newer token", r, user, uuid.Nil, other, "", after, false},
+		{"another user", r, other, uuid.Nil, tenant, "", before, false},
+		{"tenant: same tenant", tr, user, uuid.Nil, tenant, "", before, true},
+		{"tenant: another tenant", tr, user, uuid.Nil, other, "", before, false},
+		{"tenant: token without tid", tr, user, uuid.Nil, uuid.Nil, "", before, false},
+		{"session: same session", sr, user, uuid.Nil, tenant, "s1", before, true},
+		{"session: another session", sr, user, uuid.Nil, tenant, "s2", before, false},
+		{"agent: its own token", ar, agent, uuid.Nil, tenant, "", before, true},
+		{"agent: acting for a person", ar, user, agent, tenant, "", before, true},
+		{"consent: the agent acting for the person", cr, user, agent, tenant, "", before, true},
+		{"consent: the person's own token", cr, user, uuid.Nil, tenant, "", before, false},
+		{"consent: another agent for the person", cr, user, other, tenant, "", before, false},
+		{"consent: the agent's own token", cr, agent, uuid.Nil, tenant, "", before, false},
+	}
+	for _, c := range cases {
+		if got := c.r.Revokes(c.sub, c.act, c.tid, c.sid, c.iat); got != c.want {
+			t.Errorf("%s: %v, want %v", c.name, got, c.want)
+		}
 	}
 }

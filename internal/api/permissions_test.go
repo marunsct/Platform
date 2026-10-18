@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
@@ -190,6 +191,16 @@ func runPermissions(t *testing.T, fgaURL string, fake *fgatest.Server) {
 	if objs, _ := out["objects"].([]any); code != http.StatusOK || len(objs) != 1 || objs[0] != "document:d1" {
 		t.Fatalf("list-objects: %d %v", code, out)
 	}
+	// list users: who has access to an object, only this tenant's people
+	code, out = app.do("POST", base+ta+":list-users", mustJSON(map[string]any{"object": "document:d1",
+		"relation": "viewer", "consistency": "higher"}))
+	if users, _ := out["users"].([]any); code != http.StatusOK || !slices.Contains(users, any("user:"+alice.user.String())) {
+		t.Fatalf("list-users: %d %v", code, out)
+	}
+	if code, _ := app.do("POST", base+ta+":list-users", mustJSON(map[string]any{"object": "document:d1",
+		"relation": "Bad"})); code != http.StatusUnprocessableEntity {
+		t.Fatalf("list-users with a bad relation: %d", code)
+	}
 
 	// isolation and validation
 	rel(tc, http.StatusNotFound, [][3]string{{"user:" + bob.user.String(), "owner", "folder:x"}}, nil) // not enabled
@@ -263,7 +274,7 @@ func TestPermissionsWithoutOpenFGA(t *testing.T) {
 	op.must(http.StatusOK, "PUT", "/admin/v1/apps/devflow", manifest)
 	sec := op.must(http.StatusCreated, "POST", "/admin/v1/apps/devflow/secrets", map[string]any{"label": "t"})
 	app := appClient{t: t, srv: srv, clientID: "devflow", pass: sec["secret"].(string)}
-	for _, p := range []string{"/relations", ":check", ":batch-check", ":list-objects"} {
+	for _, p := range []string{"/relations", ":check", ":batch-check", ":list-objects", ":list-users"} {
 		if code, out := app.do("POST", "/v1/apps/devflow/tenants/"+ids.New().String()+p, "{}"); code != http.StatusNotImplemented ||
 			!strings.HasSuffix(out["type"].(string), "/permissions-not-configured") {
 			t.Fatalf("%s: %d %v", p, code, out)

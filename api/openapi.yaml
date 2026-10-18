@@ -58,6 +58,8 @@ tags:
     description: Readiness controls, evidence and the public trust page. Readiness is not an audit or a certification.
   - name: privacy
     description: Tenant data export, audit retention and legal hold.
+  - name: keys
+    description: Per-tenant keys, customer-managed keys and crypto-shredding (TS17).
   - name: operator
     description: Installation operators only.
   - name: entitlements
@@ -201,6 +203,29 @@ paths:
             text/html:
               schema:
                 type: string
+  /agents/consent:
+    get:
+      operationId: agentConsentPage
+      summary: Agent consent screen
+      description: |
+        Self-contained HTML page an agent sends a person to (the `consent_required` refusal names it). It signs the
+        person in with Keycloak (authorization code with PKCE), shows the agent and what it could do for them from
+        `GET /v1/me/consent-request`, and records the answer with `POST /v1/me/consents` (or withdraws it).
+      tags: [agents]
+      security: []
+      parameters:
+        - name: client_id
+          in: query
+          description: The agent's client id. Read by the page's script, not by the server.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The page.
+          content:
+            text/html:
+              schema:
+                type: string
   /invitations/preview:
     get:
       operationId: previewInvitation
@@ -325,6 +350,133 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+  /v1/me/tokens:revoke:
+    post:
+      operationId: revokeMyTokens
+      summary: Stop all my tokens, everywhere
+      description: |
+        For a lost device: every access token of the caller issued until now is refused by maturad within a second
+        and by apps as soon as they hear of it (§21). People only (not agents or delegated tokens). Sign out of
+        sessions too (`DELETE /v1/me/sessions`) so refresh tokens stop.
+      tags: [sessions]
+      responses:
+        '204':
+          description: Revoked.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /v1/me/consent-request:
+    get:
+      operationId: getConsentRequest
+      summary: What an agent asks to do for me
+      description: |
+        For the consent screen (`/agents/consent?client_id=…`): the agent, its organisation, per app what it could do
+        for the caller (permissions both hold), and the caller's current consent. 404 unless the caller is an active
+        member of the agent's tenant. People only.
+      tags: [agents]
+      parameters:
+        - name: client_id
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConsentRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /v1/me/consents:
+    get:
+      operationId: listMyConsents
+      summary: Agents I let act for me
+      tags: [agents]
+      responses:
+        '200':
+          description: Active, unexpired consents in every tenant.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Consent'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      operationId: grantConsent
+      summary: Let an agent act for me
+      description: |
+        People only (not agents or delegated calls). Replaces an earlier consent for the same agent; tokens got under
+        the earlier one are revoked. `permissions` narrows delegated tokens to those (each must be something the agent
+        could do for the caller, 422 otherwise) and leaves `roles` empty in them; omit it to allow everything both
+        may do. Audited as `agent.consent_granted`.
+      tags: [agents]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [client_id]
+              properties:
+                client_id:
+                  type: string
+                permissions:
+                  type: array
+                  items:
+                    type: string
+                expires_at:
+                  type: [string, 'null']
+                  format: date-time
+      responses:
+        '201':
+          description: The consent.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Consent'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+  /v1/me/consents/{id}:
+    parameters:
+      - $ref: '#/components/parameters/id'
+    delete:
+      operationId: withdrawMyConsent
+      summary: Withdraw my consent for an agent
+      description: The agent gets no more tokens for the caller, and the ones it holds stop at once (§21).
+      tags: [agents]
+      responses:
+        '204':
+          description: Withdrawn.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /v1/me/tenants:
     get:
       operationId: listMyTenants
@@ -1121,6 +1273,9 @@ paths:
                   type: string
                   format: uuid
                   description: A person who is an active member; default the caller.
+                consent:
+                  type: string
+                  enum: [implicit, required]
                 expires_at:
                   type: string
                   format: date-time
@@ -1202,6 +1357,9 @@ paths:
                 owner_id:
                   type: string
                   format: uuid
+                consent:
+                  type: string
+                  enum: [implicit, required]
                 expires_at:
                   type: [string, 'null']
                   format: date-time
@@ -1251,6 +1409,58 @@ paths:
           $ref: '#/components/responses/IdentityRefused'
         '503':
           $ref: '#/components/responses/IdentityUnavailable'
+  /v1/tenants/{tid}/agents/{id}/consents:
+    parameters:
+      - $ref: '#/components/parameters/tid'
+      - $ref: '#/components/parameters/id'
+    get:
+      operationId: listAgentConsents
+      summary: Who approved an agent
+      description: Owners and admins. Active, unexpired consents (§20.5).
+      tags: [agents]
+      responses:
+        '200':
+          description: The consents.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Consent'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /v1/tenants/{tid}/agents/{id}/consents/{cid}:
+    parameters:
+      - $ref: '#/components/parameters/tid'
+      - $ref: '#/components/parameters/id'
+      - name: cid
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    delete:
+      operationId: withdrawAgentConsent
+      summary: Withdraw a person's consent for an agent
+      description: Owners and admins. The agent's tokens for that person stop at once (§21). Audited as `agent.consent_withdrawn`.
+      tags: [agents]
+      responses:
+        '204':
+          description: Withdrawn.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /v1/tenants/{tid}/agents/{id}:rotate-secret:
     parameters:
       - $ref: '#/components/parameters/tid'
@@ -1326,7 +1536,10 @@ paths:
       description: |
         Owners and admins; only owners invite owners. Emails a link valid for 7 days. App roles are checked up front.
         An active member's address answers 409; an earlier pending invitation to the address is revoked.
-        `delivery: temp_password` answers 422 (not built yet).
+        `delivery: temp_password` (needs Keycloak's admin API, 503 otherwise) creates the account with a one-time
+        password Keycloak makes the person change at their first sign-in, which joins them to the tenant with the
+        invited roles; it works for 72 hours, is in this response only (`Cache-Control: no-store`) and is emailed to
+        `deliver_to` when given. An address that already has an account answers 409 `account-exists`.
       tags: [invitations]
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
@@ -1357,11 +1570,25 @@ paths:
                   description: Send the email here instead of the invited address.
       responses:
         '201':
-          description: The invitation, with its link.
+          description: The invitation, with its link; for `temp_password`, the invitation with the temporary password.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/InvitationWithLink'
+                oneOf:
+                  - $ref: '#/components/schemas/InvitationWithLink'
+                  - type: object
+                    required: [invitation, temporary_password, account_id, expires_at]
+                    properties:
+                      invitation:
+                        $ref: '#/components/schemas/Invitation'
+                      temporary_password:
+                        type: string
+                      account_id:
+                        type: string
+                        format: uuid
+                      expires_at:
+                        type: string
+                        format: date-time
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -1372,6 +1599,66 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '503':
+          $ref: '#/components/responses/IdentityUnavailable'
+  /v1/tenants/{tid}/invitations:bulk:
+    parameters:
+      - $ref: '#/components/parameters/tid'
+    post:
+      operationId: bulkInvitations
+      summary: Invite people from a CSV
+      description: |
+        Owners and admins. A header row naming `email` and optionally `tenant_role`, `app_roles` (`app:role`
+        separated by `;`) and `deliver_to`, then up to 500 rows (1 MB). Each row becomes a link invitation or an
+        error of its own, so one bad row does not stop the rest.
+      tags: [invitations]
+      requestBody:
+        required: true
+        content:
+          text/csv:
+            schema:
+              type: string
+      responses:
+        '200':
+          description: One result per row.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [invited, failed, results]
+                properties:
+                  invited:
+                    type: integer
+                  failed:
+                    type: integer
+                  results:
+                    type: array
+                    items:
+                      type: object
+                      required: [row, email, status]
+                      properties:
+                        row:
+                          type: integer
+                        email:
+                          type: string
+                        status:
+                          type: string
+                          enum: [invited, error]
+                        error:
+                          type: string
+                        id:
+                          type: string
+                          format: uuid
+                        accept_url:
+                          type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '422':
           $ref: '#/components/responses/Unprocessable'
   /v1/tenants/{tid}/invitations/{id}:resend:
@@ -3095,6 +3382,258 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+  /admin/v1/tenants/{tid}/billing:
+    parameters:
+      - $ref: '#/components/parameters/tid'
+    get:
+      operationId: getBillingCustomer
+      summary: The tenant's billing customer
+      tags: [operator]
+      responses:
+        '200':
+          description: The link.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingCustomer'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      operationId: putBillingCustomer
+      summary: Link a tenant to its billing customer
+      description: Usage of the tenant is exported to that provider from now on (§22.3). Audited as `billing.customer_linked`.
+      tags: [operator]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [provider, customer_id]
+              properties:
+                provider:
+                  type: string
+                  enum: [stripe, lago, openmeter]
+                customer_id:
+                  type: string
+                  description: Stripe customer (cus_…), Lago external customer id, or OpenMeter subject.
+                subscription_id:
+                  type: string
+                  description: Lago external subscription id (default the customer id).
+      responses:
+        '200':
+          description: The link.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingCustomer'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+  /admin/v1/billing/exports:
+    get:
+      operationId: listBillingExports
+      summary: How far usage reached each billing provider
+      tags: [operator]
+      responses:
+        '200':
+          description: Export state per provider.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      required: [provider, cursor, exported, skipped, pending, last_error, last_run_at]
+                      properties:
+                        provider:
+                          type: string
+                        cursor:
+                          type: integer
+                        exported:
+                          type: integer
+                        skipped:
+                          type: integer
+                          description: Usage of tenants not linked to a customer of the provider.
+                        pending:
+                          type: integer
+                        last_error:
+                          type: [string, 'null']
+                        last_run_at:
+                          type: [string, 'null']
+                          format: date-time
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /admin/v1/users:import:
+    post:
+      operationId: importUsers
+      summary: Import people with their organisations and roles
+      description: |
+        Operators (§5.1.1). Accounts are found by email or created at Keycloak (with `UPDATE_PASSWORD`), tenants are
+        created by their first owner in the request, then everyone joins with their roles. A rerun changes nothing it
+        made. `matura import` converts Auth0, Clerk and Keycloak exports to this format.
+      tags: [operator]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [users]
+              properties:
+                send_password_email:
+                  type: boolean
+                users:
+                  type: array
+                  maxItems: 1000
+                  items:
+                    type: object
+                    required: [email]
+                    properties:
+                      email:
+                        type: string
+                      email_verified:
+                        type: boolean
+                      first_name:
+                        type: string
+                      last_name:
+                        type: string
+                      disabled:
+                        type: boolean
+                      source:
+                        type: string
+                      external_id:
+                        type: string
+                      tenants:
+                        type: array
+                        items:
+                          type: object
+                          required: [slug]
+                          properties:
+                            slug:
+                              type: string
+                            name:
+                              type: string
+                            tenant_role:
+                              $ref: '#/components/schemas/TenantRole'
+                            app_roles:
+                              type: array
+                              items:
+                                $ref: '#/components/schemas/InvitedRole'
+      responses:
+        '200':
+          description: One result per person.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [created, existing, failed, results]
+                properties:
+                  created:
+                    type: integer
+                  existing:
+                    type: integer
+                  failed:
+                    type: integer
+                  results:
+                    type: array
+                    items:
+                      type: object
+                      required: [email, status]
+                      properties:
+                        email:
+                          type: string
+                        status:
+                          type: string
+                          enum: [created, existing, error]
+                        user_id:
+                          type: string
+                          format: uuid
+                        error:
+                          type: string
+                        joined:
+                          type: array
+                          items:
+                            type: string
+                        created_tenants:
+                          type: array
+                          items:
+                            type: string
+                        issues:
+                          type: array
+                          items:
+                            type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '503':
+          $ref: '#/components/responses/IdentityUnavailable'
+  /admin/v1/keys:rewrap:
+    post:
+      operationId: rewrapKeys
+      summary: Re-seal stored secrets under the current key-encryption key
+      description: |
+        Operators, after rotating the key-encryption key (a new `MATURA_KEK` with the old one in
+        `MATURA_KEK_PREVIOUS`, or a move to a KMS provider): every stored secret and every installation-sealed tenant
+        key is sealed under the current key, so the old one can be removed. Secrets under tenant keys stay as they are.
+        Audited as `keys.rewrapped`.
+      tags: [operator]
+      responses:
+        '200':
+          description: What changed.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [rewrapped, unchanged, failed]
+                properties:
+                  rewrapped:
+                    type: integer
+                  unchanged:
+                    type: integer
+                  failed:
+                    type: object
+                    additionalProperties:
+                      type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /admin/v1/users/{uid}:revoke-tokens:
+    parameters:
+      - $ref: '#/components/parameters/uid'
+    post:
+      operationId: revokeUserTokens
+      summary: Stop all of a user's tokens, everywhere
+      description: Operators. As `POST /v1/me/tokens:revoke`, for any user; deactivating or deleting a user does it too.
+      tags: [operator]
+      responses:
+        '204':
+          description: Revoked.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /admin/v1/users/{uid}:
     parameters:
       - $ref: '#/components/parameters/uid'
@@ -3221,6 +3760,342 @@ paths:
           $ref: '#/components/responses/NotFound'
         '410':
           $ref: '#/components/responses/Gone'
+  /v1/apps/{app}/revocations:
+    parameters:
+      - $ref: '#/components/parameters/app'
+    get:
+      operationId: getAppRevocations
+      summary: Recent token revocations
+      description: |
+        The revocations of the last `window_seconds` (900) that concern the app: in tenants that enabled it, and
+        revocations everywhere of users who belong to such a tenant. An SDK loads them at start and then follows
+        `matura.revocation.created` events (or polls this). A token is revoked when its `sub` or `act.sub` is
+        `user_id`, its `tid` is `tenant_id` (when set), its `sid` is `session_id` (when set), and its `iat` is at or
+        before `not_before` (technical specification §21).
+      tags: [app-backend]
+      security:
+        - appBasic: []
+      responses:
+        '200':
+          description: The revocations, oldest first.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, window_seconds]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Revocation'
+                  window_seconds:
+                    type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /v1/apps/{app}/tenants/{tid}/data-keys:
+    parameters:
+      - $ref: '#/components/parameters/app'
+      - $ref: '#/components/parameters/tid'
+    post:
+      operationId: newDataKey
+      summary: A data key for field encryption
+      description: |
+        A fresh 256-bit key (`plaintext`, base64) for encrypting a tenant's fields in the app, and the same key sealed
+        under the tenant key (`wrapped`, base64), which the app stores with the data and unwraps when it needs the key
+        again (technical specification §9.2). When the tenant is deleted its keys are destroyed and `wrapped` never
+        opens again (crypto-shredding). The tenant must have the app enabled (404 otherwise).
+      tags: [app-backend]
+      security:
+        - appBasic: []
+      responses:
+        '201':
+          description: The data key.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DataKey'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '410':
+          $ref: '#/components/responses/Gone'
+        '503':
+          $ref: '#/components/responses/TenantKeyUnavailable'
+  /v1/apps/{app}/tenants/{tid}/data-keys:unwrap:
+    parameters:
+      - $ref: '#/components/parameters/app'
+      - $ref: '#/components/parameters/tid'
+    post:
+      operationId: unwrapDataKey
+      summary: Open a sealed data key
+      description: |
+        410 `tenant-key-destroyed` once the tenant is deleted; 503 `tenant-key-unavailable` when the tenant's own key
+        (BYOK) refuses or cannot be reached; 422 for a key of another tenant or app, or one that was changed.
+      tags: [app-backend]
+      security:
+        - appBasic: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [wrapped]
+              properties:
+                wrapped:
+                  type: string
+                  format: byte
+      responses:
+        '200':
+          description: The key.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [plaintext]
+                properties:
+                  plaintext:
+                    type: string
+                    format: byte
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '410':
+          $ref: '#/components/responses/Gone'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '503':
+          $ref: '#/components/responses/TenantKeyUnavailable'
+  /v1/apps/{app}/tenants/{tid}/usage:
+    parameters:
+      - $ref: '#/components/parameters/app'
+      - $ref: '#/components/parameters/tid'
+    post:
+      operationId: recordUsage
+      summary: Report usage
+      description: |
+        Up to 1000 events. `meter` is the app's own name (`runs`; stored as `<app>.runs`), `id` makes a retry count
+        once, `time` (default now) may be up to 35 days back and counts in its period. Usage over a limit is still
+        recorded (it happened); consume quota first for hard limits. Crossing 80% and 100% of a limit sends
+        `matura.usage.threshold` once per period. Usage of tenants linked to a billing customer is exported (§22.3).
+      tags: [app-backend]
+      security:
+        - appBasic: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [events]
+              properties:
+                events:
+                  type: array
+                  maxItems: 1000
+                  items:
+                    $ref: '#/components/schemas/UsageEvent'
+      responses:
+        '200':
+          description: One result per event.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [results]
+                properties:
+                  results:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, status]
+                      properties:
+                        id:
+                          type: string
+                        status:
+                          type: string
+                          enum: [recorded, duplicate]
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+  /v1/apps/{app}/tenants/{tid}/quota:consume:
+    parameters:
+      - $ref: '#/components/parameters/app'
+      - $ref: '#/components/parameters/tid'
+    post:
+      operationId: consumeQuota
+      summary: Consume quota before doing the work
+      description: |
+        Records the usage only if the tenant's limit allows it, atomically: concurrent consumers never take a hard
+        limit past its value. 200 with `allowed` true or false. A retry with the same `id` gets `allowed: true,
+        duplicate: true` once it was consumed, and consumes nothing more. Soft or missing limits always allow.
+      tags: [app-backend]
+      security:
+        - appBasic: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UsageEvent'
+      responses:
+        '200':
+          description: The answer.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [allowed, meter, used, limit, remaining, period]
+                properties:
+                  allowed:
+                    type: boolean
+                  meter:
+                    type: string
+                  used:
+                    type: integer
+                    format: int64
+                  limit:
+                    type: [integer, 'null']
+                  remaining:
+                    type: [integer, 'null']
+                  period:
+                    type: string
+                  duplicate:
+                    type: boolean
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+  /v1/apps/{app}/tenants/{tid}/entitlements:
+    parameters:
+      - $ref: '#/components/parameters/app'
+      - $ref: '#/components/parameters/tid'
+    get:
+      operationId: getAppEntitlements
+      summary: A tenant's features and this app's meters
+      description: For SDK caches; `ETag` is the tenant's version, which changes with its plan or overrides.
+      tags: [app-backend]
+      security:
+        - appBasic: []
+      responses:
+        '200':
+          description: The entitlements.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [tenant_id, plan, features, meters, version]
+                properties:
+                  tenant_id:
+                    type: string
+                    format: uuid
+                  plan:
+                    oneOf:
+                      - type: 'null'
+                      - type: object
+                        properties:
+                          id:
+                            type: string
+                          name:
+                            type: string
+                  features:
+                    type: object
+                    additionalProperties:
+                      type: boolean
+                  meters:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/MeterUsage'
+                  version:
+                    type: integer
+                    format: int64
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /v1/apps/{app}/tenants/{tid}/oversight:
+    parameters:
+      - $ref: '#/components/parameters/app'
+      - $ref: '#/components/parameters/tid'
+    post:
+      operationId: recordOversight
+      summary: Record a person's oversight of an agent action
+      description: |
+        Technical specification §20.6. Audited as `agent.oversight.<kind>` with the person as actor and the EU AI
+        Act articles it evidences in `data.eu_ai_act`. 201 when recorded; 200 (`recorded: false`) for a retry of the
+        same `id`.
+      tags: [app-backend]
+      security:
+        - appBasic: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [id, kind, agent_id, person_id, action]
+              properties:
+                id:
+                  type: string
+                  maxLength: 200
+                kind:
+                  type: string
+                  enum: [approval, rejection, override, intervention, stop]
+                agent_id:
+                  type: string
+                  format: uuid
+                person_id:
+                  type: string
+                  format: uuid
+                action:
+                  type: string
+                  maxLength: 1000
+                target:
+                  type: string
+                details:
+                  type: object
+                  additionalProperties: true
+                time:
+                  type: string
+                  format: date-time
+      responses:
+        '200':
+          description: Already recorded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OversightRecorded'
+        '201':
+          description: Recorded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OversightRecorded'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
   /v1/apps/{app}/snapshot:
     parameters:
       - $ref: '#/components/parameters/app'
@@ -3561,6 +4436,315 @@ paths:
           $ref: '#/components/responses/NotFound'
         '503':
           $ref: '#/components/responses/IdentityUnavailable'
+  /v1/tenants/{tid}/access-reviews:
+    parameters:
+      - $ref: '#/components/parameters/tid'
+    get:
+      operationId: listAccessReviews
+      summary: The tenant's access reviews
+      description: Owners and admins. Newest first, without items.
+      tags: [members]
+      responses:
+        '200':
+          description: The reviews.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AccessReview'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      operationId: startAccessReview
+      summary: Start an access review
+      description: |
+        Owners and admins (§18.4). Snapshots active app role grants (of `apps`, else all) and, unless
+        `tenant_roles` is false, owner, admin and billing tenant roles. At `due_at` undecided items are revoked
+        unless `on_pending` is `keep`.
+      tags: [members]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [name, due_at]
+              properties:
+                name:
+                  type: string
+                  maxLength: 200
+                due_at:
+                  type: string
+                  format: date-time
+                on_pending:
+                  type: string
+                  enum: [revoke, keep]
+                  default: revoke
+                apps:
+                  type: array
+                  items:
+                    type: string
+                tenant_roles:
+                  type: boolean
+                  default: true
+      responses:
+        '201':
+          description: The review with its items.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccessReview'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+  /v1/tenants/{tid}/access-reviews/{id}:
+    parameters:
+      - $ref: '#/components/parameters/tid'
+      - $ref: '#/components/parameters/id'
+    get:
+      operationId: getAccessReview
+      summary: An access review with its items
+      tags: [members]
+      responses:
+        '200':
+          description: The review.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccessReview'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /v1/tenants/{tid}/access-reviews/{id}:complete:
+    parameters:
+      - $ref: '#/components/parameters/tid'
+      - $ref: '#/components/parameters/id'
+    post:
+      operationId: completeAccessReview
+      summary: Apply an access review
+      description: Revokes items marked revoke, and undecided items unless the review keeps them; the last owner stays.
+      tags: [members]
+      responses:
+        '200':
+          description: The completed review with each item's outcome.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccessReview'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+  /v1/tenants/{tid}/access-reviews/{id}:cancel:
+    parameters:
+      - $ref: '#/components/parameters/tid'
+      - $ref: '#/components/parameters/id'
+    post:
+      operationId: cancelAccessReview
+      summary: Close an access review without changes
+      tags: [members]
+      responses:
+        '204':
+          description: Cancelled.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /v1/tenants/{tid}/access-reviews/{id}/items/{item}:
+    parameters:
+      - $ref: '#/components/parameters/tid'
+      - $ref: '#/components/parameters/id'
+      - name: item
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    patch:
+      operationId: decideAccessReviewItem
+      summary: Keep or revoke one item
+      description: Not on your own access (422). `pending` undoes a decision while the review is open.
+      tags: [members]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [decision]
+              properties:
+                decision:
+                  type: string
+                  enum: [keep, revoke, pending]
+                note:
+                  type: string
+      responses:
+        '200':
+          description: The item.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccessReviewItem'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+  /v1/tenants/{tid}/keys:
+    parameters:
+      - $ref: '#/components/parameters/tid'
+    get:
+      operationId: getTenantKeys
+      summary: The tenant's keys
+      description: Owners. Key versions (no key material) and the tenant's own key-encryption key, if set (§9.2).
+      tags: [keys]
+      responses:
+        '200':
+          description: The keys.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenantKeyInfo'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '501':
+          description: Tenant keys are not enabled on this server.
+  /v1/tenants/{tid}/keys:rotate:
+    parameters:
+      - $ref: '#/components/parameters/tid'
+    post:
+      operationId: rotateTenantKey
+      summary: Start a new tenant key version
+      description: Owners. New secrets and data keys use it; earlier versions are retired and still open what they sealed.
+      tags: [keys]
+      responses:
+        '200':
+          description: The new version.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [version]
+                properties:
+                  version:
+                    type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '410':
+          $ref: '#/components/responses/Gone'
+  /v1/tenants/{tid}/keys/provider:
+    parameters:
+      - $ref: '#/components/parameters/tid'
+    put:
+      operationId: putTenantKeyProvider
+      summary: Bring your own key
+      description: |
+        Owners. The tenant's own key-encryption key seals its tenant keys from now on: maturad checks it wraps and
+        unwraps, then wraps every live key version under it. Revoking the key at the provider makes the tenant's
+        sealed data unreadable within a minute (the unwrapped-key cache). Providers the installation enabled
+        (`MATURA_BYOK_PROVIDERS`): `transit` (`addr`, `token`, `mount`, `key`, `namespace`), `awskms` (`key_id` ARN,
+        `region`), `gcpkms` (`key`), `azurekv` (`key_url`); cloud keys are reached with the installation's identity,
+        which the tenant grants use of the key. `config` is stored sealed and never returned.
+      tags: [keys]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [provider, config]
+              properties:
+                provider:
+                  type: string
+                  enum: [transit, awskms, gcpkms, azurekv]
+                config:
+                  type: object
+                  additionalProperties:
+                    type: string
+      responses:
+        '200':
+          description: The keys after the change.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenantKeyInfo'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+    delete:
+      operationId: deleteTenantKeyProvider
+      summary: Go back to the installation's key
+      description: Owners. Every key version is wrapped under the installation's key again; the tenant's own key must still work.
+      tags: [keys]
+      responses:
+        '204':
+          description: Done.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          $ref: '#/components/responses/TenantKeyUnavailable'
+  /v1/tenants/{tid}/members/{uid}:revoke-tokens:
+    parameters:
+      - $ref: '#/components/parameters/tid'
+      - $ref: '#/components/parameters/uid'
+    post:
+      operationId: revokeMemberTokens
+      summary: Stop a member's tokens for this tenant at once
+      description: |
+        Owners and admins. Every access token of the member for this tenant (its `tid`) issued until now is refused
+        by maturad within a second and by apps as soon as they get `matura.revocation.created` (technical
+        specification §21). Their sessions and tokens for other tenants are not touched; no identity-provider call is
+        made. Removing or deactivating a member does this by itself.
+      tags: [sessions]
+      responses:
+        '204':
+          description: Revoked.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /v1/tenants/{tid}/members/{uid}:reset-mfa:
     parameters:
       - $ref: '#/components/parameters/tid'
@@ -4059,6 +5243,66 @@ paths:
                 required: [objects]
                 properties:
                   objects:
+                    type: array
+                    items:
+                      type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/NoAuthorizationModel'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '501':
+          $ref: '#/components/responses/PermissionsNotConfigured'
+        '503':
+          $ref: '#/components/responses/PermissionsUnavailable'
+  /v1/apps/{app}/tenants/{tid}:list-users:
+    parameters:
+      - $ref: '#/components/parameters/app'
+      - $ref: '#/components/parameters/tid'
+    post:
+      operationId: listAppUsers
+      summary: List who has access to an object
+      description: |
+        Who has `relation` on `object`: the users (or `user_type`, such as group) of this tenant only, as `type:id`,
+        or `type:*` when the object is public. For "who has access" views and access reviews.
+      tags: [app-backend, permissions]
+      security:
+        - appBasic: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - type: object
+                  required: [object, relation]
+                  properties:
+                    object:
+                      type: string
+                      examples: ['document:d1']
+                    relation:
+                      type: string
+                    user_type:
+                      type: string
+                      default: user
+                - $ref: '#/components/schemas/PermissionQueryOptions'
+      responses:
+        '200':
+          description: The users, as `type:id` or `type:*`.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [users]
+                properties:
+                  users:
                     type: array
                     items:
                       type: string
@@ -4701,6 +5945,44 @@ paths:
           $ref: '#/components/responses/SCIMError'
         '412':
           $ref: '#/components/responses/SCIMError'
+  /scim/v2/tenants/{tid}/Bulk:
+    parameters:
+      - $ref: '#/components/parameters/tid'
+    post:
+      operationId: scimBulk
+      summary: Run several SCIM operations in one request
+      description: |
+        RFC 7644 §3.7. Up to 1000 operations and 1 MB. Each runs as the single request would, in the order sent, with
+        no transaction across them. `bulkId:<id>` in a later path or data names the resource an earlier POST with that
+        bulkId created (409 `invalidValue` if none did). `failOnErrors` stops after that many failed operations.
+        Each entry has `status`, `location` and `version`, and `response` (a SCIM error) when it failed.
+      tags: [scim]
+      security:
+        - scimToken: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/scim+json:
+            schema:
+              $ref: '#/components/schemas/SCIMBulkRequest'
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SCIMBulkRequest'
+      responses:
+        '200':
+          description: A BulkResponse with one entry per operation run.
+          content:
+            application/scim+json:
+              schema:
+                $ref: '#/components/schemas/SCIMBulkResponse'
+        '400':
+          $ref: '#/components/responses/SCIMError'
+        '401':
+          $ref: '#/components/responses/SCIMError'
+        '413':
+          $ref: '#/components/responses/SCIMError'
   /scim/v2/tenants/{tid}/Groups:
     parameters:
       - $ref: '#/components/parameters/tid'
@@ -5205,6 +6487,12 @@ components:
                     type: integer
                   used:
                     type: integer
+    TenantKeyUnavailable:
+      description: The tenant's own key-encryption key refused or could not be reached (`tenant-key-unavailable`).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
     NotReady:
       description: The database is unreachable.
       content:
@@ -5552,6 +6840,43 @@ components:
           type: object
           additionalProperties:
             type: boolean
+        meters:
+          type: object
+          description: '`<app slug>.<meter>` → limit per period (§22). A missing or negative `limit` is unlimited.'
+          additionalProperties:
+            $ref: '#/components/schemas/MeterLimit'
+    MeterLimit:
+      type: object
+      properties:
+        limit:
+          type: integer
+          format: int64
+        period:
+          type: string
+          enum: [month, day, total]
+          default: month
+        hard:
+          type: boolean
+          description: Refuse quota consumes that would pass the limit; soft limits only announce 80% and 100%.
+    MeterUsage:
+      type: object
+      required: [meter, period, period_start, used, limit, hard]
+      properties:
+        meter:
+          type: string
+        period:
+          type: string
+        period_start:
+          type: string
+          format: date-time
+        used:
+          type: integer
+          format: int64
+        limit:
+          type: [integer, 'null']
+          format: int64
+        hard:
+          type: boolean
     Entitlements:
       type: object
       required: [tenant_id, plan, limits, plan_limits, overrides, usage]
@@ -5590,6 +6915,10 @@ components:
               type: array
               items:
                 type: string
+            meters:
+              type: array
+              items:
+                $ref: '#/components/schemas/MeterUsage'
     Stats:
       type: object
       required: [tenants, users, apps]
@@ -6027,7 +7356,7 @@ components:
           format: uuid
     Agent:
       type: object
-      required: [id, tenant_id, kind, name, description, owner_id, client_id, status, expires_at, secret_rotated_at,
+      required: [id, tenant_id, kind, name, description, owner_id, client_id, status, consent, expires_at, secret_rotated_at,
                  version, created_by, created_at, updated_at, grants]
       properties:
         id:
@@ -6053,6 +7382,12 @@ components:
         status:
           type: string
           enum: [active, deactivated]
+        consent:
+          type: string
+          enum: [implicit, required]
+          description: |
+            `required`: a person must approve the agent (the consent screen, `POST /v1/me/consents`) before it gets a
+            delegated token for them (§20.5). `implicit`: the admin who created it approved it for every member.
         expires_at:
           type: [string, 'null']
           format: date-time
@@ -6574,7 +7909,7 @@ components:
           properties:
             kind:
               type: string
-              enum: [user, operator, app, system, agent, service]
+              enum: [user, operator, app, system, agent, service, directory]
             id:
               type: [string, 'null']
               format: uuid
@@ -7086,6 +8421,380 @@ components:
         last_used_at:
           type: [string, 'null']
           format: date-time
+    SCIMBulkRequest:
+      type: object
+      required: [schemas, Operations]
+      properties:
+        schemas:
+          type: array
+          items:
+            type: string
+            const: urn:ietf:params:scim:api:messages:2.0:BulkRequest
+        failOnErrors:
+          type: integer
+          minimum: 0
+        Operations:
+          type: array
+          maxItems: 1000
+          items:
+            type: object
+            required: [method, path]
+            properties:
+              method:
+                type: string
+                enum: [POST, PUT, PATCH, DELETE]
+              bulkId:
+                type: string
+                description: Required for POST.
+              version:
+                type: string
+                description: An ETag; sent as If-Match.
+              path:
+                type: string
+                description: /Users, /Groups, /Users/{id} or /Groups/{id}; may hold bulkId:<id>.
+              data:
+                type: object
+                additionalProperties: true
+    SCIMBulkResponse:
+      type: object
+      required: [schemas, Operations]
+      properties:
+        schemas:
+          type: array
+          items:
+            type: string
+        Operations:
+          type: array
+          items:
+            type: object
+            required: [method, status]
+            properties:
+              method:
+                type: string
+              bulkId:
+                type: string
+              location:
+                type: string
+              version:
+                type: string
+              status:
+                type: string
+              response:
+                type: object
+                additionalProperties: true
+    Revocation:
+      type: object
+      required: [id, tenant_id, user_id, actor_id, session_id, not_before, reason, created_at]
+      description: Tokens of `user_id` (as `sub` or `act.sub`) issued at or before `not_before` are refused (§21).
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: [string, 'null']
+          format: uuid
+          description: Only tokens for this tenant (`tid`); null for every tenant.
+        user_id:
+          type: string
+          format: uuid
+          description: A person, service account or agent.
+        actor_id:
+          type: [string, 'null']
+          format: uuid
+          description: Only tokens this agent got for `user_id` (sub = user_id, act.sub = actor_id); null for any.
+        session_id:
+          type: [string, 'null']
+          description: Only tokens of this session (`sid`); null for all.
+        not_before:
+          type: string
+          format: date-time
+        reason:
+          type: string
+          enum: [requested, session_ended, signed_out, mfa_reset, membership_removed, membership_deactivated,
+                 user_deactivated, user_deleted, agent_deactivated, agent_deleted, agent_secret_rotated,
+                 consent_withdrawn]
+        created_at:
+          type: string
+          format: date-time
+    Consent:
+      type: object
+      required: [id, tenant_id, agent_id, user_id, permissions, status, granted_at, expires_at, version]
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        agent_id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        permissions:
+          type: [array, 'null']
+          items:
+            type: string
+          description: Null allows everything both may do.
+        status:
+          type: string
+          enum: [active, withdrawn]
+        granted_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: [string, 'null']
+          format: date-time
+        withdrawn_at:
+          type: [string, 'null']
+          format: date-time
+        withdrawn_by:
+          type: [string, 'null']
+          format: uuid
+        version:
+          type: integer
+          format: int64
+        agent_name:
+          type: string
+        agent_client_id:
+          type: string
+        tenant_name:
+          type: string
+    ConsentRequest:
+      type: object
+      required: [agent, tenant_id, tenant_name, apps, current]
+      properties:
+        agent:
+          type: object
+          required: [id, client_id, kind, name, description, owner, consent]
+          properties:
+            id:
+              type: string
+              format: uuid
+            client_id:
+              type: string
+            kind:
+              type: string
+              enum: [service, agent]
+            name:
+              type: string
+            description:
+              type: [string, 'null']
+            owner:
+              type: [string, 'null']
+            consent:
+              type: string
+              enum: [implicit, required]
+        tenant_id:
+          type: string
+          format: uuid
+        tenant_name:
+          type: string
+        apps:
+          type: array
+          items:
+            type: object
+            required: [app, name, permissions]
+            properties:
+              app:
+                type: string
+              name:
+                type: string
+              permissions:
+                type: array
+                items:
+                  type: string
+        current:
+          oneOf:
+            - type: 'null'
+            - $ref: '#/components/schemas/Consent'
+    DataKey:
+      type: object
+      required: [plaintext, wrapped, key_version]
+      properties:
+        plaintext:
+          type: string
+          format: byte
+        wrapped:
+          type: string
+          format: byte
+        key_version:
+          type: integer
+    TenantKeyInfo:
+      type: object
+      required: [versions, provider]
+      properties:
+        versions:
+          type: array
+          items:
+            type: object
+            required: [version, status, sealed_by, created_at, destroyed_at]
+            properties:
+              version:
+                type: integer
+              status:
+                type: string
+                enum: [active, retired, destroyed]
+              sealed_by:
+                type: string
+                enum: [installation, customer]
+              created_at:
+                type: string
+                format: date-time
+              destroyed_at:
+                type: [string, 'null']
+                format: date-time
+        provider:
+          oneOf:
+            - type: 'null'
+            - type: object
+              required: [provider, key_ref, updated_at]
+              properties:
+                provider:
+                  type: string
+                key_ref:
+                  type: string
+                updated_at:
+                  type: string
+                  format: date-time
+    UsageEvent:
+      type: object
+      additionalProperties: false
+      required: [id, meter, quantity]
+      properties:
+        id:
+          type: string
+          maxLength: 200
+        meter:
+          type: string
+          pattern: '^[a-z][a-z0-9_]{0,62}$'
+        quantity:
+          type: integer
+          format: int64
+          minimum: 0
+        time:
+          type: string
+          format: date-time
+    BillingCustomer:
+      type: object
+      required: [tenant_id, provider, customer_id, subscription_id, version, updated_at]
+      properties:
+        tenant_id:
+          type: string
+          format: uuid
+        provider:
+          type: string
+          enum: [stripe, lago, openmeter]
+        customer_id:
+          type: string
+        subscription_id:
+          type: [string, 'null']
+        version:
+          type: integer
+          format: int64
+        updated_at:
+          type: string
+          format: date-time
+    AccessReview:
+      type: object
+      required: [id, tenant_id, name, status, on_pending, due_at, created_at, kept, revoked, pending, version]
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        status:
+          type: string
+          enum: [open, completed, cancelled]
+        on_pending:
+          type: string
+          enum: [revoke, keep]
+        due_at:
+          type: string
+          format: date-time
+        created_by:
+          type: [string, 'null']
+          format: uuid
+        created_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: [string, 'null']
+          format: date-time
+        completed_by:
+          type: [string, 'null']
+          format: uuid
+          description: Null when the deadline completed it.
+        kept:
+          type: integer
+        revoked:
+          type: integer
+        pending:
+          type: integer
+        version:
+          type: integer
+          format: int64
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AccessReviewItem'
+    AccessReviewItem:
+      type: object
+      required: [id, kind, user_id, user_kind, role, decision]
+      properties:
+        id:
+          type: string
+          format: uuid
+        kind:
+          type: string
+          enum: [grant, tenant_role]
+        grant_id:
+          type: [string, 'null']
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        user_kind:
+          type: string
+          enum: [human, service, agent]
+        email:
+          type: [string, 'null']
+        display_name:
+          type: [string, 'null']
+        app:
+          type: [string, 'null']
+        role:
+          type: string
+        workspace_id:
+          type: [string, 'null']
+          format: uuid
+        decision:
+          type: string
+          enum: [pending, keep, revoke]
+        decided_by:
+          type: [string, 'null']
+          format: uuid
+        decided_at:
+          type: [string, 'null']
+          format: date-time
+        note:
+          type: [string, 'null']
+        outcome:
+          type: [string, 'null']
+          enum: [kept, revoked, already_gone, last_owner_kept, null]
+    OversightRecorded:
+      type: object
+      required: [id, recorded]
+      properties:
+        id:
+          type: string
+        recorded:
+          type: boolean
     SCIMGroupMapping:
       type: object
       required: [id, tenant_id, group, app, role, version, created_at]

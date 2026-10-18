@@ -84,6 +84,11 @@ func (r *Relay) lead(ctx context.Context) {
 			} else if n > 0 {
 				r.Log.Info("outbox pruned", "rows", n)
 			}
+			if n, err := r.Store.PruneRevocations(ctx); err != nil {
+				r.Log.Warn("revocation prune failed", "err", err)
+			} else if n > 0 {
+				r.Log.Info("revocations pruned", "rows", n)
+			}
 			lastPrune = time.Now()
 		}
 		select {
