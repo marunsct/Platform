@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -20,6 +21,7 @@ import (
 	"github.com/marunsct/Platform/internal/access"
 	"github.com/marunsct/Platform/internal/api"
 	"github.com/marunsct/Platform/internal/audit"
+	"github.com/marunsct/Platform/internal/billing"
 	"github.com/marunsct/Platform/internal/config"
 	"github.com/marunsct/Platform/internal/events"
 	"github.com/marunsct/Platform/internal/fga"
@@ -121,6 +123,12 @@ func run(log *slog.Logger) error {
 	go streamer.Run(ctx)
 	privacyWorker := &privacy.Worker{Store: st, Log: log}
 	go privacyWorker.Run(ctx)
+	if adapter, err := billingAdapter(); err != nil {
+		return err
+	} else if adapter != nil {
+		go (&billing.Exporter{Store: st, Adapter: adapter, Log: log}).Run(ctx)
+		log.Info("billing export on", "provider", adapter.Name())
+	}
 
 	server := api.New(st, auth, keys, log)
 	tenantKeysOn := false
@@ -218,4 +226,34 @@ func run(log *slog.Logger) error {
 	shutdown, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	return srv.Shutdown(shutdown)
+}
+
+// billingAdapter reads MATURA_BILLING_PROVIDER (stripe, lago or openmeter; unset: no export), MATURA_BILLING_API_KEY,
+// MATURA_BILLING_URL and MATURA_BILLING_METERS ("devflow.runs=runs,…": Matura meter to the provider's name).
+func billingAdapter() (billing.Adapter, error) {
+	provider := strings.ToLower(strings.TrimSpace(os.Getenv("MATURA_BILLING_PROVIDER")))
+	key, base := os.Getenv("MATURA_BILLING_API_KEY"), os.Getenv("MATURA_BILLING_URL")
+	names := map[string]string{}
+	for _, pair := range strings.Split(os.Getenv("MATURA_BILLING_METERS"), ",") {
+		if k, v, ok := strings.Cut(strings.TrimSpace(pair), "="); ok && k != "" && v != "" {
+			names[k] = v
+		}
+	}
+	switch provider {
+	case "":
+		return nil, nil
+	case "stripe":
+		if key == "" {
+			return nil, errors.New("MATURA_BILLING_API_KEY is required for Stripe")
+		}
+		return &billing.Stripe{APIKey: key, BaseURL: base, Events: names}, nil
+	case "lago":
+		if key == "" {
+			return nil, errors.New("MATURA_BILLING_API_KEY is required for Lago")
+		}
+		return &billing.Lago{APIKey: key, BaseURL: base, Codes: names}, nil
+	case "openmeter":
+		return &billing.OpenMeter{APIKey: key, BaseURL: base, Types: names}, nil
+	}
+	return nil, fmt.Errorf("MATURA_BILLING_PROVIDER must be stripe, lago or openmeter, got %q", provider)
 }

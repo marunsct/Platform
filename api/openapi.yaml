@@ -3305,6 +3305,102 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+  /admin/v1/tenants/{tid}/billing:
+    parameters:
+      - $ref: '#/components/parameters/tid'
+    get:
+      operationId: getBillingCustomer
+      summary: The tenant's billing customer
+      tags: [operator]
+      responses:
+        '200':
+          description: The link.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingCustomer'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      operationId: putBillingCustomer
+      summary: Link a tenant to its billing customer
+      description: Usage of the tenant is exported to that provider from now on (§22.3). Audited as `billing.customer_linked`.
+      tags: [operator]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [provider, customer_id]
+              properties:
+                provider:
+                  type: string
+                  enum: [stripe, lago, openmeter]
+                customer_id:
+                  type: string
+                  description: Stripe customer (cus_…), Lago external customer id, or OpenMeter subject.
+                subscription_id:
+                  type: string
+                  description: Lago external subscription id (default the customer id).
+      responses:
+        '200':
+          description: The link.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingCustomer'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+  /admin/v1/billing/exports:
+    get:
+      operationId: listBillingExports
+      summary: How far usage reached each billing provider
+      tags: [operator]
+      responses:
+        '200':
+          description: Export state per provider.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      required: [provider, cursor, exported, skipped, pending, last_error, last_run_at]
+                      properties:
+                        provider:
+                          type: string
+                        cursor:
+                          type: integer
+                        exported:
+                          type: integer
+                        skipped:
+                          type: integer
+                          description: Usage of tenants not linked to a customer of the provider.
+                        pending:
+                          type: integer
+                        last_error:
+                          type: [string, 'null']
+                        last_run_at:
+                          type: [string, 'null']
+                          format: date-time
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
   /admin/v1/keys:rewrap:
     post:
       operationId: rewrapKeys
@@ -3598,6 +3694,158 @@ paths:
           $ref: '#/components/responses/Unprocessable'
         '503':
           $ref: '#/components/responses/TenantKeyUnavailable'
+  /v1/apps/{app}/tenants/{tid}/usage:
+    parameters:
+      - $ref: '#/components/parameters/app'
+      - $ref: '#/components/parameters/tid'
+    post:
+      operationId: recordUsage
+      summary: Report usage
+      description: |
+        Up to 1000 events. `meter` is the app's own name (`runs`; stored as `<app>.runs`), `id` makes a retry count
+        once, `time` (default now) may be up to 35 days back and counts in its period. Usage over a limit is still
+        recorded (it happened); consume quota first for hard limits. Crossing 80% and 100% of a limit sends
+        `matura.usage.threshold` once per period. Usage of tenants linked to a billing customer is exported (§22.3).
+      tags: [app-backend]
+      security:
+        - appBasic: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [events]
+              properties:
+                events:
+                  type: array
+                  maxItems: 1000
+                  items:
+                    $ref: '#/components/schemas/UsageEvent'
+      responses:
+        '200':
+          description: One result per event.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [results]
+                properties:
+                  results:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, status]
+                      properties:
+                        id:
+                          type: string
+                        status:
+                          type: string
+                          enum: [recorded, duplicate]
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+  /v1/apps/{app}/tenants/{tid}/quota:consume:
+    parameters:
+      - $ref: '#/components/parameters/app'
+      - $ref: '#/components/parameters/tid'
+    post:
+      operationId: consumeQuota
+      summary: Consume quota before doing the work
+      description: |
+        Records the usage only if the tenant's limit allows it, atomically: concurrent consumers never take a hard
+        limit past its value. 200 with `allowed` true or false. A retry with the same `id` gets `allowed: true,
+        duplicate: true` once it was consumed, and consumes nothing more. Soft or missing limits always allow.
+      tags: [app-backend]
+      security:
+        - appBasic: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UsageEvent'
+      responses:
+        '200':
+          description: The answer.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [allowed, meter, used, limit, remaining, period]
+                properties:
+                  allowed:
+                    type: boolean
+                  meter:
+                    type: string
+                  used:
+                    type: integer
+                    format: int64
+                  limit:
+                    type: [integer, 'null']
+                  remaining:
+                    type: [integer, 'null']
+                  period:
+                    type: string
+                  duplicate:
+                    type: boolean
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+  /v1/apps/{app}/tenants/{tid}/entitlements:
+    parameters:
+      - $ref: '#/components/parameters/app'
+      - $ref: '#/components/parameters/tid'
+    get:
+      operationId: getAppEntitlements
+      summary: A tenant's features and this app's meters
+      description: For SDK caches; `ETag` is the tenant's version, which changes with its plan or overrides.
+      tags: [app-backend]
+      security:
+        - appBasic: []
+      responses:
+        '200':
+          description: The entitlements.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [tenant_id, plan, features, meters, version]
+                properties:
+                  tenant_id:
+                    type: string
+                    format: uuid
+                  plan:
+                    oneOf:
+                      - type: 'null'
+                      - type: object
+                        properties:
+                          id:
+                            type: string
+                          name:
+                            type: string
+                  features:
+                    type: object
+                    additionalProperties:
+                      type: boolean
+                  meters:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/MeterUsage'
+                  version:
+                    type: integer
+                    format: int64
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /v1/apps/{app}/snapshot:
     parameters:
       - $ref: '#/components/parameters/app'
@@ -6102,6 +6350,43 @@ components:
           type: object
           additionalProperties:
             type: boolean
+        meters:
+          type: object
+          description: '`<app slug>.<meter>` → limit per period (§22). A missing or negative `limit` is unlimited.'
+          additionalProperties:
+            $ref: '#/components/schemas/MeterLimit'
+    MeterLimit:
+      type: object
+      properties:
+        limit:
+          type: integer
+          format: int64
+        period:
+          type: string
+          enum: [month, day, total]
+          default: month
+        hard:
+          type: boolean
+          description: Refuse quota consumes that would pass the limit; soft limits only announce 80% and 100%.
+    MeterUsage:
+      type: object
+      required: [meter, period, period_start, used, limit, hard]
+      properties:
+        meter:
+          type: string
+        period:
+          type: string
+        period_start:
+          type: string
+          format: date-time
+        used:
+          type: integer
+          format: int64
+        limit:
+          type: [integer, 'null']
+          format: int64
+        hard:
+          type: boolean
     Entitlements:
       type: object
       required: [tenant_id, plan, limits, plan_limits, overrides, usage]
@@ -6140,6 +6425,10 @@ components:
               type: array
               items:
                 type: string
+            meters:
+              type: array
+              items:
+                $ref: '#/components/schemas/MeterUsage'
     Stats:
       type: object
       required: [tenants, users, apps]
@@ -7879,6 +8168,44 @@ components:
                 updated_at:
                   type: string
                   format: date-time
+    UsageEvent:
+      type: object
+      additionalProperties: false
+      required: [id, meter, quantity]
+      properties:
+        id:
+          type: string
+          maxLength: 200
+        meter:
+          type: string
+          pattern: '^[a-z][a-z0-9_]{0,62}$'
+        quantity:
+          type: integer
+          format: int64
+          minimum: 0
+        time:
+          type: string
+          format: date-time
+    BillingCustomer:
+      type: object
+      required: [tenant_id, provider, customer_id, subscription_id, version, updated_at]
+      properties:
+        tenant_id:
+          type: string
+          format: uuid
+        provider:
+          type: string
+          enum: [stripe, lago, openmeter]
+        customer_id:
+          type: string
+        subscription_id:
+          type: [string, 'null']
+        version:
+          type: integer
+          format: int64
+        updated_at:
+          type: string
+          format: date-time
     SCIMGroupMapping:
       type: object
       required: [id, tenant_id, group, app, role, version, created_at]

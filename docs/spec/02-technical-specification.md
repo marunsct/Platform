@@ -1151,3 +1151,52 @@ An app that verifies tokens without an SDK does the same check from the events o
 Not covered: tokens of other identity providers in bring-your-own-IdP mode, and Keycloak's own token introspection
 (which already reflects ended sessions).
 
+## 22. Metering, quotas and billing (TS18)
+
+### 22.1 Meters in plans
+
+Plan limits and tenant overrides (§5.3) take `meters`: `{"<app slug>.<meter>": {"limit": 1000, "period": "month",
+"hard": true}}`. `period` is `month` (calendar month in UTC, the default), `day` or `total`; a missing or negative
+`limit` is unlimited; overrides replace a plan's meter one by one. `GET /v1/tenants/{tid}/entitlements` shows each
+limited or used meter's current period under `usage.meters`.
+
+### 22.2 Usage and quotas
+
+- **Reporting** — `POST /v1/apps/{app}/tenants/{tid}/usage` with up to 1000 `{id, meter, quantity, time}`. The meter
+  is the app's own name, stored as `<app>.<meter>` so apps never share a meter. `(tenant, app, id)` is unique, so a
+  retry is a `duplicate`, not more usage. Usage up to 35 days late counts in the period it occurred in. Reported
+  usage is never refused: it already happened.
+- **Quotas** — `POST /v1/apps/{app}/tenants/{tid}/quota:consume` with one `{id, meter, quantity}` before the work.
+  It locks the meter's counter for the period (`usage_counter`, migration 0020), and for a hard limit records the
+  usage only if it fits, so concurrent consumers queue on that row and never pass the limit. The answer is
+  `allowed`, `used`, `limit`, `remaining`. A retry with the same id answers `allowed: true, duplicate: true`.
+- **Thresholds** — the first time in a period a meter reaches 80% and then 100% of its limit, maturad emits
+  `matura.usage.threshold` (`meter`, `period_start`, `used`, `limit`, `percent`, `hard`) to the app, and it is
+  audited.
+- **SDK** — `GET /v1/apps/{app}/tenants/{tid}/entitlements` gives the tenant's features and the app's meters
+  (`ETag`: the tenant's version). The Go SDK's `EntitlementCache` keeps it for 30 s and serves a stale copy when
+  maturad is down. `ConsumeQuota` and `RecordUsage` wrap the calls.
+
+### 22.3 Billing export
+
+Billing is optional: the installation picks one provider with `MATURA_BILLING_PROVIDER` (`stripe`, `lago` or
+`openmeter`), `MATURA_BILLING_API_KEY` and `MATURA_BILLING_URL` (default the provider's cloud). Operators link a
+tenant with `PUT /admin/v1/tenants/{tid}/billing {provider, customer_id, subscription_id?}`. One leader exports
+usage in `usage_event.seq` order from a cursor per provider (`billing_export`). Usage of tenants not linked to that
+provider is counted as `skipped` and not sent; it is not sent later either. A failure keeps the cursor at the first
+unsent event, and the next round (every 30 s) resumes there. Every record carries a stable id,
+`<tenant>:<app>:<event id>`, so the provider counts a resent event once.
+
+| Provider | Call | Fields |
+|---|---|---|
+| Stripe Billing | `POST /v1/billing/meter_events` (form), one per event | `event_name` (from `MATURA_BILLING_METERS`, default the meter with `.` as `_`), `payload[stripe_customer_id]`, `payload[value]`, `identifier` (also `Idempotency-Key`), `timestamp`; "already exists" counts as sent |
+| Lago | `POST /api/v1/events/batch`, 100 per call | `transaction_id`, `external_subscription_id` (else the customer id), `external_customer_id`, `code`, `timestamp`, `properties.value` |
+| OpenMeter | `POST /api/v1/events` as `application/cloudevents-batch+json`, 500 per call | CloudEvents `id`, `source` (matura), `type` (the meter), `subject` (the customer), `time`, `data.value` |
+
+Matura never sees payment data: the provider prices usage, invoices and collects. `GET /admin/v1/billing/exports`
+shows `exported`, `skipped`, `pending` and the last error per provider.
+
+Not built yet: seat and storage meters reported by Matura itself, quota leases for very high rates (each consume
+is one database transaction), feature flags through OpenFeature, and syncing plans and subscriptions from the
+billing system (operators link tenants by hand or through the API).
+
