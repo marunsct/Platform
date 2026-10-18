@@ -4701,6 +4701,44 @@ paths:
           $ref: '#/components/responses/SCIMError'
         '412':
           $ref: '#/components/responses/SCIMError'
+  /scim/v2/tenants/{tid}/Bulk:
+    parameters:
+      - $ref: '#/components/parameters/tid'
+    post:
+      operationId: scimBulk
+      summary: Run several SCIM operations in one request
+      description: |
+        RFC 7644 §3.7. Up to 1000 operations and 1 MB. Each runs as the single request would, in the order sent, with
+        no transaction across them. `bulkId:<id>` in a later path or data names the resource an earlier POST with that
+        bulkId created (409 `invalidValue` if none did). `failOnErrors` stops after that many failed operations.
+        Each entry has `status`, `location` and `version`, and `response` (a SCIM error) when it failed.
+      tags: [scim]
+      security:
+        - scimToken: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/scim+json:
+            schema:
+              $ref: '#/components/schemas/SCIMBulkRequest'
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SCIMBulkRequest'
+      responses:
+        '200':
+          description: A BulkResponse with one entry per operation run.
+          content:
+            application/scim+json:
+              schema:
+                $ref: '#/components/schemas/SCIMBulkResponse'
+        '400':
+          $ref: '#/components/responses/SCIMError'
+        '401':
+          $ref: '#/components/responses/SCIMError'
+        '413':
+          $ref: '#/components/responses/SCIMError'
   /scim/v2/tenants/{tid}/Groups:
     parameters:
       - $ref: '#/components/parameters/tid'
@@ -7086,6 +7124,67 @@ components:
         last_used_at:
           type: [string, 'null']
           format: date-time
+    SCIMBulkRequest:
+      type: object
+      required: [schemas, Operations]
+      properties:
+        schemas:
+          type: array
+          items:
+            type: string
+            const: urn:ietf:params:scim:api:messages:2.0:BulkRequest
+        failOnErrors:
+          type: integer
+          minimum: 0
+        Operations:
+          type: array
+          maxItems: 1000
+          items:
+            type: object
+            required: [method, path]
+            properties:
+              method:
+                type: string
+                enum: [POST, PUT, PATCH, DELETE]
+              bulkId:
+                type: string
+                description: Required for POST.
+              version:
+                type: string
+                description: An ETag; sent as If-Match.
+              path:
+                type: string
+                description: /Users, /Groups, /Users/{id} or /Groups/{id}; may hold bulkId:<id>.
+              data:
+                type: object
+                additionalProperties: true
+    SCIMBulkResponse:
+      type: object
+      required: [schemas, Operations]
+      properties:
+        schemas:
+          type: array
+          items:
+            type: string
+        Operations:
+          type: array
+          items:
+            type: object
+            required: [method, status]
+            properties:
+              method:
+                type: string
+              bulkId:
+                type: string
+              location:
+                type: string
+              version:
+                type: string
+              status:
+                type: string
+              response:
+                type: object
+                additionalProperties: true
     SCIMGroupMapping:
       type: object
       required: [id, tenant_id, group, app, role, version, created_at]

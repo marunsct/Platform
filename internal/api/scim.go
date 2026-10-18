@@ -351,7 +351,7 @@ func (s *Server) scimServiceProviderConfig(w http.ResponseWriter, r *http.Reques
 		"schemas":          []string{"urn:ietf:params:scim:schemas:core:2.0:ServiceProviderConfig"},
 		"documentationUri": "https://github.com/marunsct/Platform/blob/main/docs/guide/scim.md",
 		"patch":            map[string]any{"supported": true},
-		"bulk":             map[string]any{"supported": false, "maxOperations": 0, "maxPayloadSize": 0},
+		"bulk":             map[string]any{"supported": true, "maxOperations": scimBulkMaxOps, "maxPayloadSize": scimBulkMaxPayload},
 		"filter":           map[string]any{"supported": true, "maxResults": scimMaxResults},
 		"changePassword":   map[string]any{"supported": false},
 		"sort":             map[string]any{"supported": false},

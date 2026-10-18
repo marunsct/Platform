@@ -926,10 +926,25 @@ Membership changes are also emitted as `scim_group.member_added` and `scim_group
 Responses are `application/scim+json`; errors use the SCIM error schema (`status` as a string, `scimType` where
 RFC 7644 defines one). Every resource has `meta.version` and an `ETag` (`W/"<version>"`); `If-Match` on PUT,
 PATCH and DELETE answers 412 when stale, `If-None-Match` on GET 304. `/ServiceProviderConfig`, `/ResourceTypes`
-and `/Schemas` describe the above (patch, filter and etag supported; bulk, sort and password change not); they need
+and `/Schemas` describe the above (patch, filter, etag and bulk supported; sort and password change not); they need
 a token too. `meta.location` uses `MATURA_PUBLIC_URL`.
 
-Not built yet: bulk, sorting, `or`/`not`/`co`/`sw` filters, per-tenant rate limits, the portal pages, a CSV
+### 19.5 Changes are audited per connection
+
+Every SCIM change is audited with actor kind `directory`, actor id the SCIM token's id and actor email
+`scim:<token name>` (migration 0016), so a tenant with two directories connected can tell them apart and filter the
+audit log by `actor=scim:<name>`.
+
+### 19.6 Bulk
+
+`POST /scim/v2/tenants/{tid}/Bulk` (RFC 7644 §3.7) takes a `BulkRequest` of up to 1000 operations and 1 MB. Each
+operation runs through the same handler as the single request, in the order sent, with no transaction across them.
+POST needs a `bulkId`; `bulkId:<id>` in a later operation's path or data is replaced by the id the earlier POST
+created, and one naming nothing created earlier fails that operation with 409 `invalidValue` (forward references
+are not reordered). `version` is sent as `If-Match`. `failOnErrors: n` stops after n failures. The `BulkResponse`
+has one entry per operation run with `status`, `location`, `version`, and the SCIM error as `response` on failure.
+
+Not built yet: sorting, `or`/`not`/`co`/`sw` filters, per-tenant rate limits, a CSV
 import, SCIM-provisioned agents (§20), and tenant export of SCIM groups.
 
 ## 20. Agent identity (TS15)

@@ -698,3 +698,96 @@ func TestSCIMAuditPerConnection(t *testing.T) {
 		t.Fatal("the audit log cannot be filtered by connection")
 	}
 }
+
+func scimUserBody(email string) map[string]any {
+	return map[string]any{"schemas": []string{"urn:ietf:params:scim:schemas:core:2.0:User"}, "userName": email,
+		"active": true, "emails": []map[string]any{{"value": email, "primary": true}}}
+}
+
+// TestSCIMBulk: RFC 7644 §3.7 — bulkId references, per-operation results, failOnErrors and limits.
+func TestSCIMBulk(t *testing.T) {
+	e := setupSCIM(t)
+	c := e.scim
+	cfg := c.must(http.StatusOK, "GET", "/ServiceProviderConfig", nil)
+	if b := cfg["bulk"].(map[string]any); b["supported"] != true || b["maxOperations"] != 1000.0 {
+		t.Fatalf("bulk config: %v", b)
+	}
+	const bulkURN = "urn:ietf:params:scim:api:messages:2.0:BulkRequest"
+	out := c.must(http.StatusOK, "POST", "/Bulk", map[string]any{"schemas": []string{bulkURN}, "Operations": []any{
+		map[string]any{"method": "POST", "path": "/Users", "bulkId": "u1", "data": scimUserBody("bea@acme.test")},
+		map[string]any{"method": "POST", "path": "/Users", "bulkId": "u2", "data": scimUserBody("cai@acme.test")},
+		map[string]any{"method": "POST", "path": "/Groups", "bulkId": "g1", "data": map[string]any{
+			"schemas": []string{"urn:ietf:params:scim:schemas:core:2.0:Group"}, "displayName": "Engineering",
+			"members": []any{map[string]any{"value": "bulkId:u1"}, map[string]any{"value": "bulkId:u2"}}}},
+		map[string]any{"method": "PATCH", "path": "/Users/bulkId:u2", "data": map[string]any{
+			"schemas":    []string{"urn:ietf:params:scim:api:messages:2.0:PatchOp"},
+			"Operations": []any{map[string]any{"op": "replace", "path": "active", "value": false}}}},
+		map[string]any{"method": "POST", "path": "/Users", "bulkId": "dup", "data": scimUserBody("bea@acme.test")},
+		map[string]any{"method": "DELETE", "path": "/Groups/bulkId:nope"},
+	}})
+	ops := out["Operations"].([]any)
+	status := func(i int) string { return ops[i].(map[string]any)["status"].(string) }
+	if len(ops) != 6 || status(0) != "201" || status(1) != "201" || status(2) != "201" || status(3) != "200" ||
+		status(4) != "409" || status(5) != "409" {
+		t.Fatalf("results: %v", ops)
+	}
+	lastSeg := func(i int) string {
+		loc, _ := ops[i].(map[string]any)["location"].(string)
+		return loc[strings.LastIndex(loc, "/")+1:]
+	}
+	u1 := ops[0].(map[string]any)
+	if !strings.Contains(u1["location"].(string), "/scim/v2/tenants/"+e.tid+"/Users/") || u1["version"] == nil || u1["bulkId"] != "u1" {
+		t.Fatalf("entry: %v", u1)
+	}
+	if got := c.must(http.StatusOK, "GET", "/Users/"+lastSeg(0), nil); got["userName"] != "bea@acme.test" {
+		t.Fatalf("created by bulk: %v", got)
+	}
+	gid := lastSeg(2)
+	group := c.must(http.StatusOK, "GET", "/Groups/"+gid, nil)
+	if len(group["members"].([]any)) != 2 {
+		t.Fatalf("group members resolved from bulkIds: %v", group)
+	}
+	cai := lastSeg(1)
+	if memberStatus(t, e.owner, e.tid, cai) == "active" {
+		t.Fatal("the PATCH on bulkId:u2 did not deactivate the user")
+	}
+	if ops[4].(map[string]any)["response"].(map[string]any)["scimType"] != "uniqueness" {
+		t.Fatalf("failed entry carries the SCIM error: %v", ops[4])
+	}
+
+	// failOnErrors stops after that many failures
+	out = c.must(http.StatusOK, "POST", "/Bulk", map[string]any{"schemas": []string{bulkURN}, "failOnErrors": 1,
+		"Operations": []any{
+			map[string]any{"method": "POST", "path": "/Users", "bulkId": "a", "data": scimUserBody("bea@acme.test")},
+			map[string]any{"method": "POST", "path": "/Users", "bulkId": "b", "data": scimUserBody("dan@acme.test")},
+		}})
+	if ops := out["Operations"].([]any); len(ops) != 1 {
+		t.Fatalf("failOnErrors 1 ran %d operations", len(ops))
+	}
+	// malformed requests
+	if code, _, _ := c.call("POST", "/Bulk", map[string]any{"Operations": []any{}}); code != http.StatusBadRequest {
+		t.Fatalf("missing schemas: %d", code)
+	}
+	many := make([]any, 1001)
+	for i := range many {
+		many[i] = map[string]any{"method": "DELETE", "path": "/Users/x"}
+	}
+	if code, _, _ := c.call("POST", "/Bulk", map[string]any{"schemas": []string{bulkURN}, "Operations": many}); code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("1001 operations: %d", code)
+	}
+	bad := c.must(http.StatusOK, "POST", "/Bulk", map[string]any{"schemas": []string{bulkURN}, "Operations": []any{
+		map[string]any{"method": "GET", "path": "/Users"},
+		map[string]any{"method": "POST", "path": "/Users"},
+		map[string]any{"method": "DELETE", "path": "/Tenants/x"},
+	}})
+	for _, op := range bad["Operations"].([]any) {
+		if op.(map[string]any)["status"] != "400" {
+			t.Fatalf("invalid operation accepted: %v", op)
+		}
+	}
+	// the token of another tenant cannot bulk-edit this one
+	other := scimClient{t: t, base: c.base, token: "scim_not-a-token"}
+	if code, _, _ := other.call("POST", "/Bulk", map[string]any{"schemas": []string{bulkURN}, "Operations": []any{}}); code != http.StatusUnauthorized {
+		t.Fatalf("unknown token: %d", code)
+	}
+}

@@ -112,6 +112,7 @@ func (s *Server) Handler() http.Handler {
 	s.handle(mux, "PUT /scim/v2/tenants/{tid}/Groups/{id}", s.scim(s.scimReplaceGroup))
 	s.handle(mux, "PATCH /scim/v2/tenants/{tid}/Groups/{id}", s.scim(s.scimPatchGroup))
 	s.handle(mux, "DELETE /scim/v2/tenants/{tid}/Groups/{id}", s.scim(s.scimDeleteGroup))
+	s.handle(mux, "POST /scim/v2/tenants/{tid}/Bulk", s.scim(s.scimBulk))
 
 	api := http.NewServeMux()
 	s.handle(api, "GET /v1/me", s.getMe)
