@@ -741,7 +741,8 @@ Both have forced RLS (migration 0011).
 - **Home-realm discovery:** `GET /v1/sso/discover?email=` (public) returns `{sso, idp_hint, tenant}` for a verified
   domain of an active tenant with a connection; sign-in pages add `kc_idp_hint=<idp_hint>` (and
   `matura_tenant=<tenant>`) to the authorisation request. The Keycloak login theme does not do this itself yet.
-- **Not built yet:** SSO-only enforcement with break-glass, group-to-role mapping, Ory Polis, certificate expiry
+- **Not built yet:** SSO-only enforcement with break-glass, group-to-role mapping from groups asserted at sign-in
+  (SCIM groups map to roles, §19), Ory Polis, certificate expiry
   warnings, test-connection trace, the portal wizard and the mock IdP.
 
 ## 18. Fine-grained permissions (TS11)
@@ -800,12 +801,14 @@ sequence order from its own cursor (`fga_state.cursor`) and applies each change 
 | `membership.added/updated/removed` | `tenant:T/T#<tenant_role>@user:T/U` for an active membership; the other three roles deleted |
 | `workspace.*` | `workspace:T/W#tenant@tenant:T/T`; deleted with the workspace |
 | `grant.added/revoked` | `role:T/<app>/<role>[@W]#assignee@user:T/U` (or `group:T/G#member`) |
+| `scim_group.member_added/removed` | `group:T/G#member@user:T/U` (SCIM groups, §19) |
 | `app.role.updated` with `previous_name` | the role's grants move to the new name |
 | `app.manifest.updated` | the app's model is written if it changed |
 | `tenant.deleting` | every tuple of the tenant is deleted (one full read of the store) |
 
 With no cursor (first run, a store OpenFGA no longer has, or a cursor older than the outbox keeps) the worker
-writes every current fact (active memberships, live workspaces, active grants of tenants not being deleted) and
+writes every current fact (active memberships, live workspaces, active grants, SCIM group members of tenants not
+being deleted) and
 continues from the outbox position read with them. Tuples of facts that ended while no cursor existed are not
 removed by this; in practice that only happens when an existing store is reused by a fresh Matura database.
 When OpenFGA answers that a remembered store or model is gone, maturad forgets the ids, the call answers 503, and
@@ -829,6 +832,104 @@ its message), 501 `permissions-not-configured`, 503 `permissions-unavailable` wi
 not recorded in the audit log (they are app data, often high volume); Matura's own facts are audited where they
 change. Not built yet: per-tenant revision tokens, "who has access" views in the portal and access reviews
 (rest of TS11), conditions, `list-users`.
+
+## 19. SCIM 2.0 provisioning (TS14)
+
+A SCIM 2.0 service provider (RFC 7643, RFC 7644) per company tenant at `/scim/v2/tenants/{tid}`, so the tenant's
+identity provider (Okta, Microsoft Entra ID, any SCIM client) creates, updates, deactivates and removes its people
+and groups. Implemented in maturad itself (`internal/api/scim*.go`, `internal/store/scim*.go`); Keycloak's own SCIM
+work and Ory Polis were not needed for this.
+
+```
+scim_token(id, tenant_id, name, hash UNIQUE (SHA-256), prefix, created_by, created_at, expires_at, last_used_at,
+           revoked_at)
+scim_user(tenant_id, user_id, user_name, external_id, active, email, emails jsonb, given_name, family_name,
+          display_name, enterprise jsonb, extra jsonb, created_account, version, created_at, updated_at)
+          PK(tenant_id, user_id); UNIQUE(tenant_id, lower(user_name)); UNIQUE(tenant_id, external_id)
+scim_group(id, tenant_id, display_name, external_id, version, …) UNIQUE(tenant_id, lower(display_name))
+scim_group_member(tenant_id, group_id, user_id) → scim_group, scim_user (cascade)
+scim_group_mapping(id, tenant_id, group_name, app_id, role, version, created_by, created_at)
+                   UNIQUE(tenant_id, lower(group_name), app_id, role)
+scim_managed_grant(tenant_id, grant_id, user_id)   grants a group mapping created
+```
+
+All have forced RLS (migration 0014).
+
+### 19.1 Tokens
+
+Owners create (`POST /v1/tenants/{tid}/scim/tokens {name, expires_at?}`), list and revoke (`DELETE …/{id}`) tokens.
+A token is `scim_` + 32 random bytes (base64url), shown once; maturad keeps its SHA-256 and first 12 characters.
+At most five live tokens per tenant; rotation is create, reconfigure the IdP, revoke. A SCIM request's bearer token
+is looked up by hash within the path's tenant (row-level security), so another tenant's token is unknown (401);
+revoked or expired tokens answer 401; a tenant that is not active answers 403. `last_used_at` is updated at most
+once a minute. Token changes are audited (`scim.token_created`, `scim.token_revoked`). SCIM changes are audited
+with actor kind `system`, actor id the token's id and actor email `scim` (migration 0015 fixed the actor kinds).
+
+### 19.2 Users
+
+- **Resource:** the SCIM id is the Matura user id (= Keycloak user id). `userName`, `externalId`, `active`,
+  `displayName`, `emails` and the enterprise extension are modelled; other core attributes (`name`, `title`,
+  `phoneNumbers`, `addresses`, `locale`, `roles`…) are kept as sent and returned; `password`, `groups` (read-only)
+  and unknown extensions are ignored. The account email is the primary email, else the work one, else the first,
+  else `userName` when it is an address.
+- **Create:** the email must be in a domain the tenant verified (§17), else 400 `invalidValue`. A `userName` or
+  `externalId` already provisioned in the tenant answers 409 `uniqueness` (RFC 7644; Okta and Entra then match by
+  filter); a retried create with the same `Idempotency-Key` replays the first answer. maturad looks the email up in
+  Keycloak: an existing account is linked (and its names and attributes updated), otherwise an account is created
+  with the email as username, email verified, no password (the person signs in through the tenant's SSO, whose
+  first-login flow links by email). The person is adopted if already in the tenant (for example after a
+  just-in-time SSO sign-in), otherwise they join with the SSO connection's `default_tenant_role` (else `member`)
+  and each enabled app's default role, within `max_members` (403 with "plan limit" otherwise; the Keycloak account
+  created for the attempt is deleted). Agents and service accounts (§20) are never provisioned or listed.
+- **Replace and PATCH:** PATCH supports `add`, `replace`, `remove` (any case), paths with sub-attributes
+  (`name.familyName`), value filters (`emails[type eq "work"].value`, `members[value eq "…"]`), the enterprise
+  schema prefix, path-less values, and Entra ID's forms (`"True"`/`"False"` strings, removing members by a value
+  list, `manager` as a plain id). It is applied to the current resource and stored like a PUT under the version
+  that was read (a concurrent change answers 412). A replacement that changes nothing keeps the version, so retries
+  are harmless. A changed email must stay in a verified domain. When the tenant governs the person (§16.3; for SCIM
+  users their email domain is verified by the tenant) the Keycloak account follows: email, first and last name, and
+  user attributes `employeeNumber` and `department` (declared in the realm's user profile).
+- **Deactivate** (`active: false`): the membership is deactivated (never the last active owner's: 400), grants made
+  by group mappings are revoked, and the person is signed out of every Keycloak session at once (refresh tokens
+  stop; access tokens run out within 5 minutes, and token issuance refuses the deactivated membership). A repeated
+  deactivation signs out again, so a retry after Keycloak failed (503) completes it. Reactivating restores the
+  membership and the group grants.
+- **Delete:** the person leaves the tenant's groups, the membership is removed and their grants revoked (contract
+  events), and they are signed out when governed. The account is erased (as in §14.2, then deleted in Keycloak)
+  only when SCIM created it, the tenant governs the person and they belong to no other tenant, personal tenants
+  included; otherwise it stays for their other organisations. A second DELETE answers 404.
+- **List:** `filter` with `eq` on `userName` (ignoring case), `externalId`, `id`, `active`, `emails.value` and
+  `emails[type eq "…"].value`, joined by `and`; others answer 400 `invalidFilter`. `startIndex` (1-based) and
+  `count` (default 100, at most 200, 0 for the total only); oldest first. `attributes` and `excludedAttributes`
+  select top-level attributes.
+
+### 19.3 Groups and roles
+
+Groups have `displayName` (unique per tenant, ignoring case), `externalId` and `members` (users provisioned in the
+same tenant; others 400). Create, read, list (filters `displayName`, `externalId`, `id`, `members[value eq "…"]`;
+`excludedAttributes=members` skips loading members), PUT, PATCH (answers 204 with the new ETag) and DELETE.
+
+Owners and admins map group names to app roles: `POST /v1/tenants/{tid}/scim/group-mappings {group, app, role}`
+(list, delete). This was chosen over a naming convention (`app:role` as the group name) because group names belong
+to the customer's directory and are used for other things. Grants stay user grants, so apps and tokens need no
+change: after every membership change, rename, deletion, mapping change, deactivation or reactivation maturad
+reconciles each affected person: for every mapped (app, role) of their groups, when they are an active member and
+the app is enabled, a tenant-wide grant is created unless they already hold that role, and remembered in
+`scim_managed_grant`; a remembered grant no longer backed by a group is revoked. Grants made by hand are never
+touched. A mapping made for an app the tenant enables later takes effect at the next change of the group.
+Membership changes are also emitted as `scim_group.member_added` and `scim_group.member_removed` (payload
+`{tenant_id, group_id, user_id}`) for the OpenFGA syncer (§18.2); apps' change feeds and webhooks leave them out.
+
+### 19.4 Protocol details
+
+Responses are `application/scim+json`; errors use the SCIM error schema (`status` as a string, `scimType` where
+RFC 7644 defines one). Every resource has `meta.version` and an `ETag` (`W/"<version>"`); `If-Match` on PUT,
+PATCH and DELETE answers 412 when stale, `If-None-Match` on GET 304. `/ServiceProviderConfig`, `/ResourceTypes`
+and `/Schemas` describe the above (patch, filter and etag supported; bulk, sort and password change not); they need
+a token too. `meta.location` uses `MATURA_PUBLIC_URL`.
+
+Not built yet: bulk, sorting, `or`/`not`/`co`/`sw` filters, per-tenant rate limits, the portal pages, a CSV
+import, SCIM-provisioned agents (§20), and tenant export of SCIM groups.
 
 ## 20. Agent identity (TS15)
 

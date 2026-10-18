@@ -6,6 +6,7 @@
 | [Kubernetes](kubernetes.md) | operators installing Matura with the Helm chart, including drop-in mode with an existing Keycloak |
 | [Backups](backup.md) | operators backing up and test-restoring Matura's databases |
 | [Enterprise SSO](sso.md) | tenant admins connecting an OIDC or SAML identity provider (domain verification, setup, sign-in rules) and developers adding home-realm discovery; sessions and MFA reset |
+| [SCIM provisioning](scim.md) | tenant admins letting Okta, Microsoft Entra ID or another SCIM client create, update, deactivate and remove people and groups, and mapping groups to app roles |
 | [Agents and service accounts](agents.md) | tenant admins creating service accounts and AI agents; developers getting agent and delegated (on-behalf-of) tokens, checking them in an app, and exposing an MCP server with Keycloak as its authorisation server |
 | [Customer portal](portal.md) | anyone running, using or developing the customer admin portal served at `/portal/` |
 | [Readiness](readiness.md) | operators checking which security controls are in place (`matura check`), recording evidence, exporting OSCAL, turning on the trust page and filling the policy templates |
