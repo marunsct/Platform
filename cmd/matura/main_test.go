@@ -166,7 +166,8 @@ func TestCheckFillsPolicies(t *testing.T) {
 	if !json.Valid([]byte(stdout)) {
 		t.Fatal("--json output mixed with policy messages")
 	}
-	for _, name := range []string{"access-control-policy.md", "incident-response-policy.md", "backup-policy.md"} {
+	for _, name := range []string{"access-control-policy.md", "incident-response-policy.md", "backup-policy.md",
+		"security-whitepaper.md", "questionnaire-answers.md"} {
 		if !strings.Contains(stderr, filepath.Join(out, name)) {
 			t.Errorf("no message for %s: %s", name, stderr)
 		}

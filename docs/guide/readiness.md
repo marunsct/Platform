@@ -250,8 +250,9 @@ your own site, or put a CDN in front of it.
 
 ## Policy templates
 
-[`docs/templates`](../templates/README.md) holds three templates: access control, incident response and backup.
-They are marked as templates; adopting one means reviewing, changing and approving it. `matura check` fills the
+[`docs/templates`](../templates/README.md) holds five templates: access control, incident response and backup
+policies, a security whitepaper for customers, and a questionnaire answer bank grouped by CSA CAIQ v4 domain and SIG
+Lite topic (answers only; the questionnaires are not reproduced). They are marked as templates; adopting one means reviewing, changing and approving it. `matura check` fills the
 placeholders it can from the report and leaves the rest:
 
 ```sh
@@ -272,7 +273,7 @@ It writes each filled template to `--out` (default `./policies`) and lists the p
 | `last_restore_test`, `last_restore_test_result`, `restore_tests_90d` | restore-test evidence |
 | `last_access_review`, `last_vulnerability_scan` | evidence |
 | `control_<id>` (dashes as underscores, e.g. `control_tenant_mfa`) | each control's status |
-| `organisation`, `policy_owner`, `approver`, `effective_date`, `review_cycle`, `leaver_sla`, `access_review_cycle`, `incident_contact`, `incident_lead`, `communications_lead`, `sev1_response`, `sev2_response`, `review_window`, `record_retention`, `backup_frequency`, `backup_retention`, `backup_location`, `rpo`, `rto`, `restore_test_frequency`, `backup_admins` | `--set` only: organisational choices |
+| `organisation`, `policy_owner`, `approver`, `effective_date`, `review_cycle`, `leaver_sla`, `access_review_cycle`, `incident_contact`, `incident_lead`, `communications_lead`, `sev1_response`, `sev2_response`, `review_window`, `record_retention`, `backup_frequency`, `backup_retention`, `backup_location`, `rpo`, `rto`, `restore_test_frequency`, `backup_admins`, `security_contact`, `hosting_provider`, `hosting_region`, `kek_location`, `storage_encryption`, `data_location`, `subprocessors`, `patch_sla`, `pen_test`, `customer_notification_window`, `independent_audits`, `change_process`, `policy_set`, `hr_controls`, `network_controls`, `endpoint_controls`, `vendor_review` | `--set` only: organisational choices |
 
 ## Not built yet
 

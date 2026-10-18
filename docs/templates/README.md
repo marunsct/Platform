@@ -1,7 +1,7 @@
 # Policy templates
 
-These are **templates**, not policies. They give an organisation running Matura a starting point for three
-documents auditors ask for. They say nothing about compliance on their own: an organisation adopts a policy by
+These are **templates**, not policies. They give an organisation running Matura a starting point for the
+documents auditors and customers ask for. They say nothing about compliance on their own: an organisation adopts a policy by
 reviewing it, changing it to match how it works, approving it and following it.
 
 | Template | Covers |
@@ -9,6 +9,8 @@ reviewing it, changing it to match how it works, approving it and following it.
 | [access-control-policy.md](access-control-policy.md) | sign-in, MFA, sessions, roles, joiners and leavers, access reviews |
 | [incident-response-policy.md](incident-response-policy.md) | severities, roles, steps, evidence from the audit log, breach notification |
 | [backup-policy.md](backup-policy.md) | what is backed up, how often, restore tests, keys |
+| [security-whitepaper.md](security-whitepaper.md) | a security overview for customers: sign-in, isolation, encryption, audit, resilience |
+| [questionnaire-answers.md](questionnaire-answers.md) | draft answers grouped by CSA CAIQ v4 domain and SIG Lite topic (the questionnaires are not reproduced) |
 
 ## Filling them
 
